@@ -1240,6 +1240,95 @@ body {
   overflow: hidden;
 }
 
+
+/* FIX: Android WebView 3D Compositing Layer & Explicit Front Face Transform */
+.flip-face-front {
+  transform: rotateY(0deg);
+  z-index: 2;
+}
+
+.flip-inner.is-flipped .flip-face-front {
+  pointer-events: none;
+  z-index: 1;
+}
+
+.flip-inner.is-flipped .flip-face-back {
+  pointer-events: auto;
+  z-index: 3;
+}
+
+.track-card.flip-face {
+  min-height: 430px;
+}
+
+.grid-flip-card .card.flip-face {
+  transform: rotateY(0deg);
+}
+
+.grid-flip-inner.is-flipped .card.flip-face {
+  pointer-events: none;
+}
+
+.grid-flip-inner.is-flipped .grid-flip-back {
+  pointer-events: auto;
+  z-index: 5;
+}
+
+
+/* APPLE-STYLE FULL-ART DYNAMIC POP-UP BAR (Desktop & Mobile Android) */
+.dynamic-bar {
+  background-size: cover !important;
+  background-position: center !important;
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.45) !important;
+  overflow: hidden;
+  transition: transform 0.28s var(--ease), opacity 0.25s;
+}
+
+.dynamic-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(10, 12, 22, 0.52) 0%, rgba(10, 12, 22, 0.22) 50%, rgba(10, 12, 22, 0.52) 100%);
+  backdrop-filter: blur(4px) saturate(140%);
+  -webkit-backdrop-filter: blur(4px) saturate(140%);
+  z-index: 0;
+}
+
+.dynamic-bar > * {
+  position: relative;
+  z-index: 1;
+}
+
+.db-art {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid rgba(255, 255, 255, 0.48);
+  background-size: cover;
+  background-position: center;
+}
+
+.db-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (max-width: 720px) {
+  .dynamic-bar {
+    display: flex !important;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    min-width: 240px;
+    max-width: calc(100vw - 24px);
+    padding: 5px 8px;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -1582,7 +1671,7 @@ function audiusToTrack(t) {
     id: 'audius_' + t.id, title: t.title || 'Untitled', artist: t.user?.name || 'Audius Artist',
     album: t.genre || 'Audius Stream', dur: Number(t.duration) || 0, c1: '#6366f1', c2: '#1e1b4b',
     imageUrl: t.artwork?.['480x480'] || t.artwork?.['150x150'] || null,
-    url: `${base}/tracks/${t.id}/stream?app_name=nysxmusic`, source: 'audius', lyrics: t.description || ''
+    url: `${base}/tracks/${t.id}/stream?app_name=nysxmusic`, source: 'audius', lyrics: ''
   };
 }
 
@@ -1624,9 +1713,9 @@ const state = {
   userProfile: loadJSON('nys_profile', { name: 'Nys', handle: '@nysxmusic', bio: 'Bikin playlist buat jalan pulang.', image: null }),
   npDrawerOpen: false, npTab: 'queue',
   flippedGridIds: new Set(),
-  trackModalOpen: false, modalTrack: null, modalFlipped: false,
+  trackModalOpen: false, modalTrack: null, modalFlipped: false, dynamicBarDismissed: false,
   hubModalOpen: false, editProfileOpen: false,
-  hubUrl: '', hubMeta: null, hubEmbed: null, hubMsg: ''
+  fetchingLyrics: false, hubUrl: '', hubMeta: null, hubEmbed: null, hubMsg: ''
 };
 
 const audioEl = new Audio();
@@ -1691,7 +1780,7 @@ function playTrack(track) {
     return;
   }
   ensureWebAudio();
-  player.current = track; player.position = 0; player.duration = track.dur || 0;
+  state.dynamicBarDismissed = false; player.current = track; player.position = 0; player.duration = track.dur || 0;
   audioEl.crossOrigin = 'anonymous'; audioEl.src = track.url; audioEl.load();
   audioEl.playbackRate = player.playbackRate;
   audioEl.play().catch(e => showToast('Gagal memutar: ' + e.message));
@@ -1740,7 +1829,7 @@ function renderCardHTML(t) {
   return `
     <div class="grid-flip-card">
       <div class="grid-flip-inner ${flipped ? 'is-flipped' : ''}">
-        <div class="card flip-face ${active ? 'playing' : ''}" data-card="${esc(t.id)}">
+        <div class="card flip-face flip-face-front ${active ? 'playing' : ''}" data-card="${esc(t.id)}">
           <div class="album-art" style="${bg}">${art}<span class="art-meta">${t.dur ? fmt(t.dur) : esc(t.album || 'Stream')}</span></div>
           <div class="card-actions-top">
             <button class="card-mini-btn" data-flip="${esc(t.id)}" title="Balik Kartu (Lirik)">↻</button>
@@ -1810,7 +1899,7 @@ function renderApp() {
         <div class="modal-backdrop" id="btnCloseTrackModal"></div>
         <div class="flip-scene" style="width:min(360px,calc(100vw - 28px));z-index:1;">
           <div class="flip-inner ${state.modalFlipped ? 'is-flipped' : ''}" id="modalFlipCard">
-            <div class="track-card flip-face" style="width:100%;">
+            <div class="track-card flip-face flip-face-front" style="width:100%;">
               <div class="tc-content">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                   <span style="font-size:10.5px;font-weight:700;color:var(--accent);">KETUK 2X KARTU → LIRIK SINKRON</span>
@@ -1828,7 +1917,11 @@ function renderApp() {
                 <div><div style="font-size:15px;font-weight:800;">${esc(mt.title)}</div><div style="font-size:11.5px;color:var(--accent);">${esc(mt.artist)} • Lirik Sinkron</div></div>
                 <button class="icon-btn" id="btnFlipModalBack">↻</button>
               </div>
-              <div class="lyrics-scroll">${lrc.length ? lrc.map((l, i) => `<div class="lyric-line" data-lrc-idx="${i}" data-seek="${l.time ?? ''}">${l.synced ? `<span style="font-size:10px;opacity:.45;margin-right:6px;">${fmt(l.time)}</span>` : ''}${esc(l.text)}</div>`).join('') : '<div style="text-align:center;color:var(--muted);margin-top:40px;">Belum ada lirik.</div>'}</div>
+              <div class="lyrics-scroll">${state.fetchingLyrics ? '<div style="text-align:center;color:var(--accent);margin-top:60px;">Mencari lirik sinkron dari LRCLIB...</div>' : lrc.length ? lrc.map((l, i) => `<div class="lyric-line" data-lrc-idx="${i}" data-seek="${l.time ?? ''}">${l.synced ? `<span style="font-size:10px;opacity:.45;margin-right:6px;">${fmt(l.time)}</span>` : ''}${esc(l.text)}</div>`).join('') : '<div style="text-align:center;color:var(--muted);margin-top:40px;line-height:1.6;">Belum ada lirik.<br><br><button class="pill-btn spotify" style="padding:8px 14px;font-size:12px;" id="btnFetchLrcModal">🔍 Cari Lirik Otomatis</button></div>'}</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid rgba(255,255,255,.1);">
+                <button class="chip" id="btnEditLrcModal">✎ Edit / Tempel Lirik</button>
+                <button class="chip" id="btnFlipModalBack2">↻ Kembali</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1869,7 +1962,22 @@ function renderApp() {
       </div>`;
   }
 
+  const dbHTML = (cur && !state.dynamicBarDismissed) ? `
+    <div class="dynamic-bar ${player.playing ? '' : 'paused'}" id="dynamicBar" style="${cur.imageUrl ? `background-image:url('${esc(cur.imageUrl)}')` : `background:linear-gradient(135deg,${cur.c1||'#6366f1'},${cur.c2||'#1e1b4b'})`}">
+      <span class="db-pulse"></span>
+      <div class="db-art" style="${cur.imageUrl ? '' : `background:linear-gradient(135deg,${cur.c1||'#6366f1'},${cur.c2||'#1e1b4b'})`}">
+        ${cur.imageUrl ? `<img src="${esc(cur.imageUrl)}" alt="">` : `<span style="font-size:13px;font-weight:800;color:#fff;">${esc((cur.title||'?')[0].toUpperCase())}</span>`}
+      </div>
+      <div style="min-width:0;flex:1;text-shadow:0 1px 4px rgba(0,0,0,.7);">
+        <div style="font-size:12px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(cur.title)}</div>
+        <div style="font-size:10.5px;color:rgba(255,255,255,.88);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(cur.artist)}</div>
+      </div>
+      <button class="play-btn" id="btnDbPlay" style="width:30px;height:30px;">${player.playing ? '⏸' : '▶'}</button>
+      <button class="icon-btn" id="btnDbClose" style="width:24px;height:24px;color:#fff;">✕</button>
+    </div>` : '';
+
   root.innerHTML = `
+    ${dbHTML}
     <div class="app">
       <aside class="sidebar">
         <nav class="glass side-nav">
@@ -1940,14 +2048,63 @@ function bindEvents() {
     const t = getAllTracks().find(x => x.id === el.dataset.openModalLrc);
     if (t) { state.modalTrack = t; state.trackModalOpen = true; state.modalFlipped = true; renderApp(); }
   }));
-  on('#modalFlipCard', 'dblclick', async () => {
+  let modalLastTap = 0;
+  const doFlipModal = async () => {
     state.modalFlipped = !state.modalFlipped;
+    renderApp();
     if (state.modalFlipped && state.modalTrack && !state.modalTrack.lyrics) {
+      state.fetchingLyrics = true; renderApp();
       const l = await fetchSyncedLyrics(state.modalTrack.title, state.modalTrack.artist, state.modalTrack.dur);
-      if (l) state.modalTrack.lyrics = l;
+      state.fetchingLyrics = false;
+      if (l) {
+        state.modalTrack.lyrics = l;
+        if (state.modalTrack.source === 'local') await saveLocalTrack(state.modalTrack);
+      }
+      renderApp();
     }
+  };
+  on('#modalFlipCard', 'click', e => {
+    if (e.target.closest('button, input, textarea, .progress, .lyric-line')) return;
+    const now = Date.now();
+    if (now - modalLastTap < 350) { modalLastTap = 0; doFlipModal(); }
+    else modalLastTap = now;
+  });
+  on('#modalFlipCard', 'dblclick', e => {
+    if (e.target.closest('button, input, textarea, .progress, .lyric-line')) return;
+    modalLastTap = 0; doFlipModal();
+  });
+  on('#btnFlipModalBack2', 'click', doFlipModal);
+  on('#btnFetchLrcModal', 'click', async () => {
+    if (!state.modalTrack) return;
+    state.fetchingLyrics = true; renderApp();
+    const l = await fetchSyncedLyrics(state.modalTrack.title, state.modalTrack.artist, state.modalTrack.dur);
+    state.fetchingLyrics = false;
+    if (l) {
+      state.modalTrack.lyrics = l;
+      if (state.modalTrack.source === 'local') await saveLocalTrack(state.modalTrack);
+      showToast('Lirik sinkron ditemukan!');
+    } else showToast('Lirik belum ditemukan. Gunakan tombol Edit Lirik.');
     renderApp();
   });
+  on('#btnEditLrcModal', 'click', () => {
+    if (!state.modalTrack) return;
+    const txt = prompt('Tempel lirik lagu (format LRC [mm:ss.xx] atau teks biasa):', state.modalTrack.lyrics || '');
+    if (txt !== null) {
+      state.modalTrack.lyrics = txt;
+      if (state.modalTrack.source === 'local') saveLocalTrack(state.modalTrack);
+      renderApp();
+    }
+  });
+  document.querySelectorAll('[data-seek]').forEach(el => el.addEventListener('click', () => {
+    const s = Number(el.dataset.seek);
+    if (Number.isFinite(s) && s >= 0 && player.current) { audioEl.currentTime = s; }
+  }));
+  document.querySelectorAll('[data-card-back]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('button')) return;
+    const id = el.dataset.cardBack;
+    const now = Date.now(), last = tapMap.get('b_' + id) || 0; tapMap.set('b_' + id, now);
+    if (now - last < 350) { tapMap.set('b_' + id, 0); state.flippedGridIds.delete(id); renderApp(); }
+  }));
   const flipModal = async () => {
     state.modalFlipped = !state.modalFlipped;
     if (state.modalFlipped && state.modalTrack && !state.modalTrack.lyrics) {
@@ -1960,6 +2117,9 @@ function bindEvents() {
   on('#btnCloseTrackModal', 'click', () => { state.trackModalOpen = false; renderApp(); });
   on('#btnCloseTrackModal2', 'click', () => { state.trackModalOpen = false; renderApp(); });
   on('#btnOpenCurModal', 'click', () => { if (player.current) { state.modalTrack = player.current; state.trackModalOpen = true; renderApp(); } });
+  on('#dynamicBar', 'click', e => { if (!e.target.closest('button') && player.current) { state.modalTrack = player.current; state.trackModalOpen = true; renderApp(); } });
+  on('#btnDbPlay', 'click', e => { e.stopPropagation(); document.getElementById('btnPlayPause')?.click(); });
+  on('#btnDbClose', 'click', e => { e.stopPropagation(); state.dynamicBarDismissed = true; renderApp(); });
 
   on('#btnOpenHub', 'click', () => { state.hubModalOpen = true; renderApp(); });
   on('#sideHub', 'click', () => { state.hubModalOpen = true; renderApp(); });

@@ -1225,3 +1225,92 @@ body {
   justify-content: space-between;
   overflow: hidden;
 }
+
+
+/* FIX: Android WebView 3D Compositing Layer & Explicit Front Face Transform */
+.flip-face-front {
+  transform: rotateY(0deg);
+  z-index: 2;
+}
+
+.flip-inner.is-flipped .flip-face-front {
+  pointer-events: none;
+  z-index: 1;
+}
+
+.flip-inner.is-flipped .flip-face-back {
+  pointer-events: auto;
+  z-index: 3;
+}
+
+.track-card.flip-face {
+  min-height: 430px;
+}
+
+.grid-flip-card .card.flip-face {
+  transform: rotateY(0deg);
+}
+
+.grid-flip-inner.is-flipped .card.flip-face {
+  pointer-events: none;
+}
+
+.grid-flip-inner.is-flipped .grid-flip-back {
+  pointer-events: auto;
+  z-index: 5;
+}
+
+
+/* APPLE-STYLE FULL-ART DYNAMIC POP-UP BAR (Desktop & Mobile Android) */
+.dynamic-bar {
+  background-size: cover !important;
+  background-position: center !important;
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.45) !important;
+  overflow: hidden;
+  transition: transform 0.28s var(--ease), opacity 0.25s;
+}
+
+.dynamic-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(10, 12, 22, 0.52) 0%, rgba(10, 12, 22, 0.22) 50%, rgba(10, 12, 22, 0.52) 100%);
+  backdrop-filter: blur(4px) saturate(140%);
+  -webkit-backdrop-filter: blur(4px) saturate(140%);
+  z-index: 0;
+}
+
+.dynamic-bar > * {
+  position: relative;
+  z-index: 1;
+}
+
+.db-art {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid rgba(255, 255, 255, 0.48);
+  background-size: cover;
+  background-position: center;
+}
+
+.db-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (max-width: 720px) {
+  .dynamic-bar {
+    display: flex !important;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    min-width: 240px;
+    max-width: calc(100vw - 24px);
+    padding: 5px 8px;
+  }
+}

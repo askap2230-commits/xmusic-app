@@ -255,7 +255,7 @@ export function audiusToTrack(t) {
     imageUrl: t.artwork?.['480x480'] || t.artwork?.['150x150'] || null,
     url: `${base}/tracks/${t.id}/stream?app_name=${APP_NAME}`,
     source: 'audius',
-    lyrics: t.description || ''
+    lyrics: ''
   };
 }
 

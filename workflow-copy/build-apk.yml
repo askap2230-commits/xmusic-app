@@ -131,6 +131,7 @@ jobs:
 
           # Generate icon Tauri dan jalankan skrip sinkronisasi penuh mipmap + Adaptive Icon v26
           npx tauri icon app-icon.png
+          python3 -m pip install --break-system-packages --quiet Pillow || (sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil)
           python3 scripts/sync-android-icons.py
 
           # Aktifkan R8 Minify, ShrinkResources, usesCleartextTraffic, dan optimasi Gradle

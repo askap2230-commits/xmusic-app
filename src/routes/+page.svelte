@@ -729,7 +729,7 @@
     <div class="grid-flip-inner {isFlipped ? 'is-flipped' : ''}">
       <!-- SISI DEPAN KARTU -->
       <div
-        class="card flip-face {active ? 'playing' : ''}"
+        class="card flip-face flip-face-front {active ? 'playing' : ''}"
         onclick={() => handleCardInteraction(t)}
         ondblclick={(e) => { e.stopPropagation(); if (engine.current?.id !== t.id) engine.playTrack(t, allTracks); toggleGridFlip(t, e); }}
         role="button"
@@ -818,9 +818,25 @@
 
 <!-- DYNAMIC ISLAND FLOATING BAR -->
 {#if engine.current && !dynamicBarDismissed}
-  <div class="dynamic-bar {engine.playing ? '' : 'paused'}" onclick={() => openTrackModal(engine.current)} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && openTrackModal(engine.current)}>
+  <div
+    class="dynamic-bar {engine.playing ? '' : 'paused'}"
+    style={engine.current.imageUrl
+      ? `background-image: url("${engine.current.imageUrl}");`
+      : `background: linear-gradient(135deg, ${engine.current.c1 || '#6366f1'}, ${engine.current.c2 || '#1e1b4b'});`}
+    onclick={() => openTrackModal(engine.current)}
+    role="button"
+    tabindex="0"
+    onkeydown={(e) => e.key === 'Enter' && openTrackModal(engine.current)}
+  >
     <span class="db-pulse"></span>
-    <div style="min-width:0;flex:1;">
+    <div class="db-art" style={engine.current.imageUrl ? '' : `background: linear-gradient(135deg, ${engine.current.c1 || '#6366f1'}, ${engine.current.c2 || '#1e1b4b'});`}>
+      {#if engine.current.imageUrl}
+        <img src={engine.current.imageUrl} alt="" />
+      {:else}
+        <span style="font-size:13px;font-weight:800;color:#fff;">{(engine.current.title || '?')[0].toUpperCase()}</span>
+      {/if}
+    </div>
+    <div style="min-width:0;flex:1;text-shadow:0 1px 4px rgba(0,0,0,.65);">
       <div style="font-size:12px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{engine.current.title}</div>
       <div style="font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
         {engine.current.artist} {engine.eqEnabled && engine.eqPreset !== 'flat' ? `• EQ: ${EQ_PRESETS[engine.eqPreset]?.name || 'Custom'}` : ''}
@@ -1489,7 +1505,7 @@
     <div class="flip-scene" style="width:min(360px,calc(100vw - 28px));z-index:1;">
       <div class="flip-inner {modalFlipped ? 'is-flipped' : ''}" ondblclick={handleModalDoubleTap}>
         <!-- SISI DEPAN KARTU PEMUTAR -->
-        <div class="track-card flip-face" style="width:100%;">
+        <div class="track-card flip-face flip-face-front" style="width:100%;">
           <div
             class="tc-bg-blur"
             style={activeModalTrack.imageUrl
