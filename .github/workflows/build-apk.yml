@@ -1,4 +1,4 @@
-name: Build Android APK (Tauri v2)
+name: Build APK
 
 on:
   workflow_dispatch:
@@ -9,11 +9,19 @@ permissions:
   contents: write
 
 jobs:
-  build-apk:
+  build:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Normalize project directory
+        run: |
+          if [ ! -f "package.json" ] && [ -f "xmusic-tauri/package.json" ]; then
+            shopt -s dotglob
+            mv xmusic-tauri/* .
+            rmdir xmusic-tauri || true
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -29,15 +37,16 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK Platform 34, Build-Tools & NDK
+      - name: Install Android platform, build-tools, NDK
         run: |
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> "$GITHUB_ENV"
 
-      - name: Setup Rust Toolchain & Android Targets
+      - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
@@ -47,99 +56,57 @@ jobs:
         with:
           workspaces: "src-tauri -> target"
 
-      - name: Install NPM Dependencies
+      - name: Install dependencies
         run: npm install
 
-      - name: Generate Tauri Icons (RGBA Ready)
+      - name: Generate icons
         run: npx tauri icon app-icon.png
 
-      - name: Initialize Tauri v2 Android Project
-        run: npx tauri android init --ci --skip-targets-install
-
-      - name: Configure Android Manifest & WebView Media Playback
+      - name: Init Android project
         run: |
+          export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
+          npx tauri android init
           MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
-            # Pastikan izin audio/penyimpanan dan cleartext traffic serta extractNativeLibs aktif agar APK dapat diinstal di semua Android
-            sed -i 's/android:usesCleartextTraffic="${usesCleartextTraffic}"/android:usesCleartextTraffic="true" android:extractNativeLibs="true"/g' "$MANIFEST"
-            if ! grep -q "READ_MEDIA_AUDIO" "$MANIFEST"; then
-              sed -i 's|<uses-permission android:name="android.permission.INTERNET" />|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />\n    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />|g' "$MANIFEST"
-            fi
-            cat "$MANIFEST"
+            sed -i 's/android:usesCleartextTraffic="${usesCleartextTraffic}"/android:usesCleartextTraffic="true"/g' "$MANIFEST"
           fi
 
-          # Aktifkan autoplay transisi lagu di WebView Android (MainActivity.kt)
-          MAIN_KT=$(find src-tauri/gen/android -name "MainActivity.kt" | head -n 1)
-          if [ -n "$MAIN_KT" ] && [ -f "$MAIN_KT" ]; then
-            cat << 'EOF' > "$MAIN_KT"
-package com.nys.xmusic
+      - name: Build APK (universal)
+        run: |
+          export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
+          npx tauri android build --apk
 
-import android.os.Bundle
-import android.webkit.WebView
-import androidx.activity.enableEdgeToEdge
-
-class MainActivity : TauriActivity() {
-  override fun onCreate(savedInstanceState: Bundle?) {
-    enableEdgeToEdge()
-    super.onCreate(savedInstanceState)
-  }
-
-  override fun onWebViewCreate(webView: WebView) {
-    super.onWebViewCreate(webView)
-    webView.settings.mediaPlaybackRequiresUserGesture = false
-    webView.settings.javaScriptCanOpenWindowsAutomatically = true
-    webView.settings.domStorageEnabled = true
-  }
-}
-EOF
-            cat "$MAIN_KT"
-          fi
-
-      - name: Build Universal Release APK
-        run: npx tauri android build --apk true
-
-      - name: Align & Sign APK (v1 + v2 + v3 Signatures)
+      - name: Sign APK
         env:
           KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
           KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           APK=$(find src-tauri/gen/android -name "*.apk" -path "*release*" | head -n 1)
-          if [ -z "$APK" ]; then
-            echo "Error: File APK hasil build tidak ditemukan!"
-            exit 1
-          fi
           echo "APK ditemukan: $APK"
           BT="$ANDROID_HOME/build-tools/34.0.0"
-
           if [ -n "$KS_B64" ]; then
             echo "$KS_B64" | base64 -d > ks.jks
             PASS="$KS_PASS"
           else
             PASS="xmusic123"
             rm -f ks.jks
-            keytool -genkeypair -v -keystore ks.jks -alias xmusic -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass "$PASS" -keypass "$PASS" -dname "CN=Xmusic, OU=Mobile, O=Nys, L=Jakarta, S=DKI, C=ID"
+            keytool -genkeypair -v -keystore ks.jks -alias xmusic -keyalg RSA -keysize 2048 -validity 10000               -storepass "$PASS" -keypass "$PASS" -dname "CN=Xmusic"
           fi
+          "$BT/zipalign" -f -p 4 "$APK" aligned.apk
+          "$BT/apksigner" sign             --ks ks.jks             --ks-key-alias xmusic             --ks-pass pass:"$PASS"             --key-pass pass:"$PASS"             --v1-signing-enabled true             --v2-signing-enabled true             --v3-signing-enabled true             --out Xmusic.apk             aligned.apk
+          "$BT/apksigner" verify -v Xmusic.apk
 
-          "$BT/zipalign" -v -f -p 4 "$APK" aligned.apk
-          "$BT/apksigner" sign \
-            --ks ks.jks \
-            --ks-key-alias xmusic \
-            --ks-pass pass:"$PASS" \
-            --key-pass pass:"$PASS" \
-            --v1-signing-enabled true \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
-            --out Xmusic-v1.0.0-universal-release.apk \
-            aligned.apk
-          "$BT/apksigner" verify -v Xmusic-v1.0.0-universal-release.apk
-          cp Xmusic-v1.0.0-universal-release.apk Xmusic.apk
-
-      - name: Upload Signed APK Artifact
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Xmusic-apk-signed
-          path: |
-            Xmusic.apk
-            Xmusic-v1.0.0-universal-release.apk
-          if-no-files-found: error
+          name: Xmusic-apk
+          path: Xmusic.apk
+
+      - name: Publish APK to GitHub Releases
+        continue-on-error: true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "nys Xmusic APK v1.0.${{ github.run_number }}"
+          body: "File APK Android Universal (Signed v1/v2/v3) siap diinstal langsung di perangkat Android."
+          files: Xmusic.apk

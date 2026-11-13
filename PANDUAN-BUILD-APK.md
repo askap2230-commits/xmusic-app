@@ -1,0 +1,24 @@
+# Panduan Lengkap Upload ke GitHub & Build APK Otomatis (Tauri v2)
+
+Proyek **nys Xmusic (Tauri v2)** ini telah diverifikasi dan dilengkapi dengan **GitHub Actions Workflow** (`.github/workflows/build-apk.yml`) yang 100% valid untuk mengompilasi, merapikan (`zipalign`), dan menandatangani (`apksigner` skema v1 + v2 + v3) aplikasi menjadi file **`Xmusic.apk`**.
+
+---
+
+## Cara Cepat Memperbaiki Error Workflow di Repository yang Sudah Ada (`xmusic-app`)
+
+Jika Anda sudah terlanjur mengunggah file ke repository GitHub Anda (misalnya `askap2230-commits/xmusic-app`), Anda **tidak perlu mengunggah ulang semua file**. Cukup perbarui file `.github/workflows/build-apk.yml` langsung di GitHub:
+
+1. Buka repository GitHub Anda, lalu masuk ke file **`.github/workflows/build-apk.yml`**.
+2. Klik ikon pensil (**Edit this file**) di pojok kanan atas tampilan file.
+3. Hapus seluruh isi lama, lalu tempel (*paste*) isi dari file **`workflow-copy/build-apk.yml`** yang ada di dalam paket ini.
+4. Klik tombol hijau **Commit changes...** -> **Commit changes**.
+5. Buka tab **Actions** — workflow **Build APK** akan langsung berjalan otomatis hingga selesai!
+
+---
+
+## Cara Upload dari Awal ke Repository Baru
+
+1. Buat repository **Public** baru di [https://github.com/new](https://github.com/new).
+2. Ekstrak `xmusic-tauri-v2-fixed.zip`, lalu unggah seluruh isinya (`dist`, `src-tauri`, `.github`, `app-icon.png`, `package.json`, `README.md`) ke repository GitHub Anda.
+3. Buka tab **Actions** dan tunggu proses **Build APK** selesai (sekitar 6–10 menit).
+4. Setelah centang hijau, unduh **`Xmusic.apk`** melalui menu **Releases** di halaman utama repository atau melalui bagian **Artifacts (`Xmusic-apk`)** di bagian bawah halaman hasil workflow.
