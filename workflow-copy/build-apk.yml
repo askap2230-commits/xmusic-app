@@ -1,119 +1,218 @@
-name: Build APK
+name: Build Optimized Android APK (Tauri v2 + SvelteKit 3)
 
 on:
   workflow_dispatch:
+    inputs:
+      target_arch:
+        description: "Arsitektur CPU APK (aarch64 = cepat & ukuran kecil ~5MB untuk HP modern, universal = semua CPU)"
+        required: false
+        default: "aarch64"
+        type: choice
+        options:
+          - aarch64
+          - universal
   push:
     branches: [main, master]
 
 permissions:
   contents: write
 
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_OPTS: "-Xmx4096m"
+  GRADLE_OPTS: "-Dorg.gradle.daemon=true -Dorg.gradle.parallel=true -Dorg.gradle.caching=true -Dorg.gradle.configureondemand=true -Xmx4096m"
+  CARGO_INCREMENTAL: "0"
+  CARGO_NET_RETRY: "10"
+  RUST_BACKTRACE: "1"
+
 jobs:
-  build:
-    runs-on: ubuntu-22.04
+  build-apk:
+    name: Build & Sign Production APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
     steps:
-      - name: Checkout repository
+      - name: 1. Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Normalize project directory
+      - name: 2. Normalisasi Struktur Direktori Proyek
         run: |
-          if [ ! -f "package.json" ] && [ -f "xmusic-tauri/package.json" ]; then
-            shopt -s dotglob
-            mv xmusic-tauri/* .
-            rmdir xmusic-tauri || true
-          fi
+          shopt -s dotglob
+          for dir in xmusic-tauri-v2 xmusic-tauri xmusic-app; do
+            if [ ! -f "package.json" ] && [ -f "$dir/package.json" ]; then
+              echo "Memindahkan isi subfolder $dir ke root repository..."
+              mv "$dir"/* .
+              rmdir "$dir" || true
+            fi
+          done
+          ls -la
 
-      - name: Setup Node.js
+      - name: 3. Setup Node.js 24 LTS (SvelteKit 3 + Vite 8 Runtime)
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: "24"
 
-      - name: Setup Java 17
+      - name: 4. Cache Node Modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node24-npm-${{ hashFiles('package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node24-npm-
+
+      - name: 5. Setup Java 17 (Temurin)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: "17"
 
-      - name: Install Android platform, build-tools, NDK
+      - name: 6. Cache Android Gradle Build & Wrapper
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('src-tauri/tauri.conf.json', 'src-tauri/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: 7. Deteksi & Konfigurasi Cepat Android SDK / NDK
         run: |
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
           SDKMANAGER=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n 1)
-          yes | "$SDKMANAGER" --licenses > /dev/null || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+
+          # Gunakan NDK r26/r27 yang sudah terpasang di runner jika ada agar tidak perlu unduh 1.2 GB ulang
+          EXISTING_NDK=$(ls -d "$ANDROID_HOME"/ndk/26.* "$ANDROID_HOME"/ndk/27.* 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -z "$EXISTING_NDK" ]; then
+            echo "Mengunduh NDK 26.1.10909125..."
+            "$SDKMANAGER" "ndk;26.1.10909125"
+            EXISTING_NDK="$ANDROID_HOME/ndk/26.1.10909125"
+          else
+            echo "Menggunakan NDK yang sudah tersedia di runner: $EXISTING_NDK"
+          fi
+
+          # Pastikan platform android-34 dan build-tools tersedia
+          if [ ! -d "$ANDROID_HOME/platforms/android-34" ]; then
+            "$SDKMANAGER" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          fi
+
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$EXISTING_NDK" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$EXISTING_NDK" >> "$GITHUB_ENV"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
 
-      - name: Setup Rust Toolchain
+      - name: 8. Setup Rust Toolchain (Target Spesifik untuk Kecepatan Build)
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: ${{ github.event.inputs.target_arch == 'universal' && 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android' || 'aarch64-linux-android' }}
 
-      - name: Rust Cache
+      - name: 9. Cache Kompilasi Rust (Swatinem/rust-cache)
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri -> target"
+          cache-on-failure: true
+          shared-key: "tauri-v2-android-${{ github.event.inputs.target_arch || 'aarch64' }}"
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Ensure RGBA icon and generate Tauri icons
+      - name: 10. Install Dependencies & Build Frontend SvelteKit 3
         run: |
-          python3 -m pip install --quiet Pillow || true
-          python3 -c "from PIL import Image; im = Image.open('app-icon.png').convert('RGBA'); im.save('app-icon.png', 'PNG')"
-          npx tauri icon app-icon.png
+          npm install --legacy-peer-deps --no-audit --no-fund
+          npm run build
 
-      - name: Init Android project
+      - name: 11. Inisialisasi Proyek Android & Injeksi Icon + Optimasi R8
         run: |
-          export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
+          # PENTING: Jalankan tauri android init TERLEBIH DAHULU sebelum generate icon
           npx tauri android init
-          MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ]; then
-            sed -i 's/android:usesCleartextTraffic="${usesCleartextTraffic}"/android:usesCleartextTraffic="true"/g' "$MANIFEST"
+
+          # Generate icon Tauri dan jalankan skrip sinkronisasi penuh mipmap + Adaptive Icon v26
+          npx tauri icon app-icon.png
+          python3 scripts/sync-android-icons.py
+
+          # Aktifkan R8 Minify, ShrinkResources, usesCleartextTraffic, dan optimasi Gradle
+          python3 scripts/optimize-android-gradle.py
+
+      - name: 12. Build Production APK (Ringan & Cepat)
+        run: |
+          ARCH="${{ github.event.inputs.target_arch || 'aarch64' }}"
+          echo "Membangun APK dengan target arsitektur: $ARCH"
+          if [ "$ARCH" = "universal" ]; then
+            npx tauri android build --apk
+          else
+            npx tauri android build --apk --target aarch64
           fi
 
-      - name: Build APK (universal)
-        run: |
-          export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
-          npx tauri android build --apk
-
-      - name: Sign APK
+      - name: 13. Zipalign & Sign APK (v1 + v2 + v3 Signature)
         env:
           KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
           KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           APK=$(find src-tauri/gen/android -name "*.apk" -path "*release*" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: File APK release tidak ditemukan!"
+            exit 1
+          fi
           echo "APK ditemukan: $APK"
-          BT="$ANDROID_HOME/build-tools/34.0.0"
-          if [ ! -d "$BT" ]; then
-            BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
-          fi
+
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          echo "Menggunakan Android Build-Tools: $BT"
+
           if [ -n "$KS_B64" ]; then
-            echo "$KS_B64" | base64 -d > ks.jks
-            PASS="$KS_PASS"
-          else
+            echo "Menggunakan keystore dari GitHub Secrets..."
+            echo "$KS_B64" | base64 -d > release-ks.jks
+            PASS="${KS_PASS:-xmusic123}"
+          elif [ -f "src-tauri/keystore/xmusic-release.jks" ]; then
+            echo "Menggunakan keystore rilis deterministik bawaan proyek..."
+            cp src-tauri/keystore/xmusic-release.jks release-ks.jks
             PASS="xmusic123"
-            rm -f ks.jks
-            keytool -genkeypair -v -keystore ks.jks -alias xmusic -keyalg RSA -keysize 2048 -validity 10000               -storepass "$PASS" -keypass "$PASS" -dname "CN=Xmusic"
+          else
+            echo "Membuat keystore fallback..."
+            PASS="xmusic123"
+            keytool -genkeypair -v -keystore release-ks.jks -alias xmusic -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$PASS" -keypass "$PASS" -dname "CN=nys Xmusic, O=Nys, C=ID"
           fi
+
           "$BT/zipalign" -f -p 4 "$APK" aligned.apk
-          "$BT/apksigner" sign             --ks ks.jks             --ks-key-alias xmusic             --ks-pass pass:"$PASS"             --key-pass pass:"$PASS"             --v1-signing-enabled true             --v2-signing-enabled true             --v3-signing-enabled true             --out Xmusic.apk             aligned.apk
+          "$BT/apksigner" sign \
+            --ks release-ks.jks \
+            --ks-key-alias xmusic \
+            --ks-pass pass:"$PASS" \
+            --key-pass pass:"$PASS" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out Xmusic.apk \
+            aligned.apk
           "$BT/apksigner" verify -v Xmusic.apk
 
-      - name: Upload APK Artifact
+          APK_SIZE=$(du -h Xmusic.apk | cut -f1)
+          echo "### ✅ Build APK Selesai!" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Nama File**: \`Xmusic.apk\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Ukuran Akhir**: **${APK_SIZE}** (Teroptimasi LTO + Strip + R8)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Arsitektur**: \`${{ github.event.inputs.target_arch || 'aarch64 (arm64-v8a)' }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Signature**: v1 (JAR) + v2 (APK Signature Scheme v2) + v3" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 14. Upload APK ke GitHub Actions Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Xmusic-apk
           path: Xmusic.apk
+          if-no-files-found: error
+          retention-days: 30
 
-      - name: Publish APK to GitHub Releases
+      - name: 15. Publish APK ke GitHub Releases
         continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: "nys Xmusic APK v1.0.${{ github.run_number }}"
-          body: "File APK Android Universal (Signed v1/v2/v3) siap diinstal langsung di perangkat Android."
+          tag_name: v2.0.${{ github.run_number }}
+          name: "nys Xmusic v2.0.${{ github.run_number }} (SvelteKit 3 + Tauri v2)"
+          body: |
+            ### 🎵 nys Xmusic v2.0.${{ github.run_number }} — Production Release
+            - **Framework**: Tauri v2.12 + SvelteKit 3.2 (Svelte 5 Runes)
+            - **Fitur**: Pemutar Offline (MP3/WAV/FLAC/M4A), 5-Band Web Audio Equalizer + Preamp, Real-Time FFT Visualizer, Sleep Timer, Playback Speed & Pitch Control, Antrean & Lirik, Streaming Audius, Hub Spotify/YouTube, dan API Downloader.
+            - **Optimasi APK**: LTO Fat + Strip Symbols + R8 Resource Shrinking + Signed (v1/v2/v3) + Adaptive Launcher Icon.
           files: Xmusic.apk

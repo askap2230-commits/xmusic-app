@@ -1,7 +1,7 @@
 {
   "name": "nys Xmusic",
   "short_name": "Xmusic",
-  "description": "Musik offline dan streaming dari seluruh dunia",
+  "description": "Pemutar musik offline, streaming Audius, 5-Band Web Audio Equalizer & Hub Musik",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

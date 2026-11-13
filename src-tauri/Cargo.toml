@@ -1,21 +1,29 @@
 [package]
 name = "xmusic"
-version = "1.0.0"
-description = "nys Xmusic"
+version = "2.0.0"
+description = "nys Xmusic — Pemutar Musik Offline & Streaming (Tauri v2 + SvelteKit 3)"
+authors = ["Nys"]
 edition = "2021"
+rust-version = "1.77.2"
 
 [lib]
 name = "xmusic_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+tauri = { version = "2.12", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
+# Optimasi Ekstrem Ukuran Binary Production (.so Android & Executable Desktop)
 [profile.release]
-opt-level = "s"
-strip = true
+panic = "abort"         # Hilangkan overhead unwinding stack saat panic (~15-20% lebih kecil)
+codegen-units = 1       # Maksimalkan optimasi lintas modul oleh LLVM
+lto = "fat"             # Link-Time Optimization penuh di seluruh dependency crate
+opt-level = "z"         # Optimasi khusus ukuran binary terkecil
+strip = "symbols"       # Buang seluruh tabel simbol debug dari binary akhir
+overflow-checks = false # Matikan pengecekan integer overflow di mode rilis
+incremental = false     # Pastikan hasil build rilis bersih dan deterministik
