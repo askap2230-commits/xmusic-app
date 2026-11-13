@@ -34,17 +34,18 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Android platform, build-tools, NDK
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          SDKMANAGER=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n 1)
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -59,8 +60,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Generate icons
-        run: npx tauri icon app-icon.png
+      - name: Ensure RGBA icon and generate Tauri icons
+        run: |
+          python3 -m pip install --quiet Pillow || true
+          python3 -c "from PIL import Image; im = Image.open('app-icon.png').convert('RGBA'); im.save('app-icon.png', 'PNG')"
+          npx tauri icon app-icon.png
 
       - name: Init Android project
         run: |
@@ -84,6 +88,9 @@ jobs:
           APK=$(find src-tauri/gen/android -name "*.apk" -path "*release*" | head -n 1)
           echo "APK ditemukan: $APK"
           BT="$ANDROID_HOME/build-tools/34.0.0"
+          if [ ! -d "$BT" ]; then
+            BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          fi
           if [ -n "$KS_B64" ]; then
             echo "$KS_B64" | base64 -d > ks.jks
             PASS="$KS_PASS"
