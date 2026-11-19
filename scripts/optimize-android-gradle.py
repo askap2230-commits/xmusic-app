@@ -56,6 +56,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import org.json.JSONObject
 import java.lang.ref.WeakReference
 
 class XmusicMediaService : Service() {
@@ -113,8 +114,13 @@ class XmusicMediaService : Service() {
             val svc = instanceRef?.get()
             val pos = svc?.readLivePositionMs() ?: nativePositionMs
             val dur = svc?.readLiveDurationMs() ?: nativeDurationMs
-            val safeId = nativeTrackId.replace("\\", "\\\\").replace("\"", "\\\"")
-            return "{\"active\":$isNativeActive,\"playing\":$isNativePlaying,\"trackId\":\"$safeId\",\"positionMs\":$pos,\"durationMs\":$dur}"
+            return JSONObject()
+                .put("active", isNativeActive)
+                .put("playing", isNativePlaying)
+                .put("trackId", nativeTrackId)
+                .put("positionMs", pos)
+                .put("durationMs", dur)
+                .toString()
         }
     }
 
