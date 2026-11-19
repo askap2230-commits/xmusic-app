@@ -17,6 +17,77 @@ import type {
 const APP_NAME = 'nysxmusic';
 const DEFAULT_AUDIUS_BASE = 'https://api.audius.co/v1';
 
+async function fetchJsonSmart<T>(url: string, timeoutMs = 4500, signal?: AbortSignal): Promise<T> {
+  if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__ && !signal?.aborted) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return await invoke<T>('http_get_json', { url });
+    } catch {
+      // Fall through to standard WebView fetch
+    }
+  }
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  const onAbort = (): void => controller.abort();
+  signal?.addEventListener('abort', onAbort, { once: true });
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(id);
+    signal?.removeEventListener('abort', onAbort);
+  }
+}
+
+interface DeezerTrackItem {
+  id?: number;
+  title?: string;
+  duration?: number;
+  preview?: string;
+  artist?: { name?: string; picture_medium?: string };
+  album?: { title?: string; cover_big?: string; cover_medium?: string };
+}
+
+function deezerItemToTrack(item: DeezerTrackItem): Track | null {
+  if (!item?.id || !item.preview) return null;
+  return {
+    id: `dz_${item.id}`,
+    title: item.title || 'Untitled',
+    artist: item.artist?.name || 'Deezer Artist',
+    artistPhoto: item.artist?.picture_medium || null,
+    album: item.album?.title || 'Global Chart',
+    dur: 30,
+    isPreview: true,
+    c1: '#a238ff',
+    c2: '#1c1c1e',
+    imageUrl: item.album?.cover_big || item.album?.cover_medium || null,
+    url: item.preview,
+    source: 'catalog'
+  };
+}
+
+async function fetchDeezerFallback(path: string): Promise<Track[]> {
+  try {
+    const isSearch = path.includes('/tracks/search');
+    const url = isSearch
+      ? (() => {
+          const m = path.match(/query=([^&]+)/);
+          const q = m ? decodeURIComponent(m[1]) : 'pop hits';
+          return `https://api.deezer.com/search?q=${encodeURIComponent(q)}&limit=18`;
+        })()
+      : (() => {
+          const m = path.match(/offset=(\d+)/);
+          const idx = m ? Number(m[1]) || 0 : 0;
+          return `https://api.deezer.com/chart/0/tracks?limit=16&index=${idx}`;
+        })();
+    const data = await fetchJsonSmart<{ data?: DeezerTrackItem[] }>(url, 4500);
+    return (data.data || []).map(deezerItemToTrack).filter((t): t is Track => Boolean(t));
+  } catch {
+    return [];
+  }
+}
+
 const DEFAULT_API_CONFIG: ApiConfig = {
   rapidApiKey: '',
   rapidApiHost: 'youtube-mp36.p.rapidapi.com',
@@ -270,35 +341,37 @@ export async function audiusFetch(path: string): Promise<Track[]> {
   const sep = path.includes('?') ? '&' : '?';
 
   try {
-    const res = await fetch(`${primary}${path}${sep}app_name=${APP_NAME}`);
-    if (res.ok) {
-      const data = (await res.json()) as { data?: unknown[] };
-      return (data.data || []).map(audiusToTrack);
-    }
+    const data = await fetchJsonSmart<{ data?: unknown[] }>(
+      `${primary}${path}${sep}app_name=${APP_NAME}`,
+      4500
+    );
+    const items = (data.data || []).map(audiusToTrack);
+    if (items.length > 0) return items;
   } catch (err) {
     console.warn('[Audius Primary Error]', err);
   }
 
   try {
-    const hostRes = await fetch('https://api.audius.co');
-    const hostData = (await hostRes.json()) as { data?: string[] };
-    const nodes = hostData?.data || [];
-    for (const node of nodes.slice(0, 3)) {
-      try {
+    const hostData = await fetchJsonSmart<{ data?: string[] }>('https://api.audius.co', 3500);
+    const nodes = (hostData?.data || []).slice(0, 3);
+    if (nodes.length > 0) {
+      const attempts = nodes.map(async (node) => {
         const nodeUrl = `${node.replace(/\/$/, '')}/v1`;
-        const res = await fetch(`${nodeUrl}${path}${sep}app_name=${APP_NAME}`);
-        if (res.ok) {
-          const data = (await res.json()) as { data?: unknown[] };
-          return (data.data || []).map(audiusToTrack);
-        }
-      } catch {
-        // Try next discovery node
-      }
+        const data = await fetchJsonSmart<{ data?: unknown[] }>(
+          `${nodeUrl}${path}${sep}app_name=${APP_NAME}`,
+          3800
+        );
+        const items = (data.data || []).map(audiusToTrack);
+        if (items.length === 0) throw new Error('empty');
+        return items;
+      });
+      return await Promise.any(attempts);
     }
   } catch {
-    // Offline mode
+    // Fall through to Deezer public chart/search fallback
   }
-  return [];
+
+  return fetchDeezerFallback(path);
 }
 
 export async function fetchTrending(limit = 16, offset = 0): Promise<Track[]> {
@@ -958,11 +1031,8 @@ async function queryItunesCatalog(
   const safeCountry = /^[A-Z]{2}$/.test(country) ? country : 'ID';
   const url = `https://itunes.apple.com/search?media=music&entity=song&country=${safeCountry}&limit=${limit}&term=${encodeURIComponent(cleanTerm)}`;
   try {
-    const res = await fetch(url, { signal });
-    if (res.ok) {
-      const data = (await res.json()) as { results?: ItunesTrackItem[] };
-      return Array.isArray(data.results) ? data.results : [];
-    }
+    const data = await fetchJsonSmart<{ results?: ItunesTrackItem[] }>(url, 4500, signal);
+    if (Array.isArray(data.results) && data.results.length > 0) return data.results;
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') return [];
   }

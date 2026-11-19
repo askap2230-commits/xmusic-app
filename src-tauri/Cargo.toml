@@ -3,7 +3,7 @@
 
 [package]
 name = "xmusic"
-version = "6.7.0"
+version = "6.8.0"
 description = "nys Xmusic — Offline & Streaming Music Player (Tauri v2.12 + SvelteKit 3 + Konsta UI iOS)"
 authors = ["Azka Putra"]
 license = "AGPL-3.0-or-later"

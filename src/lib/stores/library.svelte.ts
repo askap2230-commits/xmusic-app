@@ -104,7 +104,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '6.7.0',
+    version: '6.8.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
@@ -401,37 +401,49 @@ class AppStore {
     this.audiusLoading = this.trendingTracks.length === 0 || manual;
     this.catalogLoading = this.catalogTrending.length === 0 || manual;
 
-    const ytTask = fetchYtTrending(this.algoConfig.region, this.ytPage).then((yt) => {
-      if (yt.length > 0) {
-        this.ytTracks = yt;
-        this.networkReachable = true;
-        saveJSON('nys_cache_yt', yt.slice(0, 12));
-        if (engine.queue.length === 0) engine.queue = [...this.localTracks, ...yt];
-      }
-      this.ytLoading = false;
-      return yt.length;
-    });
+    const ytTask = fetchYtTrending(this.algoConfig.region, this.ytPage)
+      .then((yt) => {
+        if (yt.length > 0) {
+          this.ytTracks = yt;
+          this.networkReachable = true;
+          saveJSON('nys_cache_yt', yt.slice(0, 12));
+          if (engine.queue.length === 0) engine.queue = [...this.localTracks, ...yt];
+        }
+        return yt.length;
+      })
+      .catch(() => 0)
+      .finally(() => {
+        this.ytLoading = false;
+      });
 
-    const audiusTask = fetchTrending(12, this.audiusOffset).then((audius) => {
-      if (audius.length > 0) {
-        this.trendingTracks = audius;
-        this.networkReachable = true;
-        saveJSON('nys_cache_audius', audius.slice(0, 12));
-        if (engine.queue.length === 0) engine.queue = [...this.localTracks, ...audius];
-      }
-      this.audiusLoading = false;
-      return audius.length;
-    });
+    const audiusTask = fetchTrending(12, this.audiusOffset)
+      .then((audius) => {
+        if (audius.length > 0) {
+          this.trendingTracks = audius;
+          this.networkReachable = true;
+          saveJSON('nys_cache_audius', audius.slice(0, 12));
+          if (engine.queue.length === 0) engine.queue = [...this.localTracks, ...audius];
+        }
+        return audius.length;
+      })
+      .catch(() => 0)
+      .finally(() => {
+        this.audiusLoading = false;
+      });
 
-    const catalogTask = fetchRegionalViralFeed(this.algoConfig, 12, this.catalogPage).then((cat) => {
-      if (cat.length > 0) {
-        this.catalogTrending = cat;
-        this.networkReachable = true;
-        saveJSON('nys_cache_catalog', cat.slice(0, 12));
-      }
-      this.catalogLoading = false;
-      return cat.length;
-    });
+    const catalogTask = fetchRegionalViralFeed(this.algoConfig, 12, this.catalogPage)
+      .then((cat) => {
+        if (cat.length > 0) {
+          this.catalogTrending = cat;
+          this.networkReachable = true;
+          saveJSON('nys_cache_catalog', cat.slice(0, 12));
+        }
+        return cat.length;
+      })
+      .catch(() => 0)
+      .finally(() => {
+        this.catalogLoading = false;
+      });
 
     // Also lazily warm the active Spotify Chart tab if not cached yet
     if (!this.spotifyChartCache[this.activeSpotifyChartTitle]?.length) {

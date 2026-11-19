@@ -32,10 +32,68 @@ fn get_runtime_info(app: tauri::AppHandle) -> RuntimeInfo {
     RuntimeInfo {
         app_name: "nys Xmusic",
         version: app.package_info().version.to_string(),
-        engine: "Tauri v2.12 + Rust InnerTube + Konsta UI iOS",
+        engine: "Tauri v2.12 + Rust Native HTTP/InnerTube + Konsta UI iOS",
         platform: std::env::consts::OS,
         arch: std::env::consts::ARCH,
     }
+}
+
+fn is_allowed_music_host(url: &str) -> bool {
+    if !url.starts_with("https://") {
+        return false;
+    }
+    let rest = &url["https://".len()..];
+    let host = rest.split('/').next().unwrap_or("").to_ascii_lowercase();
+    let host_no_port = host.split(':').next().unwrap_or("");
+    let allowed_suffixes = [
+        "audius.co",
+        "itunes.apple.com",
+        "api.deezer.com",
+        "archive.org",
+        "lrclib.net",
+        "piped.yt",
+        "kavin.rocks",
+        "adminforge.de",
+        "privacy.com.de",
+        "leptons.xyz",
+        "invidious.io",
+        "googleapis.com",
+        "open.spotify.com",
+        "youtube.com",
+    ];
+    allowed_suffixes
+        .iter()
+        .any(|s| host_no_port == *s || host_no_port.ends_with(&format!(".{s}")))
+        || host_no_port.contains("audius")
+        || host_no_port.contains("piped")
+        || host_no_port.contains("invidious")
+}
+
+/// Zero-CORS native HTTPS JSON fetcher for public music APIs (Audius, Deezer, iTunes, Archive.org, LRCLIB).
+/// Eliminates Android WebView CORS/origin failures and enforces a strict 5-second timeout.
+#[tauri::command]
+async fn http_get_json(url: String) -> Result<Value, String> {
+    let clean = url.trim();
+    if !is_allowed_music_host(clean) {
+        return Err(String::from("Blocked non-allowlisted URL"));
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .user_agent("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let res = client
+        .get(clean)
+        .header("Accept", "application/json, text/plain, */*")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        return Err(format!("HTTP {}", res.status()));
+    }
+    res.json::<Value>().await.map_err(|e| e.to_string())
 }
 
 fn parse_duration_text(text: &str) -> Option<u32> {
@@ -81,6 +139,74 @@ fn collect_ytm_songs(node: &Value, out: &mut Vec<YtmSong>) {
         }
         _ => {}
     }
+}
+
+fn collect_video_renderers(node: &Value, out: &mut Vec<YtmSong>) {
+    if out.len() >= 20 {
+        return;
+    }
+    match node {
+        Value::Object(map) => {
+            if let Some(item) = map.get("videoRenderer") {
+                if let Some(song) = extract_song_from_video_renderer(item) {
+                    if !out.iter().any(|s| s.video_id == song.video_id) {
+                        out.push(song);
+                    }
+                }
+                return;
+            }
+            for v in map.values() {
+                collect_video_renderers(v, out);
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr {
+                collect_video_renderers(v, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn extract_song_from_video_renderer(item: &Value) -> Option<YtmSong> {
+    let video_id = item.get("videoId").and_then(Value::as_str)?.to_string();
+    if video_id.len() != 11 {
+        return None;
+    }
+    let title = item
+        .pointer("/title/runs/0/text")
+        .and_then(Value::as_str)
+        .or_else(|| item.pointer("/title/simpleText").and_then(Value::as_str))?
+        .trim()
+        .to_string();
+    if title.is_empty() {
+        return None;
+    }
+    let length_txt = item
+        .pointer("/lengthText/simpleText")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let duration = parse_duration_text(length_txt).unwrap_or(0);
+    // Reject livestreams (0s), Shorts (<60s), or ultra-long mixes (>12m)
+    if duration < 60 || duration > 720 {
+        return None;
+    }
+    let artist = item
+        .pointer("/ownerText/runs/0/text")
+        .and_then(Value::as_str)
+        .or_else(|| item.pointer("/longBylineText/runs/0/text").and_then(Value::as_str))
+        .unwrap_or("YouTube Music")
+        .trim()
+        .trim_end_matches(" - Topic")
+        .to_string();
+    let thumbnail = format!("https://img.youtube.com/vi/{video_id}/hqdefault.jpg");
+    Some(YtmSong {
+        video_id,
+        title,
+        artist,
+        duration,
+        thumbnail,
+    })
 }
 
 fn extract_song_from_renderer(item: &Value) -> Option<YtmSong> {
@@ -166,7 +292,24 @@ fn extract_song_from_renderer(item: &Value) -> Option<YtmSong> {
     })
 }
 
-/// Direct on-device YouTube Music Songs-only search via InnerTube WEB_REMIX (zero API key, zero proxy).
+fn url_encode_query(input: &str) -> String {
+    let mut out = String::with_capacity(input.len() * 2);
+    for b in input.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            b' ' => out.push('+'),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// 3-Layer direct on-device YouTube Music search (zero API key, zero proxy):
+/// 1. InnerTube WEB_REMIX Songs-only (`music.youtube.com`)
+/// 2. InnerTube WEB (`www.youtube.com`) with strict 60s-720s song filter
+/// 3. Direct HTML `ytInitialData` extraction (immune to InnerTube clientVersion changes)
 #[tauri::command]
 async fn ytm_search(query: String, region: String) -> Result<Vec<YtmSong>, String> {
     let clean_query = query.trim();
@@ -180,16 +323,17 @@ async fn ytm_search(query: String, region: String) -> Result<Vec<YtmSong>, Strin
     };
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(6))
+        .timeout(Duration::from_secs(5))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| e.to_string())?;
 
-    // EgWKAQIIAWoKEAMQBBAJEAoQBQ== is YouTube Music's official Songs-only filter
-    let payload = json!({
+    // Layer 1: YouTube Music WEB_REMIX (Songs-only filter)
+    let ytm_payload = json!({
         "context": {
             "client": {
                 "clientName": "WEB_REMIX",
-                "clientVersion": "1.20260501.01.00",
+                "clientVersion": "1.20261101.01.00",
                 "hl": "id",
                 "gl": gl
             }
@@ -198,27 +342,88 @@ async fn ytm_search(query: String, region: String) -> Result<Vec<YtmSong>, Strin
         "params": "EgWKAQIIAWoKEAMQBBAJEAoQBQ=="
     });
 
-    let res = client
+    if let Ok(res) = client
         .post("https://music.youtube.com/youtubei/v1/search?prettyPrint=false")
-        .header(
-            "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
-        )
         .header("Origin", "https://music.youtube.com")
         .header("Referer", "https://music.youtube.com/")
-        .json(&payload)
+        .header("X-YouTube-Client-Name", "67")
+        .header("X-YouTube-Client-Version", "1.20261101.01.00")
+        .json(&ytm_payload)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
-
-    if !res.status().is_success() {
-        return Err(format!("InnerTube search HTTP {}", res.status()));
+    {
+        if res.status().is_success() {
+            if let Ok(data) = res.json::<Value>().await {
+                let mut songs = Vec::new();
+                collect_ytm_songs(&data, &mut songs);
+                if !songs.is_empty() {
+                    return Ok(songs);
+                }
+            }
+        }
     }
 
-    let data: Value = res.json().await.map_err(|e| e.to_string())?;
-    let mut songs = Vec::new();
-    collect_ytm_songs(&data, &mut songs);
-    Ok(songs)
+    // Layer 2: Standard YouTube WEB InnerTube search ("<query> official audio")
+    let web_payload = json!({
+        "context": {
+            "client": {
+                "clientName": "WEB",
+                "clientVersion": "2.20261101.01.00",
+                "hl": "id",
+                "gl": gl
+            }
+        },
+        "query": format!("{clean_query} official audio")
+    });
+
+    if let Ok(res) = client
+        .post("https://www.youtube.com/youtubei/v1/search?prettyPrint=false")
+        .header("Origin", "https://www.youtube.com")
+        .header("Referer", "https://www.youtube.com/")
+        .json(&web_payload)
+        .send()
+        .await
+    {
+        if res.status().is_success() {
+            if let Ok(data) = res.json::<Value>().await {
+                let mut songs = Vec::new();
+                collect_video_renderers(&data, &mut songs);
+                if !songs.is_empty() {
+                    return Ok(songs);
+                }
+            }
+        }
+    }
+
+    // Layer 3: Direct HTML ytInitialData extraction (immune to clientVersion changes)
+    let encoded = url_encode_query(&format!("{clean_query} official audio"));
+    let html_url = format!("https://www.youtube.com/results?search_query={encoded}");
+    if let Ok(res) = client
+        .get(&html_url)
+        .header("Accept-Language", "id-ID,id;q=0.9,en;q=0.8")
+        .send()
+        .await
+    {
+        if res.status().is_success() {
+            if let Ok(html) = res.text().await {
+                let marker = "var ytInitialData = ";
+                if let Some(start) = html.find(marker) {
+                    let after = &html[start + marker.len()..];
+                    if let Some(end) = after.find(";</script>") {
+                        if let Ok(data) = serde_json::from_str::<Value>(&after[..end]) {
+                            let mut songs = Vec::new();
+                            collect_video_renderers(&data, &mut songs);
+                            if !songs.is_empty() {
+                                return Ok(songs);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(Vec::new())
 }
 
 fn pick_best_audio_url(data: &Value) -> Option<String> {
@@ -254,7 +459,6 @@ fn pick_best_audio_url(data: &Value) -> Option<String> {
         }
     }
 
-    // Fallback to progressive formats (HTML5 <audio> plays audio track natively with zero video rendering)
     if let Some(formats) = data
         .pointer("/streamingData/formats")
         .and_then(Value::as_array)
@@ -285,7 +489,7 @@ async fn fetch_visitor_data(client: &reqwest::Client) -> Option<String> {
         "context": {
             "client": {
                 "clientName": "WEB_REMIX",
-                "clientVersion": "1.20260501.01.00",
+                "clientVersion": "1.20261101.01.00",
                 "hl": "en",
                 "gl": "US"
             }
@@ -304,8 +508,7 @@ async fn fetch_visitor_data(client: &reqwest::Client) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Resolves a direct HTTPS audio stream directly from the user's own device IP using mobile InnerTube clients
-/// (IOS -> ANDROID_VR -> ANDROID), bypassing rate-limited public proxy servers with zero API key.
+/// Resolves a direct HTTPS audio stream directly from the user's own device IP using mobile InnerTube clients.
 #[tauri::command]
 async fn ytm_resolve_audio(video_id: String) -> Result<Option<String>, String> {
     let vid = video_id.trim();
@@ -314,7 +517,7 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<String>, String> {
     }
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(6))
+        .timeout(Duration::from_secs(5))
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -430,6 +633,7 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
+            http_get_json,
             ytm_search,
             ytm_resolve_audio
         ])

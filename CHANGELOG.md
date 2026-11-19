@@ -2,6 +2,14 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.8.0] - 2026-11-19
+
+### Fixed (Fatal Empty Music Catalog & Streaming Server Busy Fix)
+- **Zero-CORS Native Rust HTTP Proxy (`http_get_json`)**: Seluruh panggilan API musik publik (`api.audius.co`, `itunes.apple.com`, `api.deezer.com`, `archive.org`, `lrclib.net`) kini melewati `reqwest` (`rustls-tls`) di `src-tauri/src/lib.rs` dengan batas waktu ketat 5 detik — menghilangkan kegagalan CORS/origin Android WebView (`http://tauri.localhost`) yang sebelumnya membuat daftar lagu kosong dan loading tanpa henti.
+- **Pencarian YouTube Music 3-Lapis di Rust (`ytm_search`)**: Pembaruan `clientVersion` ke `1.20261101.01.00` + header `X-YouTube-Client-Name: 67`, failover otomatis ke InnerTube `WEB` (`videoRenderer` 60–720 detik), serta lapisan ke-3 ekstraksi langsung HTML `ytInitialData` yang kebal terhadap perubahan versi InnerTube.
+- **Failover Otomatis Deezer Public Chart/Search**: Jika node Audius sedang sibuk, `audiusFetch` otomatis beralih ke `api.deezer.com` (via Rust zero-CORS) sehingga daftar lagu Beranda dan Cari selalu terisi cepat.
+- **Anti-Stuck Loading & Manifest Permissions**: Menambahkan `.catch()`/`.finally()` pada semua tugas `refreshOnlineFeeds` serta memastikan izin `INTERNET` dan `ACCESS_NETWORK_STATE` selalu eksplisit di `AndroidManifest.xml`.
+
 ## [6.7.0] - 2026-11-19
 
 ### Optimized (Data-Saver-Aware Smart YouTube Preloader)
