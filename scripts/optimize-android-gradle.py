@@ -369,6 +369,10 @@ class XmusicMediaService : Service() {
             if (userAgent.isNotBlank()) {
                 headers["User-Agent"] = userAgent
             }
+            if (url.contains("googlevideo.com")) {
+                headers["Origin"] = "https://www.youtube.com"
+                headers["Referer"] = "https://www.youtube.com/"
+            }
             mp.setDataSource(applicationContext, Uri.parse(url), headers)
 
             mp.setOnPreparedListener { player ->
