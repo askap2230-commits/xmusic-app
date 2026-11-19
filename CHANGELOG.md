@@ -2,6 +2,13 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.17.0] - 2026-11-19
+
+### Fixed & Upgraded (AndroidX Media3 `ExoPlayer` 1.11.1 Background Engine + Full Notification Duration Slider)
+- **Migrasi Total ke AndroidX Media3 `ExoPlayer` (`1.11.1` + `media3-exoplayer-hls`) di `XmusicMediaService.kt`**: Mengganti `android.media.MediaPlayer` legacy (yang sebelumnya membuang header HTTP saat redirect 302 `googlevideo.com` dan gagal mendekode DASH fMP4 / Opus / HLS YouTube Music) dengan **AndroidX Media3 `ExoPlayer` 1.11.1** menggunakan `DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)` yang menjaga penuh header `User-Agent`, `Origin`, dan `Referer` lintas redirect, `C.WAKE_MODE_NETWORK`, serta ticker posisi `@Volatile` 500ms di Main Thread yang 100% thread-safe — sehingga seluruh musik YouTube Music benar-benar berputar stabil di latar belakang saat layar mati maupun aplikasi ditutup.
+- **Fix Penuh Slider Durasi Notifikasi Media Android (`onSeekTo` + `window.__xmusicSeekMs`)**: `MediaSession.Callback.onSeekTo(pos)` di `XmusicMediaService.kt` kini memproses geser durasi untuk **semua** sumber audio (baik `ExoPlayer` native maupun WebView lewat `MainActivity.dispatchSeekAction` → `window.__xmusicSeekMs`) dengan timestamp `SystemClock.elapsedRealtime()` pada `PlaybackState`, sehingga slider durasi di notifikasi & layar kunci berfungsi penuh, instan, dan sinkron.
+- **Sinkronisasi Dokumentasi & Kontrak AI (`AGENTS.md`, `ARCHITECTURE.md`, `README.md`, `CI_CD_GUIDE.md`, `WCAG_ACCESSIBILITY.md`)**: Seluruh dokumentasi dan versi aplikasi diselaraskan ke `v6.17.0`.
+
 ## [6.16.0] - 2026-11-19
 
 ### Fixed (Smooth & Smart Synced Lyrics Scrolling in `TrackModal` & `TrackCard`)

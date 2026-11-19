@@ -225,6 +225,7 @@ declare global {
         | 'nativeEnded'
         | 'nativeError'
     ) => void;
+    __xmusicSeekMs?: (positionMs: number) => void;
     webkitAudioContext?: typeof AudioContext;
     webkitOfflineAudioContext?: typeof OfflineAudioContext;
   }

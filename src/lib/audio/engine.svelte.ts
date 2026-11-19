@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.15.0).
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.17.0).
  *
  * Signal Chain (Zero-Clipping Lossless-Clear DSP):
  *   MediaElementAudioSourceNode
@@ -13,7 +13,7 @@
  *     -> AnalyserNode (pull-based FFT visualizer)
  *     -> AudioContext.destination (latencyHint: 'playback')
  *
- * Stability Guarantees (v6.15.0):
+ * Stability Guarantees (v6.17.0):
  *   - Monotonic playSessionId eliminates async race conditions and phantom restarts after pause.
  *   - Transition guard suppresses spurious pause/play flicker during track switches.
  *   - Idempotent resume() + automatic self-healing recovery prevents stuck Play buttons on all sources.
@@ -1651,6 +1651,19 @@ class AudioEngine {
 
   private registerAndroidNotificationBridge(): void {
     if (typeof window === 'undefined') return;
+    window.__xmusicSeekMs = (positionMs: number) => {
+      if (!this.current || !Number.isFinite(positionMs)) return;
+      const targetSec = Math.max(0, positionMs / 1000);
+      if (this.usingNativeAndroid) {
+        this.position = targetSec;
+        this.updateMediaSessionPosition();
+        return;
+      }
+      const total = this.duration || this.activeEl?.duration || this.ytBridge.getDuration() || 0;
+      if (total > 0) {
+        this.seekTo(targetSec / total);
+      }
+    };
     window.__xmusicMediaAction = (action) => {
       if (action === 'togglePlay') this.togglePlay();
       else if (action === 'play') this.resume();
