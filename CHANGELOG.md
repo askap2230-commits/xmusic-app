@@ -2,6 +2,13 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.18.0] - 2026-11-19
+
+### Fixed (Forensic Root-Cause Fix: True Uninterrupted YouTube Music Background Playback on App Close & Screen Off)
+- **Eliminasi Bug Pembunuh Service di `engine.destroy()` (`src/lib/audio/engine.svelte.ts`)**: `AudioEngine.destroy()` (yang dipanggil otomatis oleh `onDestroy()` di `+page.svelte` saat aplikasi ditutup/WebView dibongkar) sebelumnya langsung memanggil `window.XmusicAndroidMedia.clearNotification()` yang mengirim `ACTION_CLEAR` dan **mematikan `ExoPlayer` + Foreground Service seketika**. Kini `destroy()` mempertahankan `XmusicMediaService` saat `usingNativeAndroid` aktif, dan menyimpan snapshot `nys_last_native_track` sehingga saat Xmusic dibuka kembali, UI langsung tersambung ke lagu yang masih berputar tanpa reset ke `0:00`.
+- **Kalibrasi Exact Payload `VISIONOS 1.02` + `ANDROID` sdkless di Rust (`src-tauri/src/lib.rs`)**: Memperbarui profil `VISIONOS 1.02`/`1.03` sesuai spesifikasi live akhir 2026 (`deviceModel: "RealityDevice17,1"`, `osVersion: "26.5.23O471"`, `Safari/26.0` tanpa header `Origin`/`Referer` web yang salah pada endpoint `/youtubei/v1/player`), serta menambahkan fallback `ANDROID` sdkless (`20.10.38`, `osVersion: "15"`, tanpa `androidSdkVersion`) sebelum `ANDROID_VR 1.65.10`.
+- **Routing 100% Track YouTube & Stream Online ke `ExoPlayer` Native (`engine.svelte.ts`, `XmusicMediaService.kt`)**: Memperbaiki kondisi `playTrack()` dari `if (track.videoId && !track.url)` menjadi `if (track.videoId)` agar track YouTube tidak pernah bocor ke `<audio>` WebView, menyimpan `videoId` pada `recordHistory()`, mengaktifkan `setAudioAttributes(audioAttrs, true)` + `setHandleAudioBecomingNoisy(true)` pada `ExoPlayer`, dan meneruskan seluruh stream remote Android melalui `XmusicMediaService`.
+
 ## [6.17.0] - 2026-11-19
 
 ### Fixed & Upgraded (AndroidX Media3 `ExoPlayer` 1.11.1 Background Engine + Full Notification Duration Slider)

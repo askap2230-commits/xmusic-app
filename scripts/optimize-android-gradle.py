@@ -369,9 +369,9 @@ class XmusicMediaService : Service() {
             val effectiveUa = if (userAgent.isNotBlank()) {
                 userAgent
             } else {
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
             }
-            if (url.contains("googlevideo.com")) {
+            if (url.contains("googlevideo.com") && effectiveUa.startsWith("Mozilla/")) {
                 headers["Origin"] = "https://www.youtube.com"
                 headers["Referer"] = "https://www.youtube.com/"
             }
@@ -390,7 +390,8 @@ class XmusicMediaService : Service() {
 
             val player = ExoPlayer.Builder(this)
                 .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
-                .setAudioAttributes(audioAttrs, false)
+                .setAudioAttributes(audioAttrs, true)
+                .setHandleAudioBecomingNoisy(true)
                 .setWakeMode(C.WAKE_MODE_NETWORK)
                 .build()
 

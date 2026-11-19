@@ -497,7 +497,7 @@ async fn verify_stream_playable(client: &reqwest::Client, url: &str, ua: &str) -
         .header("User-Agent", ua)
         .header("Range", "bytes=0-1")
         .timeout(Duration::from_secs(3));
-    if url.contains("googlevideo.com") {
+    if url.contains("googlevideo.com") && ua.starts_with("Mozilla/") {
         req = req
             .header("Origin", "https://www.youtube.com")
             .header("Referer", "https://www.youtube.com/");
@@ -511,10 +511,11 @@ async fn verify_stream_playable(client: &reqwest::Client, url: &str, ua: &str) -
     }
 }
 
-/// Resolves and Range-verifies (HTTP 200/206) a direct HTTPS audio stream directly from the user's device IP
-/// using the live Nov-2026 VISIONOS (1.02 -> 1.03 -> 1.01) client chain + ANDROID_VR 1.65.10 fallback.
-/// Skips unnecessary visitor_id RTT for fast ~400-600ms startup and returns the exact User-Agent
-/// required by native Android MediaPlayer to avoid HTTP 403 mid-track cutoffs.
+/// Resolves and Range-verifies (HTTP 200/206) a direct HTTPS audio stream directly from the user's device IP.
+/// Client chain verified Nov 2026:
+/// 1. VISIONOS 1.02 / 1.03 (Apple RealityDevice17,1, visionOS 26.5.23O471, Safari 26.0 — no PO token, whole-song)
+/// 2. ANDROID sdkless 20.10.38 (no androidSdkVersion field — no PO token)
+/// 3. ANDROID_VR 1.65.10 (Oculus Quest 3, androidSdkVersion 32)
 #[tauri::command]
 async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>, String> {
     let vid = video_id.trim();
@@ -527,7 +528,8 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>,
         .build()
         .map_err(|e| e.to_string())?;
 
-    let visionos_ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
+    let visionos_ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
+    let android_ua = "com.google.android.youtube/20.10.38 (Linux; U; Android 15) gzip";
     let android_vr_ua = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip";
 
     let clients = [
@@ -542,9 +544,9 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>,
                         "clientVersion": "1.02",
                         "userAgent": visionos_ua,
                         "osName": "visionOS",
-                        "osVersion": "1.3.21O771",
+                        "osVersion": "26.5.23O471",
                         "deviceMake": "Apple",
-                        "deviceModel": "RealityDevice14,1",
+                        "deviceModel": "RealityDevice17,1",
                         "hl": "en",
                         "gl": "US"
                     }
@@ -565,9 +567,9 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>,
                         "clientVersion": "1.03",
                         "userAgent": visionos_ua,
                         "osName": "visionOS",
-                        "osVersion": "1.3.21O771",
+                        "osVersion": "26.5.23O471",
                         "deviceMake": "Apple",
-                        "deviceModel": "RealityDevice14,1",
+                        "deviceModel": "RealityDevice17,1",
                         "hl": "en",
                         "gl": "US"
                     }
@@ -578,19 +580,17 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>,
             }),
         ),
         (
-            "101",
-            "1.01",
-            visionos_ua,
+            "3",
+            "20.10.38",
+            android_ua,
             json!({
                 "context": {
                     "client": {
-                        "clientName": "VISIONOS",
-                        "clientVersion": "1.01",
-                        "userAgent": visionos_ua,
-                        "osName": "visionOS",
-                        "osVersion": "1.3.21O771",
-                        "deviceMake": "Apple",
-                        "deviceModel": "RealityDevice14,1",
+                        "clientName": "ANDROID",
+                        "clientVersion": "20.10.38",
+                        "userAgent": android_ua,
+                        "osName": "Android",
+                        "osVersion": "15",
                         "hl": "en",
                         "gl": "US"
                     }
@@ -630,8 +630,6 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>,
         let attempt = client
             .post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
             .header("User-Agent", ua)
-            .header("Origin", "https://www.youtube.com")
-            .header("Referer", "https://www.youtube.com/")
             .header("X-YouTube-Client-Name", client_name_id)
             .header("X-YouTube-Client-Version", client_ver)
             .json(&body)

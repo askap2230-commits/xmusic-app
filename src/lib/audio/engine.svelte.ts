@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.17.0).
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.18.0).
  *
  * Signal Chain (Zero-Clipping Lossless-Clear DSP):
  *   MediaElementAudioSourceNode
@@ -13,7 +13,7 @@
  *     -> AnalyserNode (pull-based FFT visualizer)
  *     -> AudioContext.destination (latencyHint: 'playback')
  *
- * Stability Guarantees (v6.17.0):
+ * Stability Guarantees (v6.18.0):
  *   - Monotonic playSessionId eliminates async race conditions and phantom restarts after pause.
  *   - Transition guard suppresses spurious pause/play flicker during track switches.
  *   - Idempotent resume() + automatic self-healing recovery prevents stuck Play buttons on all sources.
@@ -170,6 +170,7 @@ class AudioEngine {
       this.isTransitioning = false;
     }
 
+    saveJSON('nys_last_native_track', { ...track, url: undefined });
     const effVol = this.muted ? 0 : this.ducked ? Math.max(0.05, this.volume * 0.25) : this.volume;
     try {
       window.XmusicAndroidMedia?.playNativeUrl?.(
@@ -493,7 +494,10 @@ class AudioEngine {
     }
     if (this.sleepIntervalId) clearInterval(this.sleepIntervalId);
     this.ytBridge.destroy();
-    window.XmusicAndroidMedia?.clearNotification();
+    // NEVER kill XmusicMediaService on page/WebView teardown while native ExoPlayer is playing in background!
+    if (!this.usingNativeAndroid) {
+      window.XmusicAndroidMedia?.clearNotification();
+    }
     for (const el of [this.audioEl, this.directAudioEl]) {
       if (el) {
         el.pause();
@@ -940,7 +944,7 @@ class AudioEngine {
     this.audioResolveFailed = false;
 
     // YouTube Music Track (Instant Cached Preload -> Dual-Path Fast Race)
-    if (track.videoId && !track.url) {
+    if (track.videoId) {
       this.isTransitioning = true;
       try {
         if (this.audioEl && !this.audioEl.paused) this.audioEl.pause();
@@ -1018,8 +1022,8 @@ class AudioEngine {
       });
     } else {
       // All remote HTTP/HTTPS streams (Audius, Deezer, iTunes, Internet Archive, Direct URLs):
-      // Play directly on CORS-free native HTML5 audio element for instant Android WebView playback
-      this.playDirectUrl(track.url, track, sessionId);
+      // On Android, play via XmusicMediaService Media3 ExoPlayer so background & screen-off never stop
+      this.playResolvedStream({ url: track.url }, track, sessionId, 0);
     }
 
     this.recordHistory(track);
@@ -1477,6 +1481,8 @@ class AudioEngine {
       c1: track.c1,
       c2: track.c2,
       dur: track.dur,
+      videoId: track.videoId,
+      url: track.url && !track.url.startsWith('blob:') && !track.videoId ? track.url : undefined,
       source: track.source,
       playedAt: Date.now()
     };
@@ -1569,6 +1575,12 @@ class AudioEngine {
     if (this.canUseNativeAndroidPlayer()) {
       const nativeState = this.syncFromNativeAndroidState();
       if (nativeState?.active) {
+        if (!this.current || (nativeState.trackId && this.current.id !== nativeState.trackId)) {
+          const savedNative = loadJSON<Track | null>('nys_last_native_track', null);
+          if (savedNative && (!nativeState.trackId || savedNative.id === nativeState.trackId)) {
+            this.current = savedNative;
+          }
+        }
         this.usingNativeAndroid = true;
         this.usingYtBridge = false;
         this.usingDirectAudio = false;
