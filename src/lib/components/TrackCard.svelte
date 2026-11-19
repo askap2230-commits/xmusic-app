@@ -190,8 +190,8 @@
           {:else}
             <p class="mt-6 text-center text-xs text-black/60 dark:text-white/65">
               {appStore.fetchingLyrics
-                ? 'Mencari lirik...'
-                : 'Ketuk "{i18n.t('player.openFull')}" untuk mencari atau menulis lirik.'}
+                ? i18n.t('player.fetchingLyrics')
+                : i18n.t('player.noLyrics')}
             </p>
           {/if}
         </div>
