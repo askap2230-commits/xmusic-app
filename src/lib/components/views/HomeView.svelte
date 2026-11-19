@@ -9,6 +9,7 @@
     Segmented,
     SegmentedButton
   } from 'konsta/svelte';
+  import { engine } from '#lib/audio/engine.svelte.ts';
   import { CATEGORIES, ERA_PRESETS, SPOTIFY_CHARTS } from '#lib/data/presets.ts';
   import { i18n } from '#lib/i18n/index.svelte.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
@@ -22,6 +23,12 @@
     discovery: 'Eksplorasi',
     nostalgia: 'Nostalgia'
   };
+
+  $effect(() => {
+    if (appStore.isOnline && appStore.rankedYtFeed.length > 0) {
+      engine.prewarmTracks(appStore.rankedYtFeed, 4);
+    }
+  });
 
   const CHART_SHORT_LABELS: Record<string, string> = {
     'Top 50 Indonesia': 'Top 50 ID',
@@ -226,24 +233,32 @@
   {/if}
 {/if}
 
-<!-- 4. Clean Compact Quick-Browse Chips (Era 1900-2026 & Genre) -->
-<BlockTitle>{i18n.t('home.eraTitle')}</BlockTitle>
-<Block class="flex flex-wrap gap-2">
-  {#each ERA_PRESETS as era (era.id)}
-    <Chip outline class="cursor-pointer" onclick={() => appStore.exploreEra(era.id)}>
-      {era.label}
-    </Chip>
-  {/each}
-</Block>
+<!-- 4. Clean Compact Quick-Browse Horizontal Rails (Era 1900-2026 & Genre) -->
+<div class="mt-6 flex flex-col gap-2 px-4">
+  <h2 class="px-0.5 text-xs font-bold tracking-wide text-black/55 uppercase dark:text-white/55">
+    {i18n.t('home.eraTitle')}
+  </h2>
+  <div class="xmusic-hscroll -mx-4 flex items-center gap-2 px-4 py-0.5">
+    {#each ERA_PRESETS as era (era.id)}
+      <Chip outline class="shrink-0 cursor-pointer whitespace-nowrap" onclick={() => appStore.exploreEra(era.id)}>
+        {era.label}
+      </Chip>
+    {/each}
+  </div>
+</div>
 
-<BlockTitle>{i18n.t('home.genreTitle')}</BlockTitle>
-<Block class="flex flex-wrap gap-2">
-  {#each CATEGORIES as cat}
-    <Chip outline class="cursor-pointer" onclick={() => appStore.updateSearch(cat.q, true)}>
-      {cat.label}
-    </Chip>
-  {/each}
-</Block>
+<div class="mt-4 flex flex-col gap-2 px-4">
+  <h2 class="px-0.5 text-xs font-bold tracking-wide text-black/55 uppercase dark:text-white/55">
+    {i18n.t('home.genreTitle')}
+  </h2>
+  <div class="xmusic-hscroll -mx-4 flex items-center gap-2 px-4 py-0.5">
+    {#each CATEGORIES as cat}
+      <Chip outline class="shrink-0 cursor-pointer whitespace-nowrap" onclick={() => appStore.updateSearch(cat.q, true)}>
+        {cat.label}
+      </Chip>
+    {/each}
+  </div>
+</div>
 
 <!-- 5. Spotify Popular Charts — Native iOS Segmented Tabs + Instant Cache + Load More (Zero Open/Close Clash!) -->
 <BlockTitle>{i18n.t('home.spotifyTitle')}</BlockTitle>

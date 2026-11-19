@@ -40,7 +40,7 @@
     }
     lastTapAt = now;
 
-    if (!isPlaying) {
+    if (!isPlaying || engine.audioResolveFailed) {
       engine.playTrack(track, appStore.allTracks);
     }
     appStore.openTrackModal(track, false);
@@ -61,6 +61,7 @@
           <button
             type="button"
             class="block w-full overflow-hidden rounded-xl text-left"
+            onpointerdown={() => engine.prewarmTrack(track)}
             onclick={handleCoverActivate}
             aria-label="Putar {track.title} oleh {track.artist}"
           >
@@ -91,7 +92,7 @@
               >
                 {track.isPreview ? i18n.t('common.preview30s') : i18n.t('common.full')}
               </span>
-              <span class="absolute bottom-2 left-2 rounded-full bg-black/75 px-2 py-0.5 text-[11px] font-semibold text-white">
+              <span class="absolute bottom-2 left-2 max-w-[calc(100%-16px)] truncate rounded-full bg-black/75 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white">
                 {track.releaseYear ? `${track.releaseYear} • ` : ''}{track.dur ? formatTime(track.dur) : track.album || 'Stream'}
               </span>
             </span>
@@ -147,6 +148,7 @@
             type="button"
             class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-black text-white active:scale-95 dark:bg-white dark:text-black"
             aria-label={isPlaying ? `Jeda ${track.title}` : `Putar ${track.title}`}
+            onpointerdown={() => engine.prewarmTrack(track)}
             onclick={() => engine.playTrack(track, appStore.allTracks)}
           >
             <Icon name={isPlaying ? 'pause' : 'play'} size={15} />

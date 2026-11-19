@@ -17,8 +17,8 @@
  *   Synchronizes track metadata, playback state, and position to both W3C MediaSession API
  *   and the native Android Foreground MediaStyle Service bridge (window.XmusicAndroidMedia).
  */
-import { resolveYoutubeAudioStream } from '#lib/api/services.ts';
 import { YtAudioBridge } from './ytPlayerBridge.ts';
+import { ytPreloader } from './ytPreloader.ts';
 import { EQ_BANDS, EQ_PRESETS } from '#lib/data/presets.ts';
 import { loadJSON, saveJSON } from '#lib/db/storage.ts';
 import type { RepeatMode, Track } from '#lib/types/music.ts';
@@ -90,6 +90,7 @@ class AudioEngine {
   private syncIntervalId: ReturnType<typeof setInterval> | null = null;
   private sleepIntervalId: ReturnType<typeof setInterval> | null = null;
   private bgResumeTimers: ReturnType<typeof setTimeout>[] = [];
+  private ytWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
   private userPaused = false;
   private ducked = false;
   private bgAutoResumeCount = 0;
@@ -167,6 +168,19 @@ class AudioEngine {
           );
         }
       });
+    } else {
+      el.addEventListener('error', () => {
+        if (!this.usingDirectAudio || !this.current) return;
+        const vid = this.current.videoId;
+        if (vid) {
+          ytPreloader.invalidate(vid);
+          this.usingDirectAudio = false;
+          this.current = { ...this.current, url: undefined };
+          this.usingYtBridge = true;
+          this.resolvingAudio = true;
+          void this.startYoutubeAudioBridge(this.current);
+        }
+      });
     }
   }
 
@@ -219,6 +233,7 @@ class AudioEngine {
       onStateChange: (state) => {
         if (!this.usingYtBridge) return;
         if (state === 1) {
+          this.clearYtWatchdog();
           this.playing = true;
           this.bgAutoResumeCount = 0;
           this.resolvingAudio = false;
@@ -279,11 +294,14 @@ class AudioEngine {
     this.setupMediaSession();
     this.registerAndroidNotificationBridge();
     this.setupBackgroundPlaybackGuard();
+    // Eagerly warm up YouTube IFrame API script in background so first YT track plays faster
+    setTimeout(() => this.ytBridge.warmUp(), 600);
   }
 
   destroy(): void {
     this.stopPositionSync();
     this.clearBgResumeTimers();
+    this.clearYtWatchdog();
     if (this.bgVisibilityHandler && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.bgVisibilityHandler);
       this.bgVisibilityHandler = null;
@@ -560,6 +578,66 @@ class AudioEngine {
     }, 1000);
   }
 
+  prewarmTrack(track: Track | null | undefined): void {
+    if (!track || !track.videoId || track.url) return;
+    ytPreloader.prefetch(track.videoId, true);
+  }
+
+  prewarmTracks(tracks: Track[], limit = 4): void {
+    if (!Array.isArray(tracks) || tracks.length === 0) return;
+    ytPreloader.prefetchTracks(tracks, limit, false);
+  }
+
+  private clearYtWatchdog(): void {
+    if (this.ytWatchdogTimer !== null) {
+      clearTimeout(this.ytWatchdogTimer);
+      this.ytWatchdogTimer = null;
+    }
+  }
+
+  private preloadUpcomingQueue(): void {
+    if (!this.queue.length || !this.current) return;
+    const idx = this.queue.findIndex((t) => t.id === this.current?.id);
+    if (idx < 0) return;
+    const upcoming: Track[] = [];
+    for (let offset = 1; offset <= 2; offset++) {
+      const candidate = this.queue[(idx + offset) % this.queue.length];
+      if (candidate && candidate.id !== this.current.id && candidate.videoId && !candidate.url) {
+        upcoming.push(candidate);
+      }
+    }
+    if (upcoming.length > 0) {
+      ytPreloader.prefetchTracks(upcoming, 2, true);
+    }
+  }
+
+  private playDirectUrl(url: string, track: Track): void {
+    if (!this.directAudioEl) return;
+    if (this.audioEl) this.audioEl.pause();
+    if (this.usingYtBridge) this.ytBridge.stop();
+    this.usingYtBridge = false;
+    this.usingDirectAudio = true;
+    this.corsBypassMode = true;
+    this.resolvingAudio = false;
+    this.audioResolveFailed = false;
+    this.directAudioEl.volume = this.ducked ? Math.max(0.05, this.volume * 0.25) : this.volume;
+    this.directAudioEl.muted = this.muted;
+    this.directAudioEl.src = url;
+    this.applyPlaybackRate();
+    this.directAudioEl.play().catch((err: Error) => {
+      if (this.current?.id !== track.id) return;
+      if (track.videoId) {
+        ytPreloader.invalidate(track.videoId);
+        this.usingDirectAudio = false;
+        this.usingYtBridge = true;
+        this.resolvingAudio = true;
+        void this.startYoutubeAudioBridge({ ...track, url: undefined });
+      } else {
+        this.toast(`Gagal memutar: ${err.message}`);
+      }
+    });
+  }
+
   playTrack(track: Track | null, customQueue: Track[] | null = null): void {
     if (!track) return;
     if (Array.isArray(customQueue) && customQueue.length > 0) {
@@ -579,27 +657,41 @@ class AudioEngine {
       return;
     }
 
+    // YouTube Music Track (Instant Cached Preload -> Dual-Path Fast Race)
     if (track.videoId && !track.url) {
-      if (this.current?.id === track.id && this.usingYtBridge) {
+      if (this.current?.id === track.id && !this.audioResolveFailed && !this.resolvingAudio) {
         this.togglePlay();
         return;
       }
-      this.pause();
+      this.clearYtWatchdog();
+      if (this.audioEl) this.audioEl.pause();
+      if (this.directAudioEl) this.directAudioEl.pause();
+      if (this.usingYtBridge) this.ytBridge.stop();
+
+      this.userPaused = false;
+      this.bgAutoResumeCount = 0;
       this.current = track;
       this.position = 0;
       this.duration = track.dur || 0;
-      this.ytBridge.stop();
-    this.usingYtBridge = false;
-    this.usingDirectAudio = false;
-      this.userPaused = false;
-      this.bgAutoResumeCount = 0;
-      this.usingYtBridge = true;
-      this.resolvingAudio = true;
       this.audioResolveFailed = false;
       this.recordHistory(track);
       this.updateMediaSessionMeta();
       this.syncNativeAndroidNotification();
-      void this.startYoutubeAudioBridge(track);
+      this.preloadUpcomingQueue();
+
+      // Path A: 0ms Instant playback if SmartYtPreloader already cached the direct stream URL
+      const cachedUrl = ytPreloader.getCachedUrl(track.videoId);
+      if (cachedUrl) {
+        this.current = { ...track, url: cachedUrl };
+        this.playDirectUrl(cachedUrl, this.current);
+        return;
+      }
+
+      // Path B: Fast race between direct stream resolution and pre-warmed YouTube IFrame Bridge
+      this.usingDirectAudio = false;
+      this.usingYtBridge = true;
+      this.resolvingAudio = true;
+      void this.startYoutubeSmartPlayback(track);
       return;
     }
 
@@ -608,16 +700,12 @@ class AudioEngine {
       return;
     }
 
-    if (this.current?.id === track.id) {
+    if (this.current?.id === track.id && this.playing) {
       this.togglePlay();
       return;
     }
 
-    this.ensureWebAudio();
-    if (this.audioCtx?.state === 'suspended') {
-      this.audioCtx.resume().catch(() => {});
-    }
-
+    this.clearYtWatchdog();
     this.userPaused = false;
     this.bgAutoResumeCount = 0;
     this.resolvingAudio = false;
@@ -625,31 +713,84 @@ class AudioEngine {
     this.current = track;
     this.position = 0;
     this.duration = track.dur || 0;
-    this.corsBypassMode = false;
 
     if (this.usingYtBridge) this.ytBridge.stop();
     this.usingYtBridge = false;
-    if (this.directAudioEl) this.directAudioEl.pause();
-    this.usingDirectAudio = false;
-    if (this.audioEl) {
-      this.audioEl.crossOrigin = 'anonymous';
+
+    const isLocalBlob = track.url.startsWith('blob:') || track.url.startsWith('data:');
+
+    if (isLocalBlob && this.audioEl) {
+      // Local offline files: full Web Audio 5-Band EQ & Mastering DSP (zero CORS risk)
+      this.ensureWebAudio();
+      if (this.audioCtx?.state === 'suspended') {
+        this.audioCtx.resume().catch(() => {});
+      }
+      if (this.directAudioEl) this.directAudioEl.pause();
+      this.usingDirectAudio = false;
+      this.corsBypassMode = false;
+      this.audioEl.removeAttribute('crossorigin');
       this.audioEl.src = track.url;
-      this.audioEl.load();
       this.applyPlaybackRate();
-      this.audioEl.play().catch((err: Error) => {
-        this.toast(`Gagal memutar: ${err.message}`);
+      this.audioEl.play().catch(() => {
+        // Guaranteed fallback to pure native audio element if Web Audio fails
+        if (this.current?.id === track.id && track.url) {
+          this.playDirectUrl(track.url, track);
+        }
       });
+    } else {
+      // All remote HTTP/HTTPS streams (Audius, iTunes, Internet Archive, Direct URLs):
+      // Play directly on CORS-free native HTML5 audio element for 100% instant Android WebView playback
+      this.playDirectUrl(track.url, track);
     }
 
     this.recordHistory(track);
     this.updateMediaSessionMeta();
     this.syncNativeAndroidNotification();
+    this.preloadUpcomingQueue();
+  }
+
+  private async startYoutubeSmartPlayback(track: Track): Promise<void> {
+    if (!track.videoId) return;
+    const videoId = track.videoId;
+    const trackId = track.id;
+
+    // Kick off direct stream resolution immediately (reuses any in-flight pointerdown prefetch!)
+    const directPromise = ytPreloader.resolveNow(videoId, true);
+
+    // Watchdog: if IFrame bridge hasn't started playing within 4.5s, switch to direct stream or surface retry
+    this.clearYtWatchdog();
+    this.ytWatchdogTimer = setTimeout(() => {
+      if (this.current?.id !== trackId || this.playing) return;
+      if (this.usingYtBridge && this.resolvingAudio) {
+        void directPromise.then((url) => {
+          if (this.current?.id !== trackId || this.playing) return;
+          if (url) {
+            this.current = { ...track, url };
+            this.playDirectUrl(url, this.current);
+          } else {
+            this.resolvingAudio = false;
+            this.audioResolveFailed = true;
+          }
+        });
+      }
+    }, 4500);
+
+    // If direct stream resolves super fast (< 1.2s) before IFrame starts playing, use native <audio> immediately!
+    void directPromise.then((url) => {
+      if (!url || this.current?.id !== trackId || this.playing) return;
+      this.clearYtWatchdog();
+      this.current = { ...track, url };
+      this.playDirectUrl(url, this.current);
+    });
+
+    // Simultaneously start pre-warmed YouTube IFrame Bridge
+    await this.startYoutubeAudioBridge(track);
   }
 
   private async startYoutubeAudioBridge(track: Track): Promise<void> {
     if (!track.videoId) return;
     const ok = await this.ytBridge.play(track.videoId, this.volume, this.muted, this.playbackRate);
-    if (this.current?.id !== track.id) return;
+    if (this.current?.id !== track.id || this.playing || this.usingDirectAudio) return;
     if (!ok) {
       this.usingYtBridge = false;
       void this.resolveAndPlayYoutubeAudio(track);
@@ -658,10 +799,12 @@ class AudioEngine {
 
   retryYoutubeAudio(): void {
     if (this.current?.videoId) {
+      ytPreloader.invalidate(this.current.videoId);
+      this.usingDirectAudio = false;
       this.usingYtBridge = true;
       this.resolvingAudio = true;
       this.audioResolveFailed = false;
-      void this.startYoutubeAudioBridge(this.current);
+      void this.startYoutubeSmartPlayback({ ...this.current, url: undefined });
     }
   }
 
@@ -669,34 +812,19 @@ class AudioEngine {
     if (!track.videoId) return;
     this.resolvingAudio = true;
     this.audioResolveFailed = false;
-    const streamUrl = await resolveYoutubeAudioStream(track.videoId);
+    const streamUrl = await ytPreloader.resolveNow(track.videoId, true);
     if (this.current?.id !== track.id) return;
+    this.clearYtWatchdog();
     this.resolvingAudio = false;
 
     if (!streamUrl) {
       this.audioResolveFailed = true;
-      this.toast('Server audio publik sedang sibuk. Ketuk Coba Lagi atau Mode Video.');
+      this.toast('Stream audio sedang sibuk. Ketuk Coba Lagi atau Mode Video.');
       return;
     }
 
-    const upgraded: Track = { ...track, url: streamUrl };
-    this.current = upgraded;
-    if (this.audioEl) this.audioEl.pause();
-    this.usingDirectAudio = true;
-    this.corsBypassMode = true;
-    if (this.directAudioEl) {
-      this.directAudioEl.volume = this.volume;
-      this.directAudioEl.muted = this.muted;
-      this.directAudioEl.src = streamUrl;
-      this.directAudioEl.load();
-      this.applyPlaybackRate();
-      this.directAudioEl.play().catch(() => {
-        if (this.current?.id === track.id) {
-          this.current = { ...track, url: undefined };
-          this.audioResolveFailed = true;
-        }
-      });
-    }
+    this.current = { ...track, url: streamUrl };
+    this.playDirectUrl(streamUrl, this.current);
   }
 
   togglePlay(): void {

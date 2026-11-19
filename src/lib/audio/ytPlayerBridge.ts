@@ -4,11 +4,12 @@
 /**
  * Official YouTube IFrame Player API Audio Bridge (Strict TypeScript).
  *
- * Why this is required in late 2026:
- * YouTube moved unauthenticated InnerTube clients to SABR + GVS PO Token enforcement.
- * The official YouTube IFrame Player API handles PO Token, SABR, and cipher verification
- * natively inside Android WebView while letting Xmusic render 100% native iOS audio UI,
- * seekbar, volume, synced lyrics, and Android lockscreen controls.
+ * Improvements in v6.6.0:
+ * - Uses a 200x200 offscreen container (opacity: 0.001, left: -9999px) inside a stable wrapper
+ *   so YouTube's minimum-viewport anti-hidden-player check never blocks playback.
+ * - Recreates its inner mount node cleanly after destroy() so subsequent tracks never lose the host.
+ * - Omits invalid localhost/tauri.localhost origin parameter to prevent YouTube Error 150/153 on Android WebView.
+ * - Supports warmUp() at app startup so the IFrame API is already loaded before the user taps a song.
  */
 
 export interface YtPlayerInstance {
@@ -60,7 +61,10 @@ function loadYoutubeIframeApi(): Promise<YtGlobal | null> {
   if (apiLoadPromise) return apiLoadPromise;
 
   apiLoadPromise = new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), 8000);
+    const timer = setTimeout(() => {
+      apiLoadPromise = null;
+      resolve(null);
+    }, 6500);
     const prevReady = win.onYouTubeIframeAPIReady;
     win.onYouTubeIframeAPIReady = () => {
       clearTimeout(timer);
@@ -83,6 +87,21 @@ function loadYoutubeIframeApi(): Promise<YtGlobal | null> {
   return apiLoadPromise;
 }
 
+function getSafeOrigin(): string | null {
+  if (typeof window === 'undefined') return null;
+  const { protocol, hostname, origin } = window.location;
+  if (
+    protocol === 'https:' &&
+    hostname &&
+    hostname !== 'localhost' &&
+    hostname !== '127.0.0.1' &&
+    !hostname.endsWith('.localhost')
+  ) {
+    return origin;
+  }
+  return null;
+}
+
 export class YtAudioBridge {
   private player: YtPlayerInstance | null = null;
   private ready = false;
@@ -91,6 +110,27 @@ export class YtAudioBridge {
 
   configure(callbacks: YtBridgeCallbacks): void {
     this.callbacks = callbacks;
+  }
+
+  /**
+   * Eagerly preload the YouTube IFrame API script in the background so first playback has no script delay.
+   */
+  warmUp(): void {
+    void loadYoutubeIframeApi();
+  }
+
+  private ensureMountNode(): string | null {
+    if (typeof document === 'undefined') return null;
+    const wrapper = document.getElementById('xmusic-yt-audio-host');
+    if (!wrapper) return null;
+    let inner = document.getElementById('xmusic-yt-player-slot');
+    if (!inner) {
+      wrapper.innerHTML = '';
+      inner = document.createElement('div');
+      inner.id = 'xmusic-yt-player-slot';
+      wrapper.appendChild(inner);
+    }
+    return 'xmusic-yt-player-slot';
   }
 
   private ensurePlayer(initialVideoId: string): Promise<YtPlayerInstance | null> {
@@ -103,8 +143,8 @@ export class YtAudioBridge {
         this.initPromise = null;
         return null;
       }
-      const host = document.getElementById('xmusic-yt-audio-host');
-      if (!host) {
+      const mountId = this.ensureMountNode();
+      if (!mountId) {
         this.initPromise = null;
         return null;
       }
@@ -113,23 +153,27 @@ export class YtAudioBridge {
         const timer = setTimeout(() => {
           this.initPromise = null;
           resolve(null);
-        }, 8000);
+        }, 7000);
 
-        this.player = new YT.Player('xmusic-yt-audio-host', {
-          height: '1',
-          width: '1',
+        const playerVars: Record<string, string | number> = {
+          autoplay: 1,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          iv_load_policy: 3,
+          modestbranding: 1,
+          playsinline: 1,
+          rel: 0,
+          enablejsapi: 1
+        };
+        const safeOrigin = getSafeOrigin();
+        if (safeOrigin) playerVars.origin = safeOrigin;
+
+        this.player = new YT.Player(mountId, {
+          height: '200',
+          width: '200',
           videoId: initialVideoId,
-          playerVars: {
-            autoplay: 1,
-            controls: 0,
-            disablekb: 1,
-            fs: 0,
-            iv_load_policy: 3,
-            modestbranding: 1,
-            playsinline: 1,
-            rel: 0,
-            origin: window.location.origin
-          },
+          playerVars,
           events: {
             onReady: (event) => {
               clearTimeout(timer);
@@ -233,6 +277,14 @@ export class YtAudioBridge {
       return this.player?.getDuration() || 0;
     } catch {
       return 0;
+    }
+  }
+
+  getPlayerState(): number {
+    try {
+      return this.player?.getPlayerState() ?? -1;
+    } catch {
+      return -1;
     }
   }
 

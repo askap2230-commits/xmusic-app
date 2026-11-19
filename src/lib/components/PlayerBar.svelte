@@ -1,6 +1,6 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
-  import { Progressbar } from 'konsta/svelte';
+  import { Preloader, Progressbar } from 'konsta/svelte';
   import { engine } from '#lib/audio/engine.svelte.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
   import { formatTime, getTrackInitial } from '#lib/utils/format.ts';
@@ -55,20 +55,24 @@
           <span class="block truncate text-sm font-semibold text-black dark:text-white">
             {engine.current.title}
           </span>
-          <span class="block truncate text-xs text-black/60 dark:text-white/60">
+          <span class="block truncate text-xs tabular-nums text-black/60 dark:text-white/60">
             {engine.current.artist} • {formatTime(engine.position)} / {formatTime(engine.duration)}
           </span>
         </span>
       </button>
 
-      <div class="flex items-center gap-1.5">
+      <div class="flex shrink-0 items-center gap-1.5">
         <button
           type="button"
           class="grid h-10 w-10 place-items-center rounded-full bg-black text-white active:scale-95 dark:bg-white dark:text-black"
           aria-label={engine.playing ? 'Jeda' : 'Putar'}
           onclick={() => engine.togglePlay()}
         >
-          <Icon name={engine.playing ? 'pause' : 'play'} size={17} />
+          {#if engine.resolvingAudio}
+            <Preloader class="w-4 h-4" />
+          {:else}
+            <Icon name={engine.playing ? 'pause' : 'play'} size={17} />
+          {/if}
         </button>
 
         <button

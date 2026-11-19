@@ -2,6 +2,26 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.7.0] - 2026-11-19
+
+### Optimized (Data-Saver-Aware Smart YouTube Preloader)
+- **Adaptif Jaringan & Mode Hemat Data (`navigator.connection`)**: `SmartYtPreloader` kini otomatis menyesuaikan anggaran pra-muat berdasarkan kondisi jaringan Android (Wi-Fi/4G: maks 4 viewport + 2 antrean; 3G/seluler: maks 2 viewport + 1 antrean; Mode Hemat Data / 2G: nol pra-muat spekulatif, hanya `pointerdown` + 1 lagu berikutnya).
+- **Hemat Data Berbasis Metadata**: Hanya menyelesaikan metadata URL stream (~2–8 KB) tanpa pernah mengunduh file audio utuh sebelum pengguna memutar lagu.
+- **Zero-Byte DNS+TLS Preconnect**: Menghangatkan koneksi TLS ke server audio teresolusi (`<link rel="preconnect">`, maks 3 origin) untuk memangkas latensi mulai putar 150–400ms dengan pemakaian kuota 0 byte audio.
+- **Visibility Battery Guard & 5-Min Negative Cooldown**: Menjeda pra-muat spekulatif saat layar mati (`document.hidden`) dan menahan percobaan ulang otomatis selama 5 menit untuk ID yang gagal/dibatasi wilayah, serta menyimpan cache valid lintas reload di `sessionStorage`.
+
+## [6.6.0] - 2026-11-19
+
+### Fixed & Added (Universal Audio Playback Fix + Smart Predictive YouTube Preloader)
+- **Fix Fatal Pemutaran Seluruh Musik (Android WebView CORS & Gesture Lock)**: Semua stream remote (`http://`/`https://` — Audius, Internet Archive, iTunes, Direct Stream) kini langsung diputar via elemen `<audio>` native bebas-CORS (`directAudioEl`) tanpa `crossOrigin="anonymous"` maupun `.load()` yang membatalkan gestur sentuh pengguna, sementara file lokal (`blob:`) tetap memakai pipeline Web Audio 5-Band EQ dengan fallback otomatis.
+- **Fix YouTube IFrame Bridge Android WebView**: Memperbesar host offscreen dari `1×1 px` (`opacity: 0`) menjadi `200×200 px` offscreen (`-left-[9999px]`, `opacity: 0.001`), menghapus parameter `origin` tidak valid untuk `tauri.localhost` (mencegah Error 150/153), serta membuat ulang slot mount secara otomatis setelah `stopTrack()`.
+- **Smart Predictive YouTube Music Preloader (`src/lib/audio/ytPreloader.ts`)**: Pra-memuat stream audio YouTube Music secara cerdas dengan cache TTL 45 menit (maks 60 lagu, konkurensi terkendali 2):
+  1. **Eager Warmup**: Memuat YouTube IFrame API lebih awal saat aplikasi dibuka.
+  2. **Pointerdown Intent Preload**: Memulai resolusi stream begitu jari menyentuh kartu/baris lagu sebelum klik selesai.
+  3. **Top-4 Viewport & Next-2 Queue Preload**: Otomatis menyiapkan 4 lagu teratas di Beranda/Cari serta 2 lagu berikutnya di antrean agar pemutaran instan tanpa menunggu "Menghubungkan stream audio...".
+  4. **Fast Dual-Path Race + 4.5s Watchdog**: Memutar stream cache dalam 0ms, atau membalapkan stream langsung vs IFrame Bridge dengan batas waktu 4.5 detik agar tidak pernah macet.
+- **Presisi UI/UX**: Indikator loading inline pada tombol putar `PlayerBar`, proteksi overflow pill durasi `TrackCard`, dan konversi chip Era/Genre di `HomeView` menjadi rail scroll horizontal yang rapi.
+
 ## [6.5.0] - 2026-11-19
 
 ### Added & Fixed (True Android Background Audio Playback)

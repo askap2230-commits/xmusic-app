@@ -30,6 +30,12 @@
       : appStore.visibleSearchResults
   );
 
+  $effect(() => {
+    if (appStore.isOnline && appStore.visibleSearchResults.length > 0) {
+      engine.prewarmTracks(appStore.visibleSearchResults, 4);
+    }
+  });
+
   function openAndPlay(track: Track): void {
     appStore.showSuggestions = false;
     engine.playTrack(track, appStore.filteredSearchResults);
@@ -429,6 +435,7 @@
               type="button"
               class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#007aff] text-white shadow-xs transition-transform active:scale-95 dark:bg-[#0a84ff]"
               aria-label={`${i18n.t('search.playNow')} ${topTrack.title}`}
+              onpointerdown={() => engine.prewarmTrack(topTrack)}
               onclick={() => openAndPlay(topTrack)}
             >
               <Icon name="play" size={16} />
@@ -446,6 +453,7 @@
                 subtitle={track.releaseYear ? `${track.artist} • ${track.releaseYear}` : track.artist}
                 titleWrapClass="min-w-0 flex-1"
                 class="cursor-pointer overflow-hidden"
+                onpointerdown={() => engine.prewarmTrack(track)}
                 onclick={() => openAndPlay(track)}
               >
                 {#snippet media()}
