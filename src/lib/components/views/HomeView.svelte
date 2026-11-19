@@ -100,7 +100,7 @@
 {:else if appStore.loadingHome}
   <Block>
     <div class="flex items-center gap-3 py-4 text-sm text-zinc-600 dark:text-zinc-300" role="status">
-      <Preloader size="w-5 h-5" />
+      <Preloader class="w-5 h-5" />
       <span>Memuat daftar lagu trending...</span>
     </div>
   </Block>

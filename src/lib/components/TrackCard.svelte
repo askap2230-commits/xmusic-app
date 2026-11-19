@@ -45,9 +45,8 @@
     <!-- FRONT FACE -->
     <div class="xmusic-flip-face">
       <Card
-        margin="m-0"
         contentWrapPadding="p-2.5"
-        class="border {isPlaying
+        class="!m-0 border {isPlaying
           ? 'border-[#007aff] dark:border-[#0a84ff]'
           : 'border-black/10 dark:border-white/10'} transition-colors"
       >
@@ -144,9 +143,8 @@
     <!-- BACK FACE (SYNCED LYRICS) -->
     <div class="xmusic-flip-face xmusic-flip-back" aria-hidden={!isFlipped}>
       <Card
-        margin="m-0"
         contentWrapPadding="p-3"
-        class="flex h-full flex-col border border-[#007aff] dark:border-[#0a84ff]"
+        class="!m-0 flex h-full flex-col border border-[#007aff] dark:border-[#0a84ff]"
       >
         <div class="mb-2 flex items-center justify-between gap-1">
           <div class="min-w-0">

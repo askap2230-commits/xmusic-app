@@ -104,6 +104,7 @@
       <Block class="mx-auto max-w-md">
         <div class="xmusic-flip-scene">
           <div
+            role="presentation"
             class="xmusic-flip-inner"
             class:is-flipped={appStore.modalFlipped}
             ondblclick={handleDoubleTap}

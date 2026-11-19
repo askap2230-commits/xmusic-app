@@ -85,7 +85,7 @@
 
     {#if loading}
       <Block class="flex items-center justify-center gap-3 text-sm text-[#007aff] dark:text-[#64d2ff]" role="status">
-        <Preloader size="w-5 h-5" />
+        <Preloader class="w-5 h-5" />
         <span>Menghubungi endpoint RapidAPI...</span>
       </Block>
     {/if}

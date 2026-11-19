@@ -399,12 +399,7 @@ class AudioEngine {
   private applyPlaybackRate(): void {
     if (!this.audioEl) return;
     this.audioEl.playbackRate = this.playbackRate;
-    const el = this.audioEl as HTMLAudioElement & { webkitPreservesPitch?: boolean };
-    if ('preservesPitch' in el) {
-      el.preservesPitch = this.preservesPitch;
-    } else if ('webkitPreservesPitch' in el) {
-      el.webkitPreservesPitch = this.preservesPitch;
-    }
+    this.audioEl.preservesPitch = this.preservesPitch;
   }
 
   toggleShuffle(): void {
