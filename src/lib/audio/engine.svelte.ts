@@ -89,6 +89,11 @@ class AudioEngine {
   private corsBypassMode = false;
   private syncIntervalId: ReturnType<typeof setInterval> | null = null;
   private sleepIntervalId: ReturnType<typeof setInterval> | null = null;
+  private bgResumeTimers: ReturnType<typeof setTimeout>[] = [];
+  private userPaused = false;
+  private ducked = false;
+  private bgAutoResumeCount = 0;
+  private bgVisibilityHandler: (() => void) | null = null;
   private onToast: ((message: string) => void) | null = null;
 
   private get activeEl(): HTMLAudioElement | null {
@@ -215,6 +220,7 @@ class AudioEngine {
         if (!this.usingYtBridge) return;
         if (state === 1) {
           this.playing = true;
+          this.bgAutoResumeCount = 0;
           this.resolvingAudio = false;
           this.audioResolveFailed = false;
           const dur = this.ytBridge.getDuration();
@@ -226,6 +232,21 @@ class AudioEngine {
           this.updateMediaSessionState();
           this.syncNativeAndroidNotification();
         } else if (state === 2) {
+          if (
+            typeof document !== 'undefined' &&
+            document.hidden &&
+            !this.userPaused &&
+            this.playing &&
+            this.bgAutoResumeCount < 4
+          ) {
+            this.bgAutoResumeCount += 1;
+            setTimeout(() => {
+              if (!this.userPaused && this.usingYtBridge) {
+                this.ytBridge.resume();
+              }
+            }, 120);
+            return;
+          }
           this.playing = false;
           this.stopPositionSync();
           this.updateMediaSessionState();
@@ -257,10 +278,16 @@ class AudioEngine {
 
     this.setupMediaSession();
     this.registerAndroidNotificationBridge();
+    this.setupBackgroundPlaybackGuard();
   }
 
   destroy(): void {
     this.stopPositionSync();
+    this.clearBgResumeTimers();
+    if (this.bgVisibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.bgVisibilityHandler);
+      this.bgVisibilityHandler = null;
+    }
     if (this.sleepIntervalId) clearInterval(this.sleepIntervalId);
     this.ytBridge.destroy();
     window.XmusicAndroidMedia?.clearNotification();
@@ -564,6 +591,8 @@ class AudioEngine {
       this.ytBridge.stop();
     this.usingYtBridge = false;
     this.usingDirectAudio = false;
+      this.userPaused = false;
+      this.bgAutoResumeCount = 0;
       this.usingYtBridge = true;
       this.resolvingAudio = true;
       this.audioResolveFailed = false;
@@ -589,6 +618,8 @@ class AudioEngine {
       this.audioCtx.resume().catch(() => {});
     }
 
+    this.userPaused = false;
+    this.bgAutoResumeCount = 0;
     this.resolvingAudio = false;
     this.audioResolveFailed = false;
     this.current = track;
@@ -675,13 +706,21 @@ class AudioEngine {
     }
     if (this.current.spotifyId) return;
     if (this.usingYtBridge) {
-      if (this.playing) this.ytBridge.pause();
-      else this.ytBridge.resume();
+      if (this.playing) {
+        this.userPaused = true;
+        this.ytBridge.pause();
+      } else {
+        this.userPaused = false;
+        this.bgAutoResumeCount = 0;
+        this.ytBridge.resume();
+      }
       return;
     }
     if (this.playing) {
       this.pause();
     } else if (this.activeEl) {
+      this.userPaused = false;
+      this.bgAutoResumeCount = 0;
       if (!this.usingDirectAudio) {
         this.ensureWebAudio();
         if (this.audioCtx?.state === 'suspended') {
@@ -693,12 +732,16 @@ class AudioEngine {
   }
 
   pause(): void {
+    this.userPaused = true;
+    this.clearBgResumeTimers();
     if (this.audioEl) this.audioEl.pause();
     if (this.directAudioEl) this.directAudioEl.pause();
     if (this.usingYtBridge) this.ytBridge.pause();
   }
 
   stopTrack(): void {
+    this.userPaused = true;
+    this.clearBgResumeTimers();
     this.stopPositionSync();
     for (const el of [this.audioEl, this.directAudioEl]) {
       if (el) {
@@ -863,6 +906,53 @@ class AudioEngine {
     return bars;
   }
 
+  private clearBgResumeTimers(): void {
+    for (const id of this.bgResumeTimers) clearTimeout(id);
+    this.bgResumeTimers = [];
+  }
+
+  private applyEffectiveVolume(): void {
+    const eff = this.ducked ? Math.max(0.05, this.volume * 0.25) : this.volume;
+    if (this.audioEl) this.audioEl.volume = eff;
+    if (this.directAudioEl) this.directAudioEl.volume = eff;
+    if (this.usingYtBridge) this.ytBridge.setVolume(eff, this.muted);
+  }
+
+  private setupBackgroundPlaybackGuard(): void {
+    if (typeof document === 'undefined') return;
+    this.bgVisibilityHandler = () => {
+      if (!document.hidden) {
+        this.bgAutoResumeCount = 0;
+        if (this.playing) {
+          this.updateMediaSessionState();
+          this.syncNativeAndroidNotification();
+        }
+        return;
+      }
+      if (!this.playing || this.userPaused) return;
+      if (this.audioCtx?.state === 'suspended') {
+        this.audioCtx.resume().catch(() => {});
+      }
+      this.clearBgResumeTimers();
+      // Keep audio playing seamlessly across Android WebView visibility transitions / screen off
+      for (const delayMs of [150, 500, 1200]) {
+        const timer = setTimeout(() => {
+          if (this.userPaused || !this.current) return;
+          if (this.audioCtx?.state === 'suspended') {
+            this.audioCtx.resume().catch(() => {});
+          }
+          if (this.usingYtBridge) {
+            this.ytBridge.resume();
+          } else if (this.activeEl && this.activeEl.paused) {
+            this.activeEl.play().catch(() => {});
+          }
+        }, delayMs);
+        this.bgResumeTimers.push(timer);
+      }
+    };
+    document.addEventListener('visibilitychange', this.bgVisibilityHandler);
+  }
+
   private registerAndroidNotificationBridge(): void {
     if (typeof window === 'undefined') return;
     window.__xmusicMediaAction = (action) => {
@@ -872,8 +962,13 @@ class AudioEngine {
       } else if (action === 'pause') this.pause();
       else if (action === 'next') this.next(false);
       else if (action === 'prev') this.prev();
-      else if (action === 'stop') {
-        this.stopTrack();
+      else if (action === 'stop') this.stopTrack();
+      else if (action === 'duck') {
+        this.ducked = true;
+        this.applyEffectiveVolume();
+      } else if (action === 'unduck') {
+        this.ducked = false;
+        this.applyEffectiveVolume();
       }
     };
   }
@@ -905,10 +1000,8 @@ class AudioEngine {
     navigator.mediaSession.setActionHandler('previoustrack', () => this.prev());
     navigator.mediaSession.setActionHandler('nexttrack', () => this.next(false));
     navigator.mediaSession.setActionHandler('seekto', (details) => {
-      if (details.seekTime != null && this.audioEl) {
-        this.audioEl.currentTime = details.seekTime;
-        this.position = details.seekTime;
-        this.updateMediaSessionPosition();
+      if (details.seekTime != null && this.duration > 0) {
+        this.seekTo(details.seekTime / this.duration);
       }
     });
   }

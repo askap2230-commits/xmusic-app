@@ -1,12 +1,12 @@
 {
   "name": "xmusic",
-  "version": "6.3.0",
+  "version": "6.5.0",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "author": "Azka Putra",
   "packageManager": "pnpm@10.12.1",
-  "description": "nys Xmusic — Offline & Streaming Music Player with Konsta UI iOS Theme, Strict TypeScript, Audiophile Web Audio DSP, and Native Android Media Notification",
+  "description": "nys Xmusic \u2014 Offline & Streaming Music Player with Konsta UI iOS Theme, Strict TypeScript, Audiophile Web Audio DSP, and Native Android Media Notification",
   "engines": {
     "node": ">=22.17.0",
     "pnpm": ">=10.0.0"

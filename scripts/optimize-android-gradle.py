@@ -3,18 +3,22 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 """
-Android Build, Reproducible Packaging, R8 Optimization & Native Media Notification Setup for Tauri v2.12+.
+Android Build, Reproducible Packaging, R8 Optimization & Native Background Media Playback Setup for Tauri v2.12+.
 
 Operations:
 1. Configures AndroidManifest.xml with:
-   - usesCleartextTraffic="true" and round launcher icons
-   - POST_NOTIFICATIONS, FOREGROUND_SERVICE, FOREGROUND_SERVICE_MEDIA_PLAYBACK, WAKE_LOCK
-   - XmusicMediaService (<service android:foregroundServiceType="mediaPlayback">)
-2. Injects native Kotlin XmusicMediaService.kt using standard Android Framework APIs
-   (MediaSession + Notification.MediaStyle + Foreground Service) so playing audio displays a
-   real Android lockscreen and notification-shade media player with Prev/Play-Pause/Next controls.
-3. Injects MainActivity.kt WebView bridge (window.XmusicAndroidMedia) + Android 13+ notification
-   permission request, dispatching notification actions straight back into the Svelte AudioEngine.
+   - usesCleartextTraffic="true", round launcher icons, and android:launchMode="singleTask"
+   - POST_NOTIFICATIONS, FOREGROUND_SERVICE, FOREGROUND_SERVICE_MEDIA_PLAYBACK, WAKE_LOCK, ACCESS_WIFI_STATE
+   - XmusicMediaService (<service android:foregroundServiceType="mediaPlayback" android:stopWithTask="false">)
+2. Injects native Kotlin XmusicMediaService.kt using standard Android Framework APIs:
+   - MediaSession + Notification.MediaStyle + Foreground Service (Android 14-16 compliant)
+   - PowerManager.PARTIAL_WAKE_LOCK + WifiManager.WifiLock while playing (keeps audio alive with screen off)
+   - AudioManager AudioFocusRequest (pauses on calls/other apps, ducks on navigation, auto-resumes after transient loss)
+   - ACTION_AUDIO_BECOMING_NOISY receiver (auto-pauses when headphones/Bluetooth disconnect)
+3. Injects MainActivity.kt with:
+   - WebView RENDERER_PRIORITY_IMPORTANT (waivedWhenNotVisible = false) + onPause/onStop WebView audio keep-alive
+   - OnBackPressedCallback: moves task to background (moveTaskToBack) when pressing Back at root while music plays
+   - Crash-proof AndroidMediaBridge (uses startService when FGS is already running to prevent ForegroundServiceStartNotAllowedException)
 4. Enables R8 minification, resource shrinking, disables dependenciesInfo, and enforces
    deterministic reproducible Gradle archives (isPreserveFileTimestamps = false, isReproducibleFileOrder = true).
 """
@@ -36,13 +40,21 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 
 class XmusicMediaService : Service() {
     companion object {
@@ -60,13 +72,94 @@ class XmusicMediaService : Service() {
         const val EXTRA_IS_PLAYING = "is_playing"
         const val EXTRA_DURATION_MS = "duration_ms"
         const val EXTRA_POSITION_MS = "position_ms"
+
+        @Volatile
+        var isRunning: Boolean = false
+
+        @Volatile
+        var isPlayingNow: Boolean = false
     }
 
     private var mediaSession: MediaSession? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+    private var audioManager: AudioManager? = null
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private var hasAudioFocus: Boolean = false
+    private var pausedByTransientFocus: Boolean = false
+    private var noisyReceiverRegistered: Boolean = false
+
+    private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                hasAudioFocus = false
+                pausedByTransientFocus = false
+                MainActivity.dispatchMediaAction("pause")
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                if (isPlayingNow) {
+                    pausedByTransientFocus = true
+                    MainActivity.dispatchMediaAction("pause")
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                if (isPlayingNow) {
+                    MainActivity.dispatchMediaAction("duck")
+                }
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                hasAudioFocus = true
+                MainActivity.dispatchMediaAction("unduck")
+                if (pausedByTransientFocus) {
+                    pausedByTransientFocus = false
+                    MainActivity.dispatchMediaAction("play")
+                }
+            }
+        }
+    }
+
+    private val becomingNoisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY && isPlayingNow) {
+                MainActivity.dispatchMediaAction("pause")
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         ensureChannel()
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Xmusic:BackgroundPlaybackLock")?.apply {
+            setReferenceCounted(false)
+        }
+
+        val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        val wifiMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+        } else {
+            @Suppress("DEPRECATION")
+            WifiManager.WIFI_MODE_FULL_HIGH_PERF
+        }
+        wifiLock = wm?.createWifiLock(wifiMode, "Xmusic:BackgroundWifiLock")?.apply {
+            setReferenceCounted(false)
+        }
+
+        val noisyFilter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(becomingNoisyReceiver, noisyFilter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(becomingNoisyReceiver, noisyFilter)
+            }
+            noisyReceiverRegistered = true
+        } catch (_: Throwable) {
+            noisyReceiverRegistered = false
+        }
+
         mediaSession = MediaSession(this, "XmusicMediaSession").apply {
             setCallback(object : MediaSession.Callback() {
                 override fun onPlay() { MainActivity.dispatchMediaAction("play") }
@@ -83,18 +176,24 @@ class XmusicMediaService : Service() {
         when (intent?.action) {
             ACTION_PLAY_PAUSE -> {
                 MainActivity.dispatchMediaAction("togglePlay")
-                return START_NOT_STICKY
+                return if (isPlayingNow) START_STICKY else START_NOT_STICKY
             }
             ACTION_NEXT -> {
                 MainActivity.dispatchMediaAction("next")
-                return START_NOT_STICKY
+                return if (isPlayingNow) START_STICKY else START_NOT_STICKY
             }
             ACTION_PREV -> {
                 MainActivity.dispatchMediaAction("prev")
-                return START_NOT_STICKY
+                return if (isPlayingNow) START_STICKY else START_NOT_STICKY
             }
             ACTION_CLEAR -> {
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                isPlayingNow = false
+                releaseLocks()
+                abandonAudioFocus()
+                try {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } catch (_: Throwable) {
+                }
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -105,10 +204,86 @@ class XmusicMediaService : Service() {
                 val isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, false)
                 val durationMs = intent.getLongExtra(EXTRA_DURATION_MS, 0L)
                 val positionMs = intent.getLongExtra(EXTRA_POSITION_MS, 0L)
+                isPlayingNow = isPlaying
+                if (isPlaying) {
+                    acquireLocks()
+                    requestAudioFocus()
+                } else {
+                    releaseLocks()
+                }
                 updateNotification(title, artist, album, isPlaying, durationMs, positionMs)
+                return if (isPlaying) START_STICKY else START_NOT_STICKY
             }
         }
-        return START_NOT_STICKY
+        return if (isPlayingNow) START_STICKY else START_NOT_STICKY
+    }
+
+    private fun acquireLocks() {
+        try {
+            wakeLock?.let { if (!it.isHeld) it.acquire() }
+        } catch (_: Throwable) {
+        }
+        try {
+            wifiLock?.let { if (!it.isHeld) it.acquire() }
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun releaseLocks() {
+        try {
+            wakeLock?.let { if (it.isHeld) it.release() }
+        } catch (_: Throwable) {
+        }
+        try {
+            wifiLock?.let { if (it.isHeld) it.release() }
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun requestAudioFocus() {
+        if (hasAudioFocus) return
+        val am = audioManager ?: return
+        try {
+            val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val attrs = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+                val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(attrs)
+                    .setAcceptsDelayedFocusGain(true)
+                    .setWillPauseWhenDucked(false)
+                    .setOnAudioFocusChangeListener(audioFocusListener)
+                    .build()
+                audioFocusRequest = req
+                am.requestAudioFocus(req)
+            } else {
+                @Suppress("DEPRECATION")
+                am.requestAudioFocus(
+                    audioFocusListener,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN
+                )
+            }
+            hasAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        } catch (_: Throwable) {
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        val am = audioManager ?: return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioFocusRequest?.let { am.abandonAudioFocusRequest(it) }
+                audioFocusRequest = null
+            } else {
+                @Suppress("DEPRECATION")
+                am.abandonAudioFocus(audioFocusListener)
+            }
+        } catch (_: Throwable) {
+        }
+        hasAudioFocus = false
+        pausedByTransientFocus = false
     }
 
     private fun updateNotification(
@@ -181,10 +356,15 @@ class XmusicMediaService : Service() {
             )
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (_: Throwable) {
+            val nm = getSystemService(NotificationManager::class.java)
+            nm?.notify(NOTIFICATION_ID, notification)
         }
     }
 
@@ -206,7 +386,7 @@ class XmusicMediaService : Service() {
                 "Pemutar Musik Xmusic",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Kontrol pemutaran audio dan layar kunci untuk nys Xmusic"
+                description = "Kontrol pemutaran audio latar belakang dan layar kunci untuk nys Xmusic"
                 setShowBadge(false)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
@@ -214,7 +394,31 @@ class XmusicMediaService : Service() {
         }
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        if (!isPlayingNow) {
+            releaseLocks()
+            abandonAudioFocus()
+            try {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } catch (_: Throwable) {
+            }
+            stopSelf()
+        }
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
+        isRunning = false
+        isPlayingNow = false
+        releaseLocks()
+        abandonAudioFocus()
+        if (noisyReceiverRegistered) {
+            try {
+                unregisterReceiver(becomingNoisyReceiver)
+            } catch (_: Throwable) {
+            }
+            noisyReceiverRegistered = false
+        }
         mediaSession?.isActive = false
         mediaSession?.release()
         mediaSession = null
@@ -238,6 +442,7 @@ import android.os.Build
 import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import androidx.activity.OnBackPressedCallback
 import androidx.core.view.WindowInsetsControllerCompat
 import java.lang.ref.WeakReference
 
@@ -265,6 +470,24 @@ class MainActivity : TauriActivity() {
                 requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
             }
         }
+
+        // Keep music playing smoothly in background when user presses Back at root while playing
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                val wv = webViewRef?.get()
+                if (wv != null && wv.canGoBack()) {
+                    wv.goBack()
+                    return
+                }
+                if (XmusicMediaService.isPlayingNow) {
+                    moveTaskToBack(true)
+                    return
+                }
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+                isEnabled = true
+            }
+        })
     }
 
     private fun applySystemBarTheme(isDark: Boolean) {
@@ -281,8 +504,47 @@ class MainActivity : TauriActivity() {
     override fun onWebViewCreate(webView: WebView) {
         super.onWebViewCreate(webView)
         webView.settings.mediaPlaybackRequiresUserGesture = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // Prevent Android OS from waiving or killing the WebView renderer when screen is off or app is backgrounded
+            webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+        }
         webViewRef = WeakReference(webView)
         webView.addJavascriptInterface(AndroidMediaBridge(), "XmusicAndroidMedia")
+    }
+
+    override fun onPause() {
+        super.onPause()
+        keepWebViewAudioAliveIfPlaying()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        keepWebViewAudioAliveIfPlaying()
+    }
+
+    private fun keepWebViewAudioAliveIfPlaying() {
+        if (!XmusicMediaService.isPlayingNow) return
+        val wv = webViewRef?.get() ?: return
+        wv.post {
+            try {
+                wv.onResume()
+                wv.resumeTimers()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        if (isFinishing && !isChangingConfigurations) {
+            try {
+                val intent = Intent(this, XmusicMediaService::class.java).apply {
+                    action = XmusicMediaService.ACTION_CLEAR
+                }
+                startService(intent)
+            } catch (_: Throwable) {
+            }
+        }
+        super.onDestroy()
     }
 
     inner class AndroidMediaBridge {
@@ -304,19 +566,31 @@ class MainActivity : TauriActivity() {
                 putExtra(XmusicMediaService.EXTRA_DURATION_MS, durationMs)
                 putExtra(XmusicMediaService.EXTRA_POSITION_MS, positionMs)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
+            try {
+                if (XmusicMediaService.isRunning) {
+                    startService(intent)
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+            } catch (_: Throwable) {
+                try {
+                    startService(intent)
+                } catch (_: Throwable) {
+                }
             }
         }
 
         @JavascriptInterface
         fun clearNotification() {
-            val intent = Intent(this@MainActivity, XmusicMediaService::class.java).apply {
-                action = XmusicMediaService.ACTION_CLEAR
+            try {
+                val intent = Intent(this@MainActivity, XmusicMediaService::class.java).apply {
+                    action = XmusicMediaService.ACTION_CLEAR
+                }
+                startService(intent)
+            } catch (_: Throwable) {
             }
-            startService(intent)
         }
 
         @JavascriptInterface
@@ -344,6 +618,7 @@ def patch_manifest() -> None:
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.WAKE_LOCK",
+        "android.permission.ACCESS_WIFI_STATE",
     ]
     for perm in permissions:
         tag = f'<uses-permission android:name="{perm}" />'
@@ -363,17 +638,26 @@ def patch_manifest() -> None:
             'android:icon="@mipmap/ic_launcher"\n        android:roundIcon="@mipmap/ic_launcher_round"',
         )
 
+    # Ensure MainActivity uses singleTask so returning from lockscreen/notification reuses the live WebView
+    if "android:launchMode=" not in content:
+        content = content.replace(
+            'android:name=".MainActivity"',
+            'android:name=".MainActivity"\n            android:launchMode="singleTask"',
+            1,
+        )
+
     service_decl = """        <service
             android:name=".XmusicMediaService"
             android:enabled="true"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="mediaPlayback" />"""
     if "XmusicMediaService" not in content:
         content = content.replace("</application>", f"{service_decl}\n    </application>", 1)
 
     with open(manifest_path, "w", encoding="utf-8") as fh:
         fh.write(content)
-    print("[Android Optimize] Patched AndroidManifest.xml with Media Playback Service & permissions.")
+    print("[Android Optimize] Patched AndroidManifest.xml with singleTask, Media Playback Service & Wake/Wifi permissions.")
 
 
 def inject_native_media_kotlin() -> None:
@@ -384,7 +668,7 @@ def inject_native_media_kotlin() -> None:
         fh.write(MEDIA_SERVICE_KT)
     with open(os.path.join(KOTLIN_PKG_DIR, "MainActivity.kt"), "w", encoding="utf-8") as fh:
         fh.write(MAIN_ACTIVITY_KT)
-    print("[Android Optimize] Injected native Kotlin XmusicMediaService & MainActivity JS bridge.")
+    print("[Android Optimize] Injected native Kotlin XmusicMediaService & MainActivity background playback bridge.")
 
 
 def patch_build_gradle() -> None:
@@ -450,7 +734,6 @@ android.enableR8.fullMode=true
     with open(prop_path, "w", encoding="utf-8") as fh:
         fh.write(content)
     print("[Android Optimize] Updated gradle.properties for fast deterministic CI builds.")
-
 
 
 def patch_proguard_rules() -> None:
@@ -528,6 +811,7 @@ def patch_android_themes() -> None:
     with open(dark_themes, "w", encoding="utf-8") as fh:
         fh.write(dark_xml)
     print(f"[Android Optimize] Patched light/dark themes.xml ({style_name}) to Konsta iOS surfaces.")
+
 
 if __name__ == "__main__":
     patch_manifest()

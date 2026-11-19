@@ -180,7 +180,7 @@ declare global {
   interface Window {
     __TAURI_INTERNALS__?: unknown;
     XmusicAndroidMedia?: AndroidMediaBridge;
-    __xmusicMediaAction?: (action: 'togglePlay' | 'play' | 'pause' | 'next' | 'prev' | 'stop') => void;
+    __xmusicMediaAction?: (action: 'togglePlay' | 'play' | 'pause' | 'next' | 'prev' | 'stop' | 'duck' | 'unduck') => void;
     webkitAudioContext?: typeof AudioContext;
     webkitOfflineAudioContext?: typeof OfflineAudioContext;
   }

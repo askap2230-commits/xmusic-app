@@ -2,6 +2,23 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.5.0] - 2026-11-19
+
+### Added & Fixed (True Android Background Audio Playback)
+- **Native `PARTIAL_WAKE_LOCK` & `WifiLock` pada `XmusicMediaService`**: Service Foreground `mediaPlayback` (`START_STICKY`, `android:stopWithTask="false"`) kini menahan `PowerManager.PARTIAL_WAKE_LOCK` dan `WifiManager.WifiLock` selama musik diputar agar CPU & koneksi jaringan tidak tidur saat layar mati atau berpindah aplikasi, lalu otomatis dilepas saat jeda/berhenti.
+- **Native Android `AudioFocusRequest` & `ACTION_AUDIO_BECOMING_NOISY`**: Mengelola fokus audio standar Android (`USAGE_MEDIA`/`CONTENT_TYPE_MUSIC`) untuk jeda otomatis saat telepon masuk, mengecilkan volume (`duck`/`unduck`) saat navigasi suara, dan jeda otomatis saat headset/Bluetooth terlepas.
+- **WebView Background Keep-Alive & Back-to-Background**: `MainActivity` kini menetapkan `RENDERER_PRIORITY_IMPORTANT` (`waivedWhenNotVisible = false`), `android:launchMode="singleTask"`, menjaga `webView.onResume()`/`resumeTimers()` pada `onPause()`/`onStop()` saat musik aktif, serta meminimalkan aplikasi ke latar belakang (`moveTaskToBack(true)`) saat tombol Kembali ditekan ketika musik berputar.
+- **Perlindungan Anti-Crash Android 12–16+**: Memanggil `startService()` saat `XmusicMediaService` sudah aktif untuk mencegah `ForegroundServiceStartNotAllowedException` ketika perpindahan lagu otomatis terjadi di latar belakang.
+- **Background Playback Guard & Universal Lockscreen Seek**: `AudioEngine` kini menjaga pemutaran tetap aktif pada transisi `visibilitychange` (termasuk mencegah auto-pause YouTube IFrame saat layar mati) dan mendukung kontrol geser durasi (`seekto`) layar kunci untuk semua sumber audio.
+
+## [6.4.0] - 2026-11-19
+
+### Fixed & Improved (Search Page Layout & Dynamic Element Stabilization)
+- **Eliminasi Tumpang Tindih Margin Konsta (`BlockTitle` / `Block`)**: Mengganti campuran `<BlockTitle>` (`-mb-6`) dan `<Block>` (`my-8`) di `SearchView.svelte` dengan kontainer vertikal seragam `flex-col gap-4 px-4` sehingga judul seksi, rail chip horizontal, bilah urutkan, dan daftar hasil tidak lagi saling bertabrakan atau tertimpa.
+- **Panel Sugesti Dinamis Terbatas & Bebas Konflik**: Sugesti pencarian real-time kini dibungkus dalam panel mandiri `max-h-72 overflow-y-auto` dengan header konsisten dan tombol `Tutup`, serta otomatis tertutup saat pengguna menekan Enter (`<form onsubmit>`) atau memilih filter.
+- **Konsistensi Kontrol Urutkan & Rail Chip Mobile**: Setiap `<Chip>` pada rail Sumber/Era/Terbaru menggunakan `whitespace-nowrap shrink-0` dengan scroll edge-to-edge (`-mx-4 px-4`), dan tombol `<SegmentedButton>` pada bilah Urutkan dikunci satu baris (`whitespace-nowrap text-xs`) agar sejajar di layar 360px.
+- **Proporsi Kartu Hasil Teratas & Kartu Jelajah Seragam**: Kartu Sorotan Hasil Teratas menggunakan tombol putar melingkar agar judul/artis tidak terhimpit di layar sempit; kartu Era & Genre kini menggunakan elemen `<button>` valid HTML5 dengan tinggi seragam (`min-h-[72px]`).
+
 ## [6.3.0] - 2026-11-19
 
 ### Changed & Added (Search Page UI/UX Overhaul)
