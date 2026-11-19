@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
+# Copyright 2026 Azka Putra
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """
-Android Build & APK Size Optimization Script for Tauri v2.12+.
+Android Build, Size Reduction & Deterministic Reproducible Build Script for Tauri v2.12+.
 
 Operations:
 1. Configures AndroidManifest.xml with cleartext streaming support and round launcher icons.
-2. Enables R8 code minification (isMinifyEnabled = true) and resource shrinking
-   (isShrinkResources = true) in app/build.gradle.kts to minimize release APK size.
-3. Appends parallel execution, caching, and R8 full-mode flags to gradle.properties.
+2. Enables R8 code minification (isMinifyEnabled = true), resource shrinking
+   (isShrinkResources = true), and disables Play dependenciesInfo signing block
+   (required for deterministic reproducible APKs).
+3. Enforces reproducible archive ordering and zeroed timestamps on all Gradle
+   AbstractArchiveTask outputs (isPreserveFileTimestamps = false, isReproducibleFileOrder = true).
+4. Appends parallel execution, caching, and R8 full-mode flags to gradle.properties.
 """
 from __future__ import annotations
 
@@ -64,9 +70,29 @@ def patch_build_gradle() -> None:
             content,
         )
 
+    # Disable Google Play encrypted dependenciesInfo block to guarantee reproducible APKs
+    if "dependenciesInfo" not in content:
+        content = re.sub(
+            r"(android\s*\{)",
+            r"\1\n    dependenciesInfo {\n        includeInApk = false\n        includeInBundle = false\n    }",
+            content,
+            count=1,
+        )
+
+    # Enforce deterministic timestamps and file order across all Gradle archive tasks
+    reproducible_block = """
+// Deterministic reproducible archive output (required for verifiable APK builds)
+tasks.withType<org.gradle.api.tasks.bundling.AbstractArchiveTask>().configureEach {
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+}
+"""
+    if "isReproducibleFileOrder = true" not in content:
+        content = content.rstrip() + "\n" + reproducible_block
+
     with open(gradle_kts, "w", encoding="utf-8") as fh:
         fh.write(content)
-    print("[Android Optimize] Enabled R8 minification and resource shrinking in app/build.gradle.kts.")
+    print("[Android Optimize] Enabled R8 shrinking and deterministic reproducible archive settings.")
 
 
 def patch_gradle_properties() -> None:
@@ -79,7 +105,7 @@ def patch_gradle_properties() -> None:
         content = fh.read()
 
     optimizations = """
-# Xmusic Tauri v2.12 Build Speed & APK Size Optimizations
+# Xmusic Tauri v2.12 Build Speed, Size & Reproducibility Optimizations
 org.gradle.parallel=true
 org.gradle.caching=true
 org.gradle.daemon=true
@@ -93,7 +119,7 @@ android.enableR8.fullMode=true
 
     with open(prop_path, "w", encoding="utf-8") as fh:
         fh.write(content)
-    print("[Android Optimize] Updated gradle.properties for fast cached CI builds.")
+    print("[Android Optimize] Updated gradle.properties for fast deterministic CI builds.")
 
 
 if __name__ == "__main__":

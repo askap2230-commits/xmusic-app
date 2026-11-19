@@ -1,37 +1,41 @@
 # Contributing Guidelines — nys Xmusic
 
-Thank you for contributing to `nys Xmusic`. Follow these engineering standards to keep the codebase fast, lightweight, and maintainable.
+All contributions to **nys Xmusic** are licensed under **GNU AGPL-3.0-or-later** (`Copyright 2026 Azka Putra`).
 
-## 1. Code Style & Language Conventions
+## 1. Development Workflow (pnpm)
 
-- **English-Only Source Code**: Write all identifiers, filenames, CSS classes, comments, JSDoc, Rust doc comments, Python scripts, and commit messages in English.
-- **Indonesian UI Copy**: Keep user-facing UI strings clear and natural in Indonesian.
-- **Modular Boundaries**:
-  - Views go in `src/lib/components/views/`.
-  - Modals go in `src/lib/components/modals/`.
-  - Shared state goes in `src/lib/stores/`.
-  - Pure helpers go in `src/lib/utils/`.
-  - Styles go in `src/app.css` (no scattered inline layout styles).
+```bash
+pnpm install
+pnpm dev
+```
 
-## 2. Commit Message Convention
+## 2. Mandatory License Headers (Google `addlicense`)
 
-Use [Conventional Commits](https://www.conventionalcommits.org/):
-- `feat(audio): add crossfade toggle to equalizer view`
-- `fix(lyrics): handle multi-timestamp LRC lines`
-- `perf(ui): reduce grid re-renders during playback`
-- `a11y(modal): add Escape key close handler`
-- `ci(android): update Gradle cache cleanup policy`
-- `docs(agents): clarify Svelte 5 runes rules`
+Every source file must carry the AGPL-3.0-or-later header from `.license-header.txt`:
 
-## 3. Security & Secrets Policy
+```bash
+# Local automated header application & verification
+pnpm license:apply
+pnpm license:check
 
-- Never commit `.env` files, personal API keys (`Spotify`, `RapidAPI`, `YouTube`), or private production keystores.
-- All external API keys are configured locally by the user inside **Profil → Edit Profil & API Key** and stored only on the user's device.
+# Official Google addlicense CLI verification (also enforced in CI)
+addlicense -check -f .license-header.txt \
+  -ignore "node_modules/**" -ignore "dist/**" -ignore ".svelte-kit/**" \
+  -ignore "src-tauri/target/**" -ignore "src-tauri/gen/**" \
+  src-tauri/src scripts vite.config.js static/sw.js
+```
 
-## 4. Pre-Commit Verification Checklist
+## 3. UI & Engineering Standards
 
-1. Run `npm run build` and confirm zero errors or broken imports.
-2. Run `python3 -m py_compile scripts/sync-android-icons.py scripts/optimize-android-gradle.py`.
-3. If modifying `src-tauri/`, run `cargo fmt --check`, `cargo check`, and `cargo clippy -- -D warnings`.
-4. Verify WCAG 2.2 AA compliance (contrast, keyboard navigation, `aria-label`, no nested buttons).
+- **Konsta UI iOS Theme Only**: Use official `konsta/svelte` components with Tailwind CSS v4. Never introduce conflicting CSS resets or switch off `theme="ios"`.
+- **Single-Source Version**: Bump version in `package.json` only (`src-tauri/tauri.conf.json` resolves `"version": "../package.json"` automatically).
+- **English Code / Indonesian UI**: Keep all code syntax, comments, and scripts in English; keep user-facing UI labels in natural Indonesian.
+- **No Secrets**: Never commit API keys or private signing keystores.
+
+## 4. Pre-Commit Checklist
+
+1. `pnpm license:check` passes with exit code `0`.
+2. `pnpm build` generates `dist/index.html` cleanly.
+3. `python3 -m py_compile scripts/*.py` passes cleanly.
+4. `cargo fmt --check && cargo check && cargo clippy -- -D warnings` passes in `src-tauri/`.
 5. Trigger `.github/workflows/ci-verify.yml` manually on GitHub Actions before cutting a release APK.

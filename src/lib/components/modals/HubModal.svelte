@@ -1,4 +1,6 @@
+<!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script>
+  import { Block, Button, Link, List, ListInput, Navbar, Page, Popup } from 'konsta/svelte';
   import {
     extractSpotifyEmbed,
     extractYouTubeId,
@@ -8,6 +10,7 @@
   } from '#lib/api/services.js';
   import { saveLocalTrack } from '#lib/db/storage.js';
   import { appStore } from '#lib/stores/library.svelte.js';
+  import Icon from '../Icon.svelte';
 
   let hubUrlInput = $state('');
   let hubEmbedType = $state(null);
@@ -40,8 +43,7 @@
         hubMeta = meta;
         hubMessage = `Terdeteksi (${meta.via}): ${meta.title} — ${meta.artist}`;
       } else {
-        hubMessage =
-          'Pemutar Spotify dimuat. Isi Spotify Client ID & Secret di Pengaturan API untuk deteksi metadata penuh.';
+        hubMessage = 'Pemutar Spotify dimuat. Isi Spotify API Key di Profil untuk deteksi penuh.';
       }
       return;
     }
@@ -65,7 +67,7 @@
       return;
     }
 
-    hubMessage = 'Tautan tidak dikenali. Gunakan URL lagu/playlist Spotify atau video YouTube.';
+    hubMessage = 'Tautan tidak dikenali. Gunakan URL Spotify atau YouTube.';
   }
 
   async function saveHubToLibrary() {
@@ -92,8 +94,8 @@
       artist,
       album: meta?.album || (isSpotify ? 'Spotify Hub' : 'YouTube Hub'),
       imageUrl,
-      c1: isSpotify ? '#1DB954' : '#dc2626',
-      c2: '#0a0b0f',
+      c1: isSpotify ? '#30d158' : '#ff453a',
+      c2: '#1c1c1e',
       dur: meta?.dur || 0,
       source: 'local',
       createdAt: Date.now(),
@@ -111,111 +113,118 @@
     appStore.openTrackModal(track, false);
     appStore.showToast(
       syncedLyrics
-        ? 'Lagu, sampul, dan lirik sinkron berhasil disimpan.'
-        : 'Lagu dan sampul berhasil disimpan ke Koleksi.'
+        ? 'Lagu, sampul, dan lirik sinkron disimpan.'
+        : 'Lagu dan sampul disimpan ke Koleksi.'
     );
   }
 </script>
 
-{#if appStore.hubModalOpen}
-  <div class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="hub-modal-title">
-    <div class="modal-backdrop" onclick={() => (appStore.hubModalOpen = false)} role="presentation"></div>
-    <div class="modal-card">
-      <h2 id="hub-modal-title" class="modal-title">Hub Musik (Spotify API & YouTube)</h2>
-      <p class="modal-desc">
-        Tempel link Spotify atau YouTube untuk mendeteksi sampul HD, judul lagu, artis, dan lirik sinkron otomatis.
-      </p>
+<Popup opened={appStore.hubModalOpen} onBackdropClick={() => (appStore.hubModalOpen = false)}>
+  <Page>
+    <Navbar title="Hub Spotify & YouTube">
+      {#snippet right()}
+        <Link iconOnly onclick={() => (appStore.hubModalOpen = false)} aria-label="Tutup">
+          <Icon name="close" size={20} />
+        </Link>
+      {/snippet}
+    </Navbar>
 
-      <div class="field-group">
-        <label class="field-label" for="hub-url">Tautan Spotify / YouTube</label>
-        <input
-          id="hub-url"
-          class="field-input"
-          type="url"
-          placeholder="https://open.spotify.com/track/... atau https://youtu.be/..."
-          bind:value={hubUrlInput}
-        />
-      </div>
+    <List strong inset>
+      <ListInput
+        label="Tautan Spotify / YouTube"
+        type="url"
+        placeholder="https://open.spotify.com/track/... atau https://youtu.be/..."
+        value={hubUrlInput}
+        onInput={(e) => (hubUrlInput = e.target.value)}
+      />
+    </List>
 
-      <div class="modal-actions-row">
-        <button type="button" class="pill-btn primary flex-1" disabled={hubDetecting} onclick={processHubLink}>
-          {hubDetecting ? 'Mendeteksi...' : 'Deteksi & Muat'}
-        </button>
-        <button
-          type="button"
-          class="pill-btn ghost"
-          onclick={() => {
-            appStore.hubModalOpen = false;
-            appStore.editProfileOpen = true;
-          }}
-        >
-          API Key
-        </button>
-      </div>
+    <Block class="grid grid-cols-2 gap-2 !my-2">
+      <Button rounded disabled={hubDetecting} onclick={processHubLink}>
+        {hubDetecting ? 'Mendeteksi...' : 'Deteksi & Muat'}
+      </Button>
+      <Button
+        tonal
+        rounded
+        onclick={() => {
+          appStore.hubModalOpen = false;
+          appStore.editProfileOpen = true;
+        }}
+      >
+        Atur API Key
+      </Button>
+    </Block>
 
-      {#if hubMeta}
-        <div class="meta-preview-card">
-          {#if hubMeta.imageUrl}
-            <img src={hubMeta.imageUrl} alt="Sampul {hubMeta.title}" class="meta-preview-img" />
-          {/if}
-          <div class="min-w-0 flex-1">
-            <div class="truncate fw-bold text-sm">{hubMeta.title}</div>
-            <div class="text-accent text-xs truncate">{hubMeta.artist}</div>
-            <div class="text-muted text-xs">Terdeteksi via {hubMeta.via}</div>
-          </div>
+    {#if hubMeta}
+      <Block strong inset class="flex items-center gap-3">
+        {#if hubMeta.imageUrl}
+          <img
+            src={hubMeta.imageUrl}
+            alt="Sampul {hubMeta.title}"
+            class="h-14 w-14 shrink-0 rounded-xl object-cover"
+          />
+        {/if}
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-sm font-bold text-zinc-950 dark:text-white">{hubMeta.title}</div>
+          <div class="truncate text-xs text-[#007aff] dark:text-[#64d2ff]">{hubMeta.artist}</div>
+          <div class="text-[11px] text-zinc-600 dark:text-zinc-300">Via {hubMeta.via}</div>
         </div>
-      {/if}
+      </Block>
+    {/if}
 
-      {#if hubMessage}
-        <p class="text-accent text-xs status-note" role="status">{hubMessage}</p>
-      {/if}
+    {#if hubMessage}
+      <Block class="!my-2">
+        <p class="text-xs text-[#007aff] dark:text-[#64d2ff]" role="status">{hubMessage}</p>
+      </Block>
+    {/if}
 
-      {#if hubEmbedType === 'spotify' && hubSpotify}
+    {#if hubEmbedType === 'spotify' && hubSpotify}
+      <Block class="!my-2">
         <iframe
           title="Spotify Preview"
-          class="embed-frame"
+          class="w-full rounded-2xl border-0"
           src="https://open.spotify.com/embed/{hubSpotify.type}/{hubSpotify.id}?theme=0"
-          width="100%"
           height="152"
           allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
         ></iframe>
-      {:else if hubEmbedType === 'youtube' && hubVideoId}
+      </Block>
+    {:else if hubEmbedType === 'youtube' && hubVideoId}
+      <Block class="!my-2">
         <iframe
           title="YouTube Preview"
-          class="embed-frame"
-          width="100%"
+          class="w-full rounded-2xl border-0"
           height="200"
           src="https://www.youtube.com/embed/{hubVideoId}"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowfullscreen
         ></iframe>
-      {/if}
+      </Block>
+    {/if}
 
-      {#if hubEmbedType}
-        <div class="stack-sm">
-          <button type="button" class="pill-btn spotify full-w" disabled={hubSaving} onclick={saveHubToLibrary}>
-            {hubSaving ? 'Menyimpan Sampul & Lirik...' : 'Simpan Sampul, Lagu & Lirik ke Koleksi'}
-          </button>
-          {#if hubVideoId}
-            <button
-              type="button"
-              class="pill-btn ghost full-w"
-              onclick={() => {
-                appStore.hubModalOpen = false;
-                appStore.openDownloaderWithUrl(`https://youtu.be/${hubVideoId}`);
-              }}
-            >
-              Konversi & Unduh MP3 via API
-            </button>
-          {/if}
-        </div>
-      {/if}
-
-      <div class="modal-actions-end">
-        <button type="button" class="pill-btn ghost" onclick={() => (appStore.hubModalOpen = false)}>
-          Tutup
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
+    {#if hubEmbedType}
+      <Block class="space-y-2">
+        <Button
+          rounded
+          large
+          disabled={hubSaving}
+          class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
+          onclick={saveHubToLibrary}
+        >
+          {hubSaving ? 'Menyimpan Sampul & Lirik...' : 'Simpan ke Koleksi'}
+        </Button>
+        {#if hubVideoId}
+          <Button
+            tonal
+            rounded
+            onclick={() => {
+              appStore.hubModalOpen = false;
+              appStore.openDownloaderWithUrl(`https://youtu.be/${hubVideoId}`);
+            }}
+          >
+            Konversi & Unduh MP3 via API
+          </Button>
+        {/if}
+      </Block>
+    {/if}
+  </Page>
+</Popup>

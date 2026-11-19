@@ -1,3 +1,6 @@
+// Copyright 2026 Azka Putra
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * Shared formatting and pure helper utilities.
  */

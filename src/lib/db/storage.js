@@ -1,3 +1,6 @@
+// Copyright 2026 Azka Putra
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * Unified local persistence layer (IndexedDB v2 + LocalStorage + ObjectURL cache).
  * Prevents Android WebView memory leaks by caching and revoking Blob URLs deterministically.

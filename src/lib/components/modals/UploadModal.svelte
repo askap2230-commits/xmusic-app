@@ -1,5 +1,19 @@
+<!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script>
+  import {
+    Block,
+    Button,
+    Link,
+    List,
+    ListInput,
+    Navbar,
+    Page,
+    Popup,
+    Segmented,
+    SegmentedButton
+  } from 'konsta/svelte';
   import { appStore } from '#lib/stores/library.svelte.js';
+  import Icon from '../Icon.svelte';
 
   let uploadTab = $state('file');
   let urlInput = $state('');
@@ -32,42 +46,35 @@
   }
 </script>
 
-{#if appStore.uploadModalOpen}
-  <div class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="upload-modal-title">
-    <div class="modal-backdrop" onclick={() => (appStore.uploadModalOpen = false)} role="presentation"></div>
-    <div class="modal-card">
-      <h2 id="upload-modal-title" class="modal-title">Tambah Musik ke Perpustakaan</h2>
-      <p class="modal-desc">
-        Pilih file audio dari perangkatmu (100% offline) atau tempel URL stream MP3 langsung.
-      </p>
+<Popup
+  opened={appStore.uploadModalOpen}
+  onBackdropClick={() => (appStore.uploadModalOpen = false)}
+>
+  <Page>
+    <Navbar title="Tambah Musik">
+      {#snippet right()}
+        <Link iconOnly onclick={() => (appStore.uploadModalOpen = false)} aria-label="Tutup">
+          <Icon name="close" size={20} />
+        </Link>
+      {/snippet}
+    </Navbar>
 
-      <div class="tab-row" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={uploadTab === 'file'}
-          class="chip flex-1"
-          class:active={uploadTab === 'file'}
-          onclick={() => (uploadTab = 'file')}
-        >
-          File Lokal (MP3/WAV/FLAC)
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={uploadTab === 'url'}
-          class="chip flex-1"
-          class:active={uploadTab === 'url'}
-          onclick={() => (uploadTab = 'url')}
-        >
+    <Block class="!my-3">
+      <Segmented strong rounded>
+        <SegmentedButton active={uploadTab === 'file'} onclick={() => (uploadTab = 'file')}>
+          File Lokal
+        </SegmentedButton>
+        <SegmentedButton active={uploadTab === 'url'} onclick={() => (uploadTab = 'url')}>
           URL Stream
-        </button>
-      </div>
+        </SegmentedButton>
+      </Segmented>
+    </Block>
 
-      {#if uploadTab === 'file'}
-        <label class="dropzone">
-          <span class="dropzone-title">Pilih File Lagu (Mendukung Banyak File)</span>
-          <span class="dropzone-sub">Format: MP3, M4A, WAV, OGG, FLAC, AAC, OPUS</span>
+    {#if uploadTab === 'file'}
+      <Block strong inset class="space-y-3">
+        <label class="flex cursor-pointer flex-col items-center gap-1 rounded-2xl border-2 border-dashed border-black/20 bg-zinc-100 dark:border-white/25 dark:bg-black/30 p-6 text-center">
+          <span class="text-sm font-bold text-zinc-950 dark:text-white">Pilih File Audio (Bisa Banyak Sekaligus)</span>
+          <span class="text-xs text-zinc-600 dark:text-zinc-300">MP3, M4A, WAV, OGG, FLAC, AAC, OPUS</span>
           <input
             type="file"
             accept="audio/*"
@@ -77,9 +84,9 @@
           />
         </label>
 
-        <label class="dropzone dropzone-secondary">
-          <span class="text-accent fw-bold text-sm">+ Gambar Sampul Album (Opsional)</span>
-          <span class="dropzone-sub">{coverFileName}</span>
+        <label class="flex cursor-pointer flex-col items-center gap-1 rounded-2xl border border-dashed border-black/15 bg-zinc-50 dark:border-white/20 dark:bg-black/20 p-4 text-center">
+          <span class="text-xs font-bold text-[#007aff] dark:text-[#64d2ff]">+ Gambar Sampul Album (Opsional)</span>
+          <span class="text-xs text-zinc-600 dark:text-zinc-300">{coverFileName}</span>
           <input
             type="file"
             accept="image/*"
@@ -92,29 +99,39 @@
             }}
           />
         </label>
-      {:else}
-        <form onsubmit={onSubmitUrl}>
-          <div class="field-group">
-            <label class="field-label" for="up-url">URL Audio Langsung (.mp3 / stream)</label>
-            <input id="up-url" class="field-input" type="url" required placeholder="https://..." bind:value={urlInput} />
-          </div>
-          <div class="field-group">
-            <label class="field-label" for="up-title">Judul Lagu</label>
-            <input id="up-title" class="field-input" type="text" placeholder="Judul lagu" bind:value={urlTitle} />
-          </div>
-          <div class="field-group">
-            <label class="field-label" for="up-artist">Nama Artis</label>
-            <input id="up-artist" class="field-input" type="text" placeholder="Nama artis" bind:value={urlArtist} />
-          </div>
-          <button type="submit" class="pill-btn spotify full-w">Simpan URL ke Perpustakaan</button>
-        </form>
-      {/if}
-
-      <div class="modal-actions-end">
-        <button type="button" class="pill-btn ghost" onclick={() => (appStore.uploadModalOpen = false)}>
-          Tutup
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
+      </Block>
+    {:else}
+      <form onsubmit={onSubmitUrl}>
+        <List strong inset>
+          <ListInput
+            label="URL Audio Langsung"
+            type="url"
+            required
+            placeholder="https://example.com/song.mp3"
+            value={urlInput}
+            onInput={(e) => (urlInput = e.target.value)}
+          />
+          <ListInput
+            label="Judul Lagu"
+            type="text"
+            placeholder="Judul lagu"
+            value={urlTitle}
+            onInput={(e) => (urlTitle = e.target.value)}
+          />
+          <ListInput
+            label="Nama Artis"
+            type="text"
+            placeholder="Nama artis"
+            value={urlArtist}
+            onInput={(e) => (urlArtist = e.target.value)}
+          />
+        </List>
+        <Block>
+          <Button type="submit" rounded large class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black">
+            Simpan URL ke Perpustakaan
+          </Button>
+        </Block>
+      </form>
+    {/if}
+  </Page>
+</Popup>

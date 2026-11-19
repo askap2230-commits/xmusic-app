@@ -1,3 +1,4 @@
+<!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script>
   import { engine } from '#lib/audio/engine.svelte.js';
   import { EQ_PRESETS } from '#lib/data/presets.js';
@@ -6,29 +7,36 @@
   import Icon from './Icon.svelte';
 </script>
 
-{#if engine.current && !appStore.dynamicBarDismissed}
-  <div class="dynamic-bar" class:is-paused={!engine.playing} role="region" aria-label="Sedang diputar">
+{#if engine.current && !appStore.dynamicBarDismissed && !appStore.trackModalOpen}
+  <div
+    class="fixed top-[calc(env(safe-area-inset-top,0px)+8px)] left-1/2 -translate-x-1/2 z-50 flex w-[min(340px,calc(100vw-24px))] items-center gap-2 rounded-full border border-black/10 bg-white/95 px-2 py-1.5 shadow-xl dark:border-white/15 dark:bg-[#1c1c1e]/95 dark:shadow-2xl"
+    role="region"
+    aria-label="Status pemutaran cepat"
+  >
     <button
       type="button"
-      class="dynamic-bar-main"
+      class="flex min-w-0 flex-1 items-center gap-2.5 text-left"
       onclick={() => appStore.openTrackModal(engine.current, false)}
-      aria-label="Buka pemutar layar penuh untuk {engine.current.title}"
+      aria-label="Buka pemutar penuh untuk {engine.current.title}"
     >
       <span
-        class="dynamic-bar-art"
+        class="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold text-white"
         style={engine.current.imageUrl
           ? ''
-          : `background: linear-gradient(135deg, ${engine.current.c1 || '#3b82f6'}, ${engine.current.c2 || '#172554'})`}
+          : `background: linear-gradient(135deg, ${engine.current.c1 || '#007aff'}, ${engine.current.c2 || '#1c1c1e'})`}
       >
         {#if engine.current.imageUrl}
-          <img src={engine.current.imageUrl} alt="" />
+          <img src={engine.current.imageUrl} alt="" class="h-full w-full object-cover" />
         {:else}
-          <span>{getTrackInitial(engine.current.title)}</span>
+          {getTrackInitial(engine.current.title)}
         {/if}
       </span>
-      <span class="dynamic-bar-meta">
-        <span class="dynamic-bar-title">{engine.current.title}</span>
-        <span class="dynamic-bar-sub">
+
+      <span class="min-w-0 flex-1">
+        <span class="block truncate text-xs font-semibold text-zinc-950 dark:text-white">
+          {engine.current.title}
+        </span>
+        <span class="block truncate text-[11px] text-zinc-600 dark:text-zinc-300">
           {engine.current.artist}{engine.eqEnabled && engine.eqPreset !== 'flat'
             ? ` • ${EQ_PRESETS[engine.eqPreset]?.name || 'Custom'}`
             : ''}
@@ -36,23 +44,22 @@
       </span>
     </button>
 
-    <div class="dynamic-bar-actions">
-      <button
-        type="button"
-        class="play-btn play-btn-sm"
-        onclick={() => engine.togglePlay()}
-        aria-label={engine.playing ? 'Jeda lagu' : 'Putar lagu'}
-      >
-        <Icon name={engine.playing ? 'pause' : 'play'} size={14} />
-      </button>
-      <button
-        type="button"
-        class="icon-btn icon-btn-sm"
-        onclick={() => (appStore.dynamicBarDismissed = true)}
-        aria-label="Tutup bilah mengambang"
-      >
-        <Icon name="close" size={14} />
-      </button>
-    </div>
+    <button
+      type="button"
+      class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-zinc-950 text-white dark:bg-white dark:text-black"
+      onclick={() => engine.togglePlay()}
+      aria-label={engine.playing ? 'Jeda lagu' : 'Putar lagu'}
+    >
+      <Icon name={engine.playing ? 'pause' : 'play'} size={14} />
+    </button>
+
+    <button
+      type="button"
+      class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-zinc-600 hover:bg-black/5 dark:text-zinc-300 dark:hover:bg-white/10"
+      onclick={() => (appStore.dynamicBarDismissed = true)}
+      aria-label="Tutup bilah status cepat"
+    >
+      <Icon name="close" size={14} />
+    </button>
   </div>
 {/if}

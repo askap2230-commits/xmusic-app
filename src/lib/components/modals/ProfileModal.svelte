@@ -1,5 +1,8 @@
+<!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script>
+  import { Block, BlockTitle, Button, Link, List, ListInput, Navbar, Page, Popup } from 'konsta/svelte';
   import { appStore } from '#lib/stores/library.svelte.js';
+  import Icon from '../Icon.svelte';
 
   let name = $state('');
   let handle = $state('');
@@ -43,84 +46,90 @@
   }
 </script>
 
-{#if appStore.editProfileOpen}
-  <div class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
-    <div class="modal-backdrop" onclick={() => (appStore.editProfileOpen = false)} role="presentation"></div>
-    <div class="modal-card">
-      <h2 id="profile-modal-title" class="modal-title">Edit Profil & Konfigurasi API</h2>
+<Popup
+  opened={appStore.editProfileOpen}
+  onBackdropClick={() => (appStore.editProfileOpen = false)}
+>
+  <Page>
+    <Navbar title="Profil & API Key">
+      {#snippet right()}
+        <Link iconOnly onclick={() => (appStore.editProfileOpen = false)} aria-label="Tutup">
+          <Icon name="close" size={20} />
+        </Link>
+      {/snippet}
+    </Navbar>
 
-      <form onsubmit={handleSave}>
-        <div class="avatar-picker-row">
-          <label class="pill-btn ghost pill-btn-sm">
-            <span>Pilih Foto Profil</span>
-            <input type="file" accept="image/*" class="sr-only" onchange={onPhotoChange} />
-          </label>
-        </div>
+    <form onsubmit={handleSave}>
+      <Block class="flex justify-center !my-3">
+        <label class="inline-flex min-h-[44px] cursor-pointer items-center justify-center rounded-full border border-black/15 bg-black/5 px-5 text-sm font-semibold text-zinc-950 dark:border-white/20 dark:bg-white/10 dark:text-white">
+          Pilih Foto Profil
+          <input type="file" accept="image/*" class="sr-only" onchange={onPhotoChange} />
+        </label>
+      </Block>
 
-        <div class="field-group">
-          <label class="field-label" for="pr-name">Nama Tampilan</label>
-          <input id="pr-name" class="field-input" type="text" bind:value={name} />
-        </div>
-        <div class="field-group">
-          <label class="field-label" for="pr-handle">Username</label>
-          <input id="pr-handle" class="field-input" type="text" bind:value={handle} />
-        </div>
-        <div class="field-group">
-          <label class="field-label" for="pr-bio">Bio Singkat</label>
-          <input id="pr-bio" class="field-input" type="text" bind:value={bio} />
-        </div>
+      <BlockTitle>Identitas Profil</BlockTitle>
+      <List strong inset>
+        <ListInput
+          label="Nama Tampilan"
+          type="text"
+          value={name}
+          onInput={(e) => (name = e.target.value)}
+        />
+        <ListInput
+          label="Username"
+          type="text"
+          value={handle}
+          onInput={(e) => (handle = e.target.value)}
+        />
+        <ListInput
+          label="Bio Singkat"
+          type="text"
+          value={bio}
+          onInput={(e) => (bio = e.target.value)}
+        />
+      </List>
 
-        <h3 class="form-section-title text-spotify">Spotify Web API (Sampul HD, Judul & Artis)</h3>
-        <div class="field-group">
-          <label class="field-label" for="api-sp-id">Spotify Client ID</label>
-          <input
-            id="api-sp-id"
-            class="field-input"
-            type="text"
-            placeholder="Client ID dari developer.spotify.com"
-            bind:value={spotifyClientId}
-          />
-        </div>
-        <div class="field-group">
-          <label class="field-label" for="api-sp-sec">Spotify Client Secret</label>
-          <input
-            id="api-sp-sec"
-            class="field-input"
-            type="password"
-            placeholder="Client Secret Spotify"
-            bind:value={spotifyClientSecret}
-          />
-        </div>
+      <BlockTitle>Spotify Web API (Sampul HD & Metadata)</BlockTitle>
+      <List strong inset>
+        <ListInput
+          label="Spotify Client ID"
+          type="text"
+          placeholder="Client ID dari developer.spotify.com"
+          value={spotifyClientId}
+          onInput={(e) => (spotifyClientId = e.target.value)}
+        />
+        <ListInput
+          label="Spotify Client Secret"
+          type="password"
+          placeholder="Client Secret Spotify"
+          value={spotifyClientSecret}
+          onInput={(e) => (spotifyClientSecret = e.target.value)}
+        />
+      </List>
 
-        <h3 class="form-section-title text-accent">API Tambahan (YouTube & Downloader)</h3>
-        <div class="field-group">
-          <label class="field-label" for="api-rapid">RapidAPI Key (youtube-mp36)</label>
-          <input
-            id="api-rapid"
-            class="field-input"
-            type="password"
-            placeholder="Opsional — untuk fitur konversi MP3"
-            bind:value={rapidApiKey}
-          />
-        </div>
-        <div class="field-group">
-          <label class="field-label" for="api-yt">YouTube Data API v3 Key (Opsional)</label>
-          <input
-            id="api-yt"
-            class="field-input"
-            type="password"
-            placeholder="AIzaSy..."
-            bind:value={ytApiKey}
-          />
-        </div>
+      <BlockTitle>API Tambahan (Opsional)</BlockTitle>
+      <List strong inset>
+        <ListInput
+          label="RapidAPI Key (youtube-mp36)"
+          type="password"
+          placeholder="Untuk fitur konversi MP3"
+          value={rapidApiKey}
+          onInput={(e) => (rapidApiKey = e.target.value)}
+        />
+        <ListInput
+          label="YouTube Data API v3 Key"
+          type="password"
+          placeholder="AIzaSy..."
+          value={ytApiKey}
+          onInput={(e) => (ytApiKey = e.target.value)}
+        />
+      </List>
 
-        <div class="modal-actions-row">
-          <button type="button" class="pill-btn ghost flex-1" onclick={() => (appStore.editProfileOpen = false)}>
-            Batal
-          </button>
-          <button type="submit" class="pill-btn spotify flex-1">Simpan Pengaturan</button>
-        </div>
-      </form>
-    </div>
-  </div>
-{/if}
+      <Block>
+        <Button type="submit" rounded large class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black">
+          Simpan Pengaturan
+        </Button>
+      </Block>
+    </form>
+  </Page>
+</Popup>

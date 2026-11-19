@@ -1,6 +1,9 @@
+<!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script>
+  import { Block, Button, Link, List, ListInput, Navbar, Page, Popup } from 'konsta/svelte';
   import { fetchSyncedLyrics } from '#lib/api/services.js';
   import { appStore } from '#lib/stores/library.svelte.js';
+  import Icon from '../Icon.svelte';
 
   let title = $state('');
   let artist = $state('');
@@ -36,46 +39,58 @@
   }
 </script>
 
-{#if appStore.editTrackOpen && appStore.editingTrack}
-  <div class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="edit-track-title">
-    <div class="modal-backdrop" onclick={() => (appStore.editTrackOpen = false)} role="presentation"></div>
-    <div class="modal-card">
-      <h2 id="edit-track-title" class="modal-title">Edit Detail & Lirik Sinkron (LRC)</h2>
-      <form onsubmit={handleSave}>
-        <div class="field-group">
-          <label class="field-label" for="et-title">Judul Lagu</label>
-          <input id="et-title" class="field-input" type="text" required bind:value={title} />
-        </div>
-        <div class="field-group">
-          <label class="field-label" for="et-artist">Nama Artis</label>
-          <input id="et-artist" class="field-input" type="text" bind:value={artist} />
-        </div>
-        <div class="field-group">
-          <label class="field-label" for="et-album">Album / Kategori</label>
-          <input id="et-album" class="field-input" type="text" bind:value={album} />
-        </div>
-        <div class="field-group">
-          <div class="field-label-row">
-            <label class="field-label" for="et-lyrics">Lirik LRC ([mm:ss.xx] Baris)</label>
-            <button type="button" class="chip chip-sm" disabled={searchingLrc} onclick={autoFindLrc}>
-              {searchingLrc ? 'Mencari...' : 'Auto-Cari LRCLIB'}
-            </button>
-          </div>
-          <textarea
-            id="et-lyrics"
-            class="field-textarea"
-            placeholder="[00:12.50] Contoh lirik sinkron..."
-            bind:value={lyrics}
-          ></textarea>
-        </div>
+<Popup
+  opened={appStore.editTrackOpen && Boolean(appStore.editingTrack)}
+  onBackdropClick={() => (appStore.editTrackOpen = false)}
+>
+  <Page>
+    <Navbar title="Edit Detail & Lirik">
+      {#snippet right()}
+        <Link iconOnly onclick={() => (appStore.editTrackOpen = false)} aria-label="Tutup">
+          <Icon name="close" size={20} />
+        </Link>
+      {/snippet}
+    </Navbar>
 
-        <div class="modal-actions-row">
-          <button type="button" class="pill-btn ghost flex-1" onclick={() => (appStore.editTrackOpen = false)}>
-            Batal
-          </button>
-          <button type="submit" class="pill-btn spotify flex-1">Simpan Perubahan</button>
-        </div>
-      </form>
-    </div>
-  </div>
-{/if}
+    <form onsubmit={handleSave}>
+      <List strong inset>
+        <ListInput
+          label="Judul Lagu"
+          type="text"
+          required
+          value={title}
+          onInput={(e) => (title = e.target.value)}
+        />
+        <ListInput
+          label="Nama Artis"
+          type="text"
+          value={artist}
+          onInput={(e) => (artist = e.target.value)}
+        />
+        <ListInput
+          label="Album / Kategori"
+          type="text"
+          value={album}
+          onInput={(e) => (album = e.target.value)}
+        />
+        <ListInput
+          label="Lirik LRC ([mm:ss.xx] Baris)"
+          type="textarea"
+          inputClass="!h-36 resize-y"
+          placeholder="[00:12.50] Contoh lirik sinkron..."
+          value={lyrics}
+          onInput={(e) => (lyrics = e.target.value)}
+        />
+      </List>
+
+      <Block class="space-y-2.5">
+        <Button tonal rounded disabled={searchingLrc} onclick={autoFindLrc}>
+          {searchingLrc ? 'Mencari di LRCLIB...' : 'Auto-Cari Lirik LRCLIB'}
+        </Button>
+        <Button type="submit" rounded large class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black">
+          Simpan Perubahan
+        </Button>
+      </Block>
+    </form>
+  </Page>
+</Popup>

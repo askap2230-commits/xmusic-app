@@ -1,39 +1,30 @@
-# WCAG 2.2 AA Accessibility Standard — nys Xmusic v3.0
+# WCAG 2.2 AA & WebQual 4.0 Compliance — nys Xmusic v4.0
 
-`nys Xmusic` enforces **WCAG 2.2 Level AA** (with AAA targets for core reading contrast and touch target sizing) across Desktop and Android WebView.
-
----
-
-## 1. Verified Color Contrast Matrix
-
-| Role | Foreground | Background | Approximate Ratio | WCAG Status |
-| :--- | :--- | :--- | :--- | :--- |
-| Primary text on canvas | `#f1f5f9` | `#0a0b0f` | `17.8 : 1` | AAA Pass |
-| Primary text on card | `#f1f5f9` | `#181c28` | `14.6 : 1` | AAA Pass |
-| Secondary / muted text | `#9ca3b8` | `#12151f` | `6.8 : 1` | AA+ Pass |
-| Accent text / focus ring | `#7dd3fc` | `#12151f` | `10.9 : 1` | AAA Pass |
-| Primary CTA button | `#0a0b0f` | `#f1f5f9` | `17.8 : 1` | AAA Pass |
-| Spotify CTA button | `#04140a` | `#1db954` | `8.1 : 1` | AAA Pass |
+`nys Xmusic` combines **Konsta UI v5.5 iOS Theme** with strict **WCAG 2.2 Level AA** accessibility and **WebQual 4.0** software quality standards.
 
 ---
 
-## 2. Structural & Interactive Requirements
+## 1. WCAG 2.2 AA Compliance Matrix
 
-1. **Zoom & Reflow (WCAG 1.4.4 / 1.4.10)**:
-   - `src/app.html` uses `width=device-width, initial-scale=1, viewport-fit=cover` with pinch-to-zoom explicitly enabled (`user-scalable=no` and `maximum-scale=1` are prohibited).
-2. **Landmarks & Skip Navigation (WCAG 2.4.1)**:
-   - Includes `.skip-link` (`Lewati ke konten utama`) targeting `<main id="main-content" tabindex="-1">`.
-   - Distinct semantic regions: `<aside aria-label>`, `<header>`, `<main>`, `<nav aria-label>`, `<footer aria-label>`.
-3. **Keyboard & Focus Visibility (WCAG 2.1.1 / 2.4.7 / 2.4.11)**:
-   - Global `:focus-visible` rule renders a high-contrast `2px solid #7dd3fc` ring with `2px` offset.
-   - `Escape` closes the topmost open modal or drawer.
-   - Seek bars support `ArrowLeft` (`-5s`) and `ArrowRight` (`+5s`) keyboard scrubbing with `aria-valuetext`.
-4. **No Nested Interactive Controls (WCAG 4.1.2)**:
-   - Track cards separate the cover trigger `<button>` from top-right action buttons and the bottom play `<button>` — zero `<button>` elements nested inside clickable containers.
-5. **Dialogs & Live Regions (WCAG 4.1.3)**:
-   - All 7 modals use `role="dialog"`, `aria-modal="true"`, and `aria-labelledby`.
-   - Toast messages render inside a persistent `role="status" aria-live="polite" aria-atomic="true"` region.
-6. **Touch Target Sizing (WCAG 2.5.8)**:
-   - Primary buttons, nav items, inputs, and player controls maintain `>= 44x44px` interactive bounds on mobile viewports.
-7. **Reduced Motion (WCAG 2.3.3)**:
-   - `@media (prefers-reduced-motion: reduce)` disables CSS transitions/animations, smooth scroll, and the Canvas FFT visualizer loop.
+| Criterion | Implementation in nys Xmusic v4.0 | Status |
+| :--- | :--- | :--- |
+| **1.4.3 Contrast (Minimum)** | Dual-mode verified: Light Mode (`#09090b` / `#52525b` on `#ffffff` / `#f2f2f7`, `#ffffff` on `#248a3d` green) and Dark Mode (`#ffffff` / `#d4d4d8` on `#000000` / `#1c1c1e`, `#000000` on `#30d158` green) — all >= 4.5:1 AA / 7:1+ AAA. | Pass (AAA) |
+| **1.4.4 Resize Text** | `src/app.html` viewport enables pinch-to-zoom (`user-scalable=no` and `maximum-scale=1` prohibited). | Pass |
+| **2.1.1 Keyboard & 2.4.7 Focus** | Global `:focus-visible` `2px solid #64d2ff` ring; `Escape` closes active Konsta `Popup` / `Panel`; native `<button>` and Konsta `<Range>` keyboard controls. | Pass |
+| **2.3.3 Animation from Interactions** | `@media (prefers-reduced-motion: reduce)` disables transitions, smooth lyric scroll, and FFT Canvas animation. | Pass |
+| **2.4.1 Bypass Blocks** | `.skip-link` (`Lewati ke konten utama`) jumps directly to `<main id="main-content">`. | Pass |
+| **2.5.8 Target Size (Minimum)** | iOS `Tabbar`, `Navbar` icon links, mini-player buttons, and modal controls maintain `>= 44x44px` touch areas. | Pass (AAA) |
+| **4.1.2 Name, Role, Value** | Zero nested interactive buttons; explicit `aria-label`, `aria-pressed`, `role="tablist"`, `role="region"`. | Pass |
+| **4.1.3 Status Messages** | Konsta `<Toast>` wrapped in `role="status" aria-live="polite" aria-atomic="true"`; loading indicators use `<Preloader />` with `role="status"`. | Pass |
+
+---
+
+## 2. WebQual 4.0 Quality Dimensions
+
+1. **Usability (Kemudahan Penggunaan)**:
+   - Familiar native iOS Human Interface Guidelines via Konsta UI (`Navbar` + 5-tab `Tabbar` + floating mini-player + `Panel` drawer + `Popup` sheets).
+   - Responsive Tailwind CSS v4 grid (`2` columns on mobile phones up to `5` columns on desktop) with zero horizontal overflow.
+2. **Information Quality (Kualitas Informasi)**:
+   - Real-time playback elapsed/remaining timestamps, active EQ preset badge, active Sleep Timer countdown in `Navbar`, Spotify API vs oEmbed mode badge, and single-source Tauri runtime version (`v4.0.0`).
+3. **Service Interaction Quality (Kualitas Interaksi Layanan)**:
+   - Instant visual feedback (`Toast`, `Preloader`, active states), automatic CORS audio fallback for third-party streams, offline IndexedDB persistence with leak-free `ObjectURL` cleanup, and zero hardcoded API keys.

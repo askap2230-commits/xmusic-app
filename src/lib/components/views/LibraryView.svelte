@@ -1,103 +1,85 @@
+<!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script>
+  import { Block, BlockTitle, Button, Chip } from 'konsta/svelte';
   import { engine } from '#lib/audio/engine.svelte.js';
   import { appStore } from '#lib/stores/library.svelte.js';
-  import Icon from '../Icon.svelte';
   import TrackCard from '../TrackCard.svelte';
 </script>
 
-<section class="section" aria-labelledby="library-heading">
-  <div class="section-head">
-    <h1 id="library-heading" class="view-title">Perpustakaan & Playlist Kamu</h1>
-    <div class="row-gap-sm">
-      <button
-        type="button"
-        class="pill-btn ghost pill-btn-sm"
-        onclick={() => (appStore.playlistModalOpen = true)}
-      >
-        <Icon name="folder" size={15} />
-        <span>Buat Playlist</span>
-      </button>
-      <button
-        type="button"
-        class="pill-btn primary pill-btn-sm"
-        onclick={() => (appStore.uploadModalOpen = true)}
-      >
-        <Icon name="plus" size={15} />
-        <span>Upload Lagu</span>
-      </button>
-    </div>
-  </div>
-
-  <div class="chip-row" role="tablist" aria-label="Filter perpustakaan">
-    <button
-      type="button"
-      role="tab"
-      aria-selected={appStore.libFilter === 'local'}
-      class="chip"
-      class:active={appStore.libFilter === 'local'}
+<Block class="!my-3 flex flex-wrap items-center justify-between gap-2">
+  <div class="flex flex-wrap gap-2" role="tablist" aria-label="Filter perpustakaan">
+    <Chip
+      outline={appStore.libFilter !== 'local'}
+      class="cursor-pointer {appStore.libFilter === 'local' ? '!bg-[#007aff] !text-white dark:!bg-[#0a84ff]' : ''}"
       onclick={() => (appStore.libFilter = 'local')}
     >
       Lagu Offline ({appStore.localTracks.length})
-    </button>
+    </Chip>
 
-    <button
-      type="button"
-      role="tab"
-      aria-selected={appStore.libFilter === 'liked'}
-      class="chip"
-      class:active={appStore.libFilter === 'liked'}
+    <Chip
+      outline={appStore.libFilter !== 'liked'}
+      class="cursor-pointer {appStore.libFilter === 'liked' ? '!bg-[#007aff] !text-white dark:!bg-[#0a84ff]' : ''}"
       onclick={() => (appStore.libFilter = 'liked')}
     >
       Favorit ({appStore.likedIds.length})
-    </button>
+    </Chip>
 
-    <button
-      type="button"
-      role="tab"
-      aria-selected={appStore.libFilter === 'history'}
-      class="chip"
-      class:active={appStore.libFilter === 'history'}
+    <Chip
+      outline={appStore.libFilter !== 'history'}
+      class="cursor-pointer {appStore.libFilter === 'history' ? '!bg-[#007aff] !text-white dark:!bg-[#0a84ff]' : ''}"
       onclick={() => (appStore.libFilter = 'history')}
     >
-      Riwayat Putar ({engine.history.length})
-    </button>
+      Riwayat ({engine.history.length})
+    </Chip>
 
     {#each appStore.playlists as pl (pl.id)}
-      <button
-        type="button"
-        role="tab"
-        aria-selected={appStore.libFilter === pl.id}
-        class="chip"
-        class:active={appStore.libFilter === pl.id}
+      <Chip
+        outline={appStore.libFilter !== pl.id}
+        class="cursor-pointer {appStore.libFilter === pl.id ? '!bg-[#007aff] !text-white dark:!bg-[#0a84ff]' : ''}"
         onclick={() => (appStore.libFilter = pl.id)}
       >
         {pl.name} ({pl.trackIds.length})
-      </button>
+      </Chip>
     {/each}
   </div>
 
+  <div class="flex gap-2">
+    <Button tonal rounded small inline onclick={() => (appStore.playlistModalOpen = true)}>
+      + Playlist
+    </Button>
+    <Button rounded small inline onclick={() => (appStore.uploadModalOpen = true)}>
+      + Upload
+    </Button>
+  </div>
+</Block>
+
+<BlockTitle>Koleksi Lagu ({appStore.filteredLibrary.length})</BlockTitle>
+<Block class="!my-2">
   {#if appStore.filteredLibrary.length > 0}
-    <div class="grid">
+    <div class="xmusic-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       {#each appStore.filteredLibrary as track (track.id)}
         <TrackCard {track} />
       {/each}
     </div>
   {:else}
-    <div class="surface-card empty-state">
-      <h2>Belum ada lagu di kategori ini</h2>
-      <p class="text-muted text-sm">
-        Upload file MP3/M4A/WAV lokal dari perangkatmu atau buat lagu demo synthwave secara instan.
+    <Block strong inset class="!mx-0 space-y-3 text-center">
+      <h3 class="text-base font-bold text-zinc-950 dark:text-white">Belum ada lagu di kategori ini</h3>
+      <p class="text-sm text-zinc-600 dark:text-zinc-300">
+        Unggah file MP3/M4A/WAV/FLAC dari perangkatmu atau buat lagu demo synthwave secara instan.
       </p>
-      <div class="empty-actions">
-        <button type="button" class="pill-btn primary" onclick={() => (appStore.uploadModalOpen = true)}>
-          <Icon name="upload" size={16} />
-          <span>Upload File Audio</span>
-        </button>
-        <button type="button" class="pill-btn spotify" onclick={() => appStore.createBuiltInSynthDemo()}>
-          <Icon name="spark" size={16} />
-          <span>Buat Lagu Demo Offline</span>
-        </button>
+      <div class="flex flex-wrap justify-center gap-2 pt-1">
+        <Button rounded inline onclick={() => (appStore.uploadModalOpen = true)}>
+          Upload File Audio
+        </Button>
+        <Button
+          rounded
+          inline
+          class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
+          onclick={() => appStore.createBuiltInSynthDemo()}
+        >
+          Buat Lagu Demo Offline
+        </Button>
       </div>
-    </div>
+    </Block>
   {/if}
-</section>
+</Block>

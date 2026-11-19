@@ -1,129 +1,122 @@
+<!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script>
+  import { Block, BlockTitle, Button, Preloader } from 'konsta/svelte';
   import { CATEGORIES, SPOTIFY_CHARTS } from '#lib/data/presets.js';
   import { appStore } from '#lib/stores/library.svelte.js';
   import { getTimeGreeting } from '#lib/utils/format.js';
-  import Icon from '../Icon.svelte';
   import TrackCard from '../TrackCard.svelte';
 </script>
 
-<section class="hero" aria-labelledby="hero-heading">
-  <div class="hero-eyebrow">
+<Block strong inset class="space-y-4">
+  <div class="text-xs font-semibold tracking-wide text-[#007aff] dark:text-[#64d2ff]">
     nys Xmusic v{appStore.runtimeInfo.version} • {getTimeGreeting()}, {appStore.userProfile.name}
   </div>
-  <h1 id="hero-heading">Audio Jernih, Tanpa Kompromi.</h1>
-  <p class="hero-desc">
-    Ketuk <strong>2x kartu lagu</strong> untuk membalik dan melihat lirik sinkron sesuai irama. Tempel tautan Spotify di Hub Musik untuk deteksi sampul dan artis otomatis.
+  <h2 class="text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">Audio Jernih, Tanpa Kompromi.</h2>
+  <p class="max-w-2xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">
+    Ketuk <strong>2x kartu lagu</strong> untuk membalik dan melihat lirik sinkron sesuai irama. Tempel tautan Spotify di Hub Musik untuk deteksi sampul HD dan artis otomatis.
   </p>
-  <div class="hero-actions">
-    <button type="button" class="pill-btn primary" onclick={() => (appStore.uploadModalOpen = true)}>
-      <Icon name="upload" size={16} />
-      <span>Upload MP3 / URL</span>
-    </button>
-    <button type="button" class="pill-btn spotify" onclick={() => appStore.createBuiltInSynthDemo()}>
-      <Icon name="spark" size={16} />
-      <span>Putar Lagu Demo (0 KB)</span>
-    </button>
-    <button type="button" class="pill-btn ghost" onclick={() => (appStore.hubModalOpen = true)}>
-      <Icon name="link" size={16} />
-      <span>Hub Spotify & YT</span>
-    </button>
-    <button type="button" class="pill-btn ghost" onclick={() => (appStore.view = 'eq')}>
-      <Icon name="eq" size={16} />
-      <span>Equalizer</span>
-    </button>
+
+  <div class="grid grid-cols-2 gap-2.5 sm:flex sm:flex-wrap">
+    <Button rounded onclick={() => (appStore.uploadModalOpen = true)}>Upload MP3 / URL</Button>
+    <Button
+      rounded
+      class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
+      onclick={() => appStore.createBuiltInSynthDemo()}
+    >
+      Lagu Demo (0 KB)
+    </Button>
+    <Button tonal rounded onclick={() => (appStore.hubModalOpen = true)}>Hub Spotify & YT</Button>
+    <Button tonal rounded onclick={() => appStore.openDownloaderWithUrl()}>API Downloader</Button>
   </div>
-</section>
+</Block>
 
 {#if appStore.localTracks.length > 0}
-  <section class="section" aria-labelledby="offline-heading">
-    <div class="section-head">
-      <h2 id="offline-heading">Koleksi Offline Kamu ({appStore.localTracks.length})</h2>
-      <button
-        type="button"
-        class="chip"
-        onclick={() => {
-          appStore.view = 'library';
-          appStore.libFilter = 'local';
-        }}
-      >
-        Lihat Semua
-      </button>
-    </div>
-    <div class="grid">
+  <BlockTitle class="flex items-center justify-between">
+    <span>Koleksi Offline ({appStore.localTracks.length})</span>
+    <Button
+      clear
+      small
+      inline
+      onclick={() => {
+        appStore.view = 'library';
+        appStore.libFilter = 'local';
+      }}
+    >
+      Lihat Semua
+    </Button>
+  </BlockTitle>
+  <Block class="!my-2">
+    <div class="xmusic-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       {#each appStore.localTracks.slice(0, 6) as track (track.id)}
         <TrackCard {track} />
       {/each}
     </div>
-  </section>
+  </Block>
 {/if}
 
-<section class="section" aria-labelledby="genre-heading">
-  <div class="section-head">
-    <h2 id="genre-heading">Eksplorasi Genre & Suasana</h2>
-  </div>
-  <div class="category-grid">
+<BlockTitle>Eksplorasi Genre & Suasana</BlockTitle>
+<Block class="!my-2">
+  <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
     {#each CATEGORIES as cat}
       <button
         type="button"
-        class="category-card"
-        style="--cat-bg:{cat.bg}; --cat-accent:{cat.accent};"
+        class="flex min-h-[72px] flex-col justify-center rounded-2xl border border-white/10 p-3.5 text-left transition-transform active:scale-[0.98]"
+        style="background:{cat.bg}; border-left: 4px solid {cat.accent};"
         onclick={() => appStore.updateSearch(cat.q)}
       >
-        <span class="category-title">{cat.label}</span>
-        <span class="category-sub">{cat.sub}</span>
+        <span class="text-sm font-bold text-white">{cat.label}</span>
+        <span class="mt-0.5 text-xs text-zinc-300">{cat.sub}</span>
       </button>
     {/each}
   </div>
-</section>
+</Block>
 
-<section class="section" aria-labelledby="trending-heading">
-  <div class="section-head">
-    <h2 id="trending-heading">Trending Streaming (Audius Global)</h2>
-  </div>
+<BlockTitle>Trending Streaming (Audius Global)</BlockTitle>
+<Block class="!my-2">
   {#if appStore.loadingHome}
-    <p class="text-muted text-sm" role="status">Memuat daftar lagu trending...</p>
+    <div class="flex items-center gap-3 py-4 text-sm text-zinc-600 dark:text-zinc-300" role="status">
+      <Preloader size="w-5 h-5" />
+      <span>Memuat daftar lagu trending...</span>
+    </div>
   {:else if appStore.trendingTracks.length > 0}
-    <div class="grid">
+    <div class="xmusic-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       {#each appStore.trendingTracks.slice(0, 24) as track (track.id)}
         <TrackCard {track} />
       {/each}
     </div>
   {:else}
-    <p class="text-muted text-sm">
-      Sedang offline atau server streaming tidak terjangkau. Gunakan koleksi offline atau tombol
-      <strong>Putar Lagu Demo</strong> di atas.
-    </p>
+    <Block strong inset class="!mx-0">
+      <p class="text-sm text-zinc-600 dark:text-zinc-300">
+        Sedang offline atau server streaming tidak terjangkau. Gunakan koleksi offline atau tombol
+        <strong>Lagu Demo</strong> di atas.
+      </p>
+    </Block>
   {/if}
-</section>
+</Block>
 
 {#if appStore.ytTracks.length > 0}
-  <section class="section" aria-labelledby="yt-heading">
-    <div class="section-head">
-      <h2 id="yt-heading">Trending YouTube Music Indonesia</h2>
-    </div>
-    <div class="grid">
+  <BlockTitle>Trending YouTube Music Indonesia</BlockTitle>
+  <Block class="!my-2">
+    <div class="xmusic-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       {#each appStore.ytTracks as track (track.id)}
         <TrackCard {track} />
       {/each}
     </div>
-  </section>
+  </Block>
 {/if}
 
-<section class="section" aria-labelledby="charts-heading">
-  <div class="section-head">
-    <h2 id="charts-heading">Chart Resmi Spotify</h2>
-  </div>
-  <div class="charts-grid">
+<BlockTitle>Chart Resmi Spotify</BlockTitle>
+<Block class="!my-2">
+  <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
     {#each SPOTIFY_CHARTS as chart}
       <iframe
         title={chart.title}
-        class="spotify-embed"
+        class="w-full rounded-2xl border-0"
         src="https://open.spotify.com/embed/playlist/{chart.id}?theme=0"
-        width="100%"
         height="352"
         allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
         loading="lazy"
       ></iframe>
     {/each}
   </div>
-</section>
+</Block>

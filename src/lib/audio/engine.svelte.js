@@ -1,3 +1,6 @@
+// Copyright 2026 Azka Putra
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * Reactive Svelte 5 Runes Audio Engine powered by Web Audio API.
  *

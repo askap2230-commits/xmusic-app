@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
+# Copyright 2026 Azka Putra
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """
 Full Android Adaptive Icon & Mipmap Synchronization Script for Tauri v2.
-
-Ensures app-icon.png is 32-bit RGBA and injects crisp mipmap launcher icons
-(mdpi through xxxhdpi) plus API 26+ adaptive icon XML while removing default
-Tauri vector drawables that override custom launcher artwork.
 """
 from __future__ import annotations
 
@@ -15,8 +14,8 @@ from PIL import Image, ImageDraw
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ICON_SRC = os.path.join(ROOT, "app-icon.png")
 ANDROID_RES = os.path.join(ROOT, "src-tauri", "gen", "android", "app", "src", "main", "res")
-BG_HEX = "#0A0B0F"
-BG_RGBA = (10, 11, 15, 255)
+BG_HEX = "#000000"
+BG_RGBA = (0, 0, 0, 255)
 
 
 def make_round_icon(img: Image.Image, size: int) -> Image.Image:
@@ -82,7 +81,6 @@ def main() -> None:
     ):
         for stale in glob.glob(pattern):
             os.remove(stale)
-            print(f"[Icon Sync] Removed default template icon: {stale}")
 
     anydpi_dir = os.path.join(ANDROID_RES, "mipmap-anydpi-v26")
     os.makedirs(anydpi_dir, exist_ok=True)

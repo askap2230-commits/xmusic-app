@@ -1,3 +1,6 @@
+// Copyright 2026 Azka Putra
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * 5-Band Web Audio Equalizer presets, WCAG-verified category cards,
  * Spotify chart embeds, playback speed/sleep options, and procedural WAV demo generator.

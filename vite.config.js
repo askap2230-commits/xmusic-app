@@ -1,15 +1,19 @@
+// Copyright 2026 Azka Putra
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 const host = process.env.TAURI_DEV_HOST;
 
 /**
- * Unified SvelteKit 3 + Vite 8 configuration for Tauri v2.
- * Note: SvelteKit 3 declares adapter and compiler options directly inside sveltekit().
+ * Unified SvelteKit 3 + Tailwind CSS v4 + Konsta UI + Vite 8 configuration for Tauri v2.12.
  */
 export default defineConfig({
   plugins: [
+    tailwindcss(),
     sveltekit({
       adapter: adapter({
         pages: 'dist',
@@ -45,6 +49,6 @@ export default defineConfig({
     cssMinify: true,
     sourcemap: false,
     reportCompressedSize: false,
-    chunkSizeWarningLimit: 600
+    chunkSizeWarningLimit: 650
   }
 });

@@ -1,167 +1,169 @@
+<!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script>
+  import {
+    Block,
+    BlockTitle,
+    Button,
+    Chip,
+    List,
+    ListItem,
+    Range,
+    Toggle
+  } from 'konsta/svelte';
   import { engine } from '#lib/audio/engine.svelte.js';
   import { EQ_BANDS, EQ_PRESETS, SLEEP_OPTIONS, SPEED_OPTIONS } from '#lib/data/presets.js';
   import { formatTime } from '#lib/utils/format.js';
-  import Icon from '../Icon.svelte';
 </script>
 
-<section class="section" aria-labelledby="eq-heading">
-  <div class="section-head">
-    <h1 id="eq-heading" class="view-title">Studio Equalizer 5-Band & Efek Audio</h1>
-    <button
-      type="button"
-      class="pill-btn {engine.eqEnabled ? 'spotify' : 'ghost'}"
-      aria-pressed={engine.eqEnabled}
-      onclick={() => engine.toggleEq()}
-    >
-      {engine.eqEnabled ? 'Equalizer Aktif' : 'Equalizer Nonaktif'}
-    </button>
+<BlockTitle>5-Band Web Audio Equalizer</BlockTitle>
+<List strong inset>
+  <ListItem
+    label
+    title="Aktifkan Equalizer"
+    subtitle="BiquadFilterNode real-time tanpa distorsi"
+  >
+    {#snippet after()}
+      <Toggle
+        component="div"
+        checked={engine.eqEnabled}
+        onChange={() => engine.toggleEq()}
+      />
+    {/snippet}
+  </ListItem>
+</List>
+
+<Block strong inset class="space-y-4">
+  <div class="flex flex-wrap gap-2" role="group" aria-label="Preset Equalizer">
+    {#each Object.entries(EQ_PRESETS) as [key, preset]}
+      <Chip
+        outline={engine.eqPreset !== key}
+        class="cursor-pointer {engine.eqPreset === key ? '!bg-[#007aff] !text-white dark:!bg-[#0a84ff]' : ''}"
+        onclick={() => engine.setPreset(key)}
+      >
+        {preset.name}
+      </Chip>
+    {/each}
   </div>
 
-  <div class="surface-card eq-rack">
-    <p class="text-muted text-sm">
-      Diproses real-time menggunakan <strong>Web Audio API BiquadFilterNode</strong> tanpa distorsi.
-    </p>
-
-    <div class="chip-row" role="group" aria-label="Preset Equalizer">
-      {#each Object.entries(EQ_PRESETS) as [key, preset]}
-        <button
-          type="button"
-          class="chip"
-          class:active={engine.eqPreset === key}
-          aria-pressed={engine.eqPreset === key}
-          onclick={() => engine.setPreset(key)}
-        >
-          {preset.name}
-        </button>
-      {/each}
+  <div class="grid grid-cols-6 gap-2 rounded-2xl border border-black/10 bg-zinc-100 dark:border-white/10 dark:bg-black/40 px-2 py-4">
+    <div class="flex flex-col items-center gap-1.5">
+      <span class="text-[11px] font-bold text-[#007aff] dark:text-[#64d2ff]">
+        {engine.preamp > 0 ? `+${engine.preamp}` : engine.preamp} dB
+      </span>
+      <input
+        class="xmusic-eq-slider"
+        type="range"
+        min="-12"
+        max="12"
+        step="0.5"
+        aria-label="Preamp Master Gain dalam desibel"
+        value={engine.preamp}
+        oninput={(e) => engine.setPreamp(e.currentTarget.value)}
+      />
+      <span class="text-[11px] font-semibold text-zinc-950 dark:text-white">Preamp</span>
+      <span class="text-center text-[10px] text-zinc-600 dark:text-zinc-300">Master</span>
     </div>
 
-    <div class="eq-sliders-grid">
-      <div class="eq-col">
-        <span class="eq-db">{engine.preamp > 0 ? `+${engine.preamp}` : engine.preamp} dB</span>
+    {#each EQ_BANDS as band, idx}
+      <div class="flex flex-col items-center gap-1.5">
+        <span class="text-[11px] font-bold text-[#007aff] dark:text-[#64d2ff]">
+          {engine.gains[idx] > 0 ? `+${engine.gains[idx]}` : engine.gains[idx]} dB
+        </span>
         <input
-          class="eq-range"
+          class="xmusic-eq-slider"
           type="range"
           min="-12"
           max="12"
           step="0.5"
-          aria-label="Preamp Master Gain dalam desibel"
-          value={engine.preamp}
-          oninput={(e) => engine.setPreamp(e.currentTarget.value)}
+          aria-label="Frekuensi {band.label} ({band.sub})"
+          value={engine.gains[idx]}
+          oninput={(e) => engine.setBandGain(idx, e.currentTarget.value)}
         />
-        <span class="eq-freq">Preamp</span>
-        <span class="eq-sub">Master Gain</span>
+        <span class="text-[11px] font-semibold text-zinc-950 dark:text-white">{band.label}</span>
+        <span class="text-center text-[10px] text-zinc-600 dark:text-zinc-300">{band.sub}</span>
       </div>
+    {/each}
+  </div>
+</Block>
 
-      {#each EQ_BANDS as band, idx}
-        <div class="eq-col">
-          <span class="eq-db">{engine.gains[idx] > 0 ? `+${engine.gains[idx]}` : engine.gains[idx]} dB</span>
-          <input
-            class="eq-range"
-            type="range"
-            min="-12"
-            max="12"
-            step="0.5"
-            aria-label="Frekuensi {band.label} ({band.sub}) dalam desibel"
-            value={engine.gains[idx]}
-            oninput={(e) => engine.setBandGain(idx, e.currentTarget.value)}
-          />
-          <span class="eq-freq">{band.label}</span>
-          <span class="eq-sub">{band.sub}</span>
-        </div>
-      {/each}
-    </div>
-
-    <div class="eq-extras-grid">
-      <div class="sub-panel">
-        <div class="sub-panel-head">
-          <span>Keseimbangan Stereo (Balance L/R)</span>
-          <span class="text-accent">
-            {engine.pan === 0
-              ? 'Center'
-              : engine.pan < 0
-                ? `L ${Math.round(Math.abs(engine.pan) * 100)}%`
-                : `R ${Math.round(engine.pan * 100)}%`}
-          </span>
-        </div>
-        <input
-          type="range"
-          class="range-input full-w"
-          min="-1"
-          max="1"
-          step="0.05"
-          aria-label="Keseimbangan stereo kiri dan kanan"
+<BlockTitle>Keseimbangan Stereo & Kecepatan Putar</BlockTitle>
+<List strong inset>
+  <ListItem
+    title="Balance Kiri / Kanan"
+    after={engine.pan === 0
+      ? 'Center'
+      : engine.pan < 0
+        ? `L ${Math.round(Math.abs(engine.pan) * 100)}%`
+        : `R ${Math.round(engine.pan * 100)}%`}
+  />
+  <ListItem>
+    {#snippet inner()}
+      <div class="flex w-full items-center gap-3">
+        <span class="text-xs font-semibold text-zinc-600 dark:text-zinc-300">L</span>
+        <Range
+          min={-1}
+          max={1}
+          step={0.05}
           value={engine.pan}
-          oninput={(e) => engine.setPan(e.currentTarget.value)}
+          onInput={(e) => engine.setPan(e.target.value)}
         />
-        <div class="sub-panel-foot">
-          <span>Kiri (L)</span>
-          <button type="button" class="text-btn" onclick={() => engine.setPan(0)}>Reset Center</button>
-          <span>Kanan (R)</span>
-        </div>
+        <span class="text-xs font-semibold text-zinc-600 dark:text-zinc-300">R</span>
+        <Button clear small inline onclick={() => engine.setPan(0)}>Reset</Button>
       </div>
+    {/snippet}
+  </ListItem>
 
-      <div class="sub-panel">
-        <div class="sub-panel-head">
-          <span>Kecepatan Putar (Speed & Pitch)</span>
-          <span class="text-spotify">{engine.playbackRate}x</span>
-        </div>
-        <div class="chip-row chip-row-tight">
-          {#each SPEED_OPTIONS as spd}
-            <button
-              type="button"
-              class="chip chip-sm"
-              class:active={engine.playbackRate === spd}
-              aria-pressed={engine.playbackRate === spd}
-              onclick={() => engine.setSpeed(spd)}
-            >
-              {spd}x
-            </button>
-          {/each}
-        </div>
-        <label class="checkbox-label">
-          <input
-            type="checkbox"
-            checked={engine.preservesPitch}
-            onchange={() => engine.togglePreservesPitch()}
-          />
-          <span>Pertahankan Nada Vokal (Matikan untuk efek Slowed / Nightcore)</span>
-        </label>
-      </div>
-    </div>
+  <ListItem
+    label
+    title="Pertahankan Nada Vokal"
+    subtitle="Matikan untuk efek Slowed / Nightcore"
+  >
+    {#snippet after()}
+      <Toggle
+        component="div"
+        checked={engine.preservesPitch}
+        onChange={() => engine.togglePreservesPitch()}
+      />
+    {/snippet}
+  </ListItem>
+</List>
+
+<Block strong inset class="space-y-3">
+  <div class="flex items-center justify-between text-sm font-semibold">
+    <span>Kecepatan Pemutaran</span>
+    <span class="text-[#248a3d] dark:text-[#30d158]">{engine.playbackRate}x</span>
   </div>
-
-  <div class="surface-card eq-rack">
-    <div class="sleep-head">
-      <div>
-        <h2 class="sleep-title">
-          <Icon name="moon" size={18} />
-          <span>Sleep Timer</span>
-        </h2>
-        <p class="text-muted text-sm">
-          Musik mengecil secara halus (fade-out) lalu berhenti otomatis.
-        </p>
-      </div>
-      {#if engine.sleepMinutes !== 0}
-        <span class="status-pill">
-          Aktif: {engine.sleepMinutes === -1 ? 'Akhir Lagu' : formatTime(engine.sleepRemainingSec)}
-        </span>
-      {/if}
-    </div>
-
-    <div class="chip-row">
-      {#each SLEEP_OPTIONS as opt}
-        <button
-          type="button"
-          class="chip"
-          class:active={engine.sleepMinutes === opt.minutes}
-          aria-pressed={engine.sleepMinutes === opt.minutes}
-          onclick={() => engine.setSleepTimer(opt.minutes)}
-        >
-          {opt.label}
-        </button>
-      {/each}
-    </div>
+  <div class="flex flex-wrap gap-2">
+    {#each SPEED_OPTIONS as spd}
+      <Chip
+        outline={engine.playbackRate !== spd}
+        class="cursor-pointer {engine.playbackRate === spd ? '!bg-[#007aff] !text-white dark:!bg-[#0a84ff]' : ''}"
+        onclick={() => engine.setSpeed(spd)}
+      >
+        {spd}x
+      </Chip>
+    {/each}
   </div>
-</section>
+</Block>
+
+<BlockTitle>
+  Sleep Timer {engine.sleepMinutes !== 0
+    ? `• ${engine.sleepMinutes === -1 ? 'Akhir Lagu' : formatTime(engine.sleepRemainingSec)}`
+    : ''}
+</BlockTitle>
+<Block strong inset class="space-y-3">
+  <p class="text-xs text-zinc-600 dark:text-zinc-300">
+    Volume mengecil halus (fade-out 5 detik terakhir) lalu berhenti otomatis.
+  </p>
+  <div class="flex flex-wrap gap-2">
+    {#each SLEEP_OPTIONS as opt}
+      <Chip
+        outline={engine.sleepMinutes !== opt.minutes}
+        class="cursor-pointer {engine.sleepMinutes === opt.minutes ? '!bg-[#007aff] !text-white dark:!bg-[#0a84ff]' : ''}"
+        onclick={() => engine.setSleepTimer(opt.minutes)}
+      >
+        {opt.label}
+      </Chip>
+    {/each}
+  </div>
+</Block>

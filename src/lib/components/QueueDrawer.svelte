@@ -1,112 +1,126 @@
+<!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script>
+  import {
+    Block,
+    Button,
+    Link,
+    List,
+    ListItem,
+    Navbar,
+    Page,
+    Panel,
+    Segmented,
+    SegmentedButton
+  } from 'konsta/svelte';
   import { engine } from '#lib/audio/engine.svelte.js';
   import { appStore } from '#lib/stores/library.svelte.js';
   import { getTrackInitial } from '#lib/utils/format.js';
   import Icon from './Icon.svelte';
 </script>
 
-<aside class="panel nowplaying" aria-label="Antrean putar dan lirik">
-  <div class="drawer-head">
-    <div class="row-gap-xs" role="tablist" aria-label="Panel kanan">
-      <button
-        type="button"
-        role="tab"
-        aria-selected={appStore.npTab === 'queue'}
-        class="chip"
-        class:active={appStore.npTab === 'queue'}
-        onclick={() => (appStore.npTab = 'queue')}
-      >
-        Antrean ({engine.queue.length})
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={appStore.npTab === 'lyrics'}
-        class="chip"
-        class:active={appStore.npTab === 'lyrics'}
-        onclick={() => (appStore.npTab = 'lyrics')}
-      >
-        Lirik Sinkron
-      </button>
-    </div>
+<Panel
+  side="right"
+  opened={appStore.npDrawerOpen}
+  onBackdropClick={() => (appStore.npDrawerOpen = false)}
+>
+  <Page>
+    <Navbar title="Antrean & Lirik">
+      {#snippet right()}
+        <Link iconOnly onclick={() => (appStore.npDrawerOpen = false)} aria-label="Tutup panel">
+          <Icon name="close" size={20} />
+        </Link>
+      {/snippet}
+    </Navbar>
 
-    <button
-      type="button"
-      class="icon-btn icon-btn-sm"
-      aria-label="Tutup panel antrean"
-      onclick={() => (appStore.npDrawerOpen = false)}
-    >
-      <Icon name="close" size={16} />
-    </button>
-  </div>
+    <Block class="!my-3">
+      <Segmented strong rounded>
+        <SegmentedButton
+          active={appStore.npTab === 'queue'}
+          onclick={() => (appStore.npTab = 'queue')}
+        >
+          Antrean ({engine.queue.length})
+        </SegmentedButton>
+        <SegmentedButton
+          active={appStore.npTab === 'lyrics'}
+          onclick={() => (appStore.npTab = 'lyrics')}
+        >
+          Lirik
+        </SegmentedButton>
+      </Segmented>
+    </Block>
 
-  {#if appStore.npTab === 'queue'}
-    <div class="drawer-subhead">
-      <span>Daftar Putar Berikutnya</span>
+    {#if appStore.npTab === 'queue'}
       {#if engine.queue.length > 0}
-        <button type="button" class="text-btn" onclick={() => (engine.queue = [])}>
-          Bersihkan
-        </button>
-      {/if}
-    </div>
+        <Block class="!my-2 flex items-center justify-between">
+          <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">Daftar Putar Berikutnya</span>
+          <Button clear small inline onclick={() => (engine.queue = [])}>Bersihkan</Button>
+        </Block>
 
-    <ul class="lib-list">
-      {#each engine.queue as qTrack, idx (`${qTrack.id}_${idx}`)}
-        <li class="queue-row">
-          <button
-            type="button"
-            class="lib-item"
-            class:playing={engine.current?.id === qTrack.id}
-            onclick={() => engine.playTrack(qTrack)}
-          >
-            <span
-              class="lib-thumb"
-              style={qTrack.imageUrl
-                ? `background-image:url(${qTrack.imageUrl})`
-                : `background:linear-gradient(135deg,${qTrack.c1 || '#3b82f6'},${qTrack.c2 || '#172554'})`}
+        <List strong inset>
+          {#each engine.queue as qTrack, idx (`${qTrack.id}_${idx}`)}
+            <ListItem
+              link
+              title={qTrack.title}
+              subtitle={qTrack.artist}
+              onclick={() => engine.playTrack(qTrack)}
             >
-              {#if !qTrack.imageUrl}
-                <span class="thumb-initial">{getTrackInitial(qTrack.title)}</span>
-              {/if}
-            </span>
-            <span class="lib-info">
-              <span class="lib-name">{qTrack.title}</span>
-              <span class="lib-sub">{qTrack.artist}</span>
-            </span>
-          </button>
+              {#snippet media()}
+                <span
+                  class="grid h-10 w-10 place-items-center overflow-hidden rounded-lg text-xs font-bold text-white"
+                  style={qTrack.imageUrl
+                    ? ''
+                    : `background: linear-gradient(135deg, ${qTrack.c1 || '#007aff'}, ${qTrack.c2 || '#1c1c1e'})`}
+                >
+                  {#if qTrack.imageUrl}
+                    <img src={qTrack.imageUrl} alt="" class="h-full w-full object-cover" />
+                  {:else}
+                    {getTrackInitial(qTrack.title)}
+                  {/if}
+                </span>
+              {/snippet}
 
-          <button
-            type="button"
-            class="icon-btn icon-btn-sm"
-            aria-label="Hapus {qTrack.title} dari antrean"
-            onclick={() => {
-              engine.queue = engine.queue.filter((_, i) => i !== idx);
-            }}
-          >
-            <Icon name="close" size={14} />
-          </button>
-        </li>
+              {#snippet after()}
+                <button
+                  type="button"
+                  class="grid h-9 w-9 place-items-center rounded-full text-zinc-600 hover:bg-black/5 dark:text-zinc-300 dark:hover:bg-white/10"
+                  aria-label="Hapus {qTrack.title} dari antrean"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    engine.queue = engine.queue.filter((_, i) => i !== idx);
+                  }}
+                >
+                  <Icon name="close" size={14} />
+                </button>
+              {/snippet}
+            </ListItem>
+          {/each}
+        </List>
       {:else}
-        <li class="lib-empty">Antrean kosong. Pilih lagu untuk mulai memutar.</li>
-      {/each}
-    </ul>
-  {:else if engine.current}
-    <div class="drawer-lyrics-head">
-      <div class="min-w-0">
-        <div class="truncate fw-bold">{engine.current.title}</div>
-        <div class="text-muted text-sm truncate">{engine.current.artist}</div>
-      </div>
-      <button type="button" class="chip" onclick={() => appStore.openEditTrack(engine.current)}>
-        <Icon name="edit" size={13} />
-        <span>Edit</span>
-      </button>
-    </div>
+        <Block strong inset>
+          <p class="text-sm text-zinc-600 dark:text-zinc-300">Antrean kosong. Pilih lagu untuk mulai memutar.</p>
+        </Block>
+      {/if}
+    {:else if engine.current}
+      <Block strong inset class="space-y-3">
+        <div class="flex items-center justify-between gap-2">
+          <div class="min-w-0">
+            <div class="truncate text-sm font-bold text-zinc-950 dark:text-white">{engine.current.title}</div>
+            <div class="truncate text-xs text-zinc-600 dark:text-zinc-300">{engine.current.artist}</div>
+          </div>
+          <Button tonal rounded small inline onclick={() => appStore.openEditTrack(engine.current)}>
+            Edit
+          </Button>
+        </div>
 
-    <div class="drawer-lyrics-box">
-      {engine.current.lyrics ||
-        'Belum ada lirik. Ketuk 2x kartu lagu untuk mencari lirik otomatis dari LRCLIB atau tempel manual.'}
-    </div>
-  {:else}
-    <p class="lib-empty">Putar sebuah lagu untuk melihat liriknya.</p>
-  {/if}
-</aside>
+        <div class="max-h-[60vh] overflow-y-auto whitespace-pre-wrap rounded-xl bg-zinc-100 p-3 text-sm leading-relaxed text-zinc-900 dark:bg-black/40 dark:text-zinc-100">
+          {engine.current.lyrics ||
+            'Belum ada lirik. Ketuk 2x kartu lagu untuk mencari lirik otomatis dari LRCLIB atau tempel manual.'}
+        </div>
+      </Block>
+    {:else}
+      <Block strong inset>
+        <p class="text-sm text-zinc-600 dark:text-zinc-300">Putar sebuah lagu untuk melihat liriknya.</p>
+      </Block>
+    {/if}
+  </Page>
+</Panel>

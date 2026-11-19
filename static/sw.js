@@ -1,3 +1,6 @@
+// Copyright 2026 Azka Putra
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 const CACHE_NAME = 'nys-xmusic-v5-prod';
 const PRECACHE_ASSETS = [
   './',

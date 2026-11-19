@@ -1,3 +1,6 @@
+// Copyright 2026 Azka Putra
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * Centralized Svelte 5 Runes application store for Xmusic.
  * Coordinates library tracks, playlists, favorites, search, profile, modals, and toasts.
@@ -25,6 +28,12 @@ import {
 } from '#lib/db/storage.js';
 
 class AppStore {
+  // Theme mode ('system' | 'light' | 'dark')
+  themeMode = $state('system');
+  systemPrefersDark = $state(true);
+  themeMediaQuery = null;
+  themeMediaHandler = null;
+
   // Navigation & filtering
   view = $state('home'); // 'home' | 'search' | 'library' | 'eq' | 'profile'
   libFilter = $state('local');
@@ -43,8 +52,8 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state({
     app_name: 'nys Xmusic',
-    version: '3.0.0',
-    engine: 'Tauri v2.12 + SvelteKit 3.2 (Svelte 5 Runes)',
+    version: '4.0.0',
+    engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
   });
@@ -82,6 +91,61 @@ class AppStore {
   toastMsg = $state('');
   toastTimer = null;
   searchDebounceId = null;
+
+  get isDark() {
+    if (this.themeMode === 'dark') return true;
+    if (this.themeMode === 'light') return false;
+    return this.systemPrefersDark;
+  }
+
+  initTheme() {
+    if (typeof window === 'undefined') return;
+    const saved = localStorage.getItem('nys_theme_mode');
+    if (saved === 'light' || saved === 'dark' || saved === 'system') {
+      this.themeMode = saved;
+    }
+    this.themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    this.systemPrefersDark = this.themeMediaQuery.matches;
+    this.themeMediaHandler = (event) => {
+      this.systemPrefersDark = event.matches;
+      this.syncDocumentTheme();
+    };
+    this.themeMediaQuery.addEventListener('change', this.themeMediaHandler);
+    this.syncDocumentTheme();
+  }
+
+  destroyTheme() {
+    if (this.themeMediaQuery && this.themeMediaHandler) {
+      this.themeMediaQuery.removeEventListener('change', this.themeMediaHandler);
+    }
+  }
+
+  syncDocumentTheme() {
+    if (typeof document === 'undefined') return;
+    const dark = this.isDark;
+    document.documentElement.classList.toggle('dark', dark);
+    const meta = document.getElementById('theme-color-meta');
+    if (meta) meta.setAttribute('content', dark ? '#000000' : '#f2f2f7');
+  }
+
+  setThemeMode(mode) {
+    if (mode !== 'light' && mode !== 'dark' && mode !== 'system') return;
+    this.themeMode = mode;
+    try {
+      localStorage.setItem('nys_theme_mode', mode);
+    } catch {}
+    this.syncDocumentTheme();
+    const labels = {
+      light: 'Mode Terang diaktifkan',
+      dark: 'Mode Gelap diaktifkan',
+      system: 'Tema mengikuti sistem perangkat'
+    };
+    this.showToast(labels[mode]);
+  }
+
+  toggleTheme() {
+    this.setThemeMode(this.isDark ? 'light' : 'dark');
+  }
 
   get allTracks() {
     const map = new Map();
@@ -146,6 +210,7 @@ class AppStore {
   }
 
   async bootstrap() {
+    this.initTheme();
     engine.init(this.showToast);
     this.likedIds = loadJSON('nys_liked_ids', []);
     this.playlists = loadJSON('nys_playlists', [

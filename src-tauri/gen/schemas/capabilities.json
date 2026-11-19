@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Default capabilities for the main window on Desktop and Android in Tauri v2","local":true,"windows":["main"],"permissions":["core:default"]}}

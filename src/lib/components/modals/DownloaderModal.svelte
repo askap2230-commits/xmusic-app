@@ -1,6 +1,9 @@
+<!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script>
+  import { Block, Button, Link, List, ListInput, Navbar, Page, Popup, Preloader } from 'konsta/svelte';
   import { extractYouTubeId, rapidDownloadMp3 } from '#lib/api/services.js';
   import { appStore } from '#lib/stores/library.svelte.js';
+  import Icon from '../Icon.svelte';
 
   let urlInput = $state('');
   let loading = $state(false);
@@ -31,54 +34,57 @@
   }
 </script>
 
-{#if appStore.dlModalOpen}
-  <div class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="dl-modal-title">
-    <div class="modal-backdrop" onclick={() => (appStore.dlModalOpen = false)} role="presentation"></div>
-    <div class="modal-card">
-      <h2 id="dl-modal-title" class="modal-title">Download Lagu MP3 (API)</h2>
-      <p class="modal-desc">
-        Tempel tautan video YouTube untuk mengonversi dan mengunduh file MP3 menggunakan RapidAPI Key milikmu.
-      </p>
+<Popup opened={appStore.dlModalOpen} onBackdropClick={() => (appStore.dlModalOpen = false)}>
+  <Page>
+    <Navbar title="API Downloader MP3">
+      {#snippet right()}
+        <Link iconOnly onclick={() => (appStore.dlModalOpen = false)} aria-label="Tutup">
+          <Icon name="close" size={20} />
+        </Link>
+      {/snippet}
+    </Navbar>
 
-      <div class="field-group">
-        <label class="field-label" for="dl-url">Tautan YouTube</label>
-        <input
-          id="dl-url"
-          class="field-input"
-          type="url"
-          placeholder="https://youtube.com/watch?v=..."
-          bind:value={urlInput}
-        />
-      </div>
+    <List strong inset>
+      <ListInput
+        label="Tautan YouTube"
+        type="url"
+        placeholder="https://youtube.com/watch?v=..."
+        value={urlInput}
+        onInput={(e) => (urlInput = e.target.value)}
+      />
+    </List>
 
-      {#if loading}
-        <p class="text-accent text-sm status-center" role="status">
-          Menghubungi endpoint API... Mohon tunggu.
-        </p>
-      {/if}
+    <Block>
+      <Button
+        rounded
+        large
+        disabled={loading}
+        class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
+        onclick={runDownloader}
+      >
+        Proses Konversi MP3
+      </Button>
+    </Block>
 
-      {#if result}
-        <div class="success-box">
-          <div class="fw-bold text-sm">{result.title}</div>
-          <a
-            href={result.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="pill-btn spotify full-w link-btn"
-          >
-            Klik untuk Download MP3
-          </a>
-        </div>
-      {/if}
+    {#if loading}
+      <Block class="flex items-center justify-center gap-3 text-sm text-[#007aff] dark:text-[#64d2ff]" role="status">
+        <Preloader size="w-5 h-5" />
+        <span>Menghubungi endpoint RapidAPI...</span>
+      </Block>
+    {/if}
 
-      <div class="modal-actions-row">
-        <button type="button" class="pill-btn ghost flex-1" onclick={() => (appStore.dlModalOpen = false)}>
-          Tutup
-        </button>
-        <button type="button" class="pill-btn spotify flex-1" disabled={loading} onclick={runDownloader}>
-          Proses API
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
+    {#if result}
+      <Block strong inset class="space-y-3">
+        <div class="text-sm font-bold text-zinc-950 dark:text-white">{result.title}</div>
+        <a
+          href={result.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="flex min-h-[44px] w-full items-center justify-center rounded-full bg-[#248a3d] px-4 text-sm font-bold text-white dark:bg-[#30d158] dark:text-black no-underline"
+        >
+          Klik untuk Download MP3
+        </a>
+      </Block>
+    {/if}
+  </Page>
+</Popup>

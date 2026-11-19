@@ -1,4 +1,7 @@
-name: Verify Frontend & Rust Quality (Manual)
+# Copyright 2026 Azka Putra
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Verify Quality, License & Build (Manual)
 
 # Manual-only verification workflow (no auto-trigger on push).
 # Run via GitHub Web UI or: gh workflow run ci-verify.yml
@@ -14,7 +17,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Build Frontend, Check Rust & Validate Scripts
+    name: License Check, Frontend Build & Rust Clippy
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -22,27 +25,48 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v7
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js 24 LTS
         uses: actions/setup-node@v6
         with:
           node-version: "24"
 
-      - name: Cache npm Global Cache
+      - name: Get pnpm Store Directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "store_path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm Global Store
         uses: actions/cache@v5
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node24-npm-${{ hashFiles('package.json', 'package-lock.json') }}
+          path: ${{ steps.pnpm-cache.outputs.store_path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml', 'package.json') }}
           restore-keys: |
-            ${{ runner.os }}-node24-npm-
+            ${{ runner.os }}-pnpm-store-
 
-      - name: Build Production Frontend Bundle
+      - name: Verify AGPL-3.0 License Headers (Google addlicense)
         run: |
-          npm install --no-audit --no-fund
-          npm run build
+          set -euo pipefail
+          go install github.com/google/addlicense@latest
+          "$(go env GOPATH)/bin/addlicense" -check -f .license-header.txt \
+            -ignore "node_modules/**" \
+            -ignore "dist/**" \
+            -ignore ".svelte-kit/**" \
+            -ignore "src-tauri/target/**" \
+            -ignore "src-tauri/gen/**" \
+            src-tauri/src scripts vite.config.js static/sw.js
+          python3 scripts/license-manager.py check
 
-      - name: Validate Python Build Scripts
+      - name: Build Production Frontend Bundle (pnpm)
         run: |
-          python3 -m py_compile scripts/sync-android-icons.py scripts/optimize-android-gradle.py
+          pnpm install
+          pnpm build
+
+      - name: Validate Python Scripts
+        run: |
+          python3 -m py_compile scripts/sync-android-icons.py scripts/optimize-android-gradle.py scripts/license-manager.py
 
       - name: Install Linux System Dependencies for Tauri Check
         run: |

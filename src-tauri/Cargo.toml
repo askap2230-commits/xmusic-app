@@ -1,8 +1,12 @@
+# Copyright 2026 Azka Putra
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 [package]
 name = "xmusic"
-version = "3.0.0"
-description = "nys Xmusic — Offline & Streaming Music Player (Tauri v2.12 + SvelteKit 3)"
-authors = ["Nys"]
+version = "4.0.0"
+description = "nys Xmusic — Offline & Streaming Music Player (Tauri v2.12 + SvelteKit 3 + Konsta UI iOS)"
+authors = ["Azka Putra"]
+license = "AGPL-3.0-or-later"
 edition = "2024"
 rust-version = "1.90"
 
@@ -21,13 +25,13 @@ serde_json = "1.0"
 [profile.dev]
 incremental = true
 
-# Production binary size optimization (Android .so & Desktop executables)
+# Deterministic, smallest-size production release profile
 # Reference: https://v2.tauri.app/concept/size/
 [profile.release]
-codegen-units = 1       # Maximize cross-module LLVM optimizations
-lto = "fat"             # Full Link-Time Optimization across all crates
-opt-level = "z"         # Optimize aggressively for smallest binary size
-panic = "abort"         # Remove stack-unwinding overhead (~15-20% smaller)
-strip = true            # Strip debug info and symbol tables from final binary
+codegen-units = 1       # Single codegen unit for deterministic & maximum LLVM optimization
+lto = "fat"             # Full Link-Time Optimization across all dependency crates
+opt-level = "z"         # Aggressive binary size optimization
+panic = "abort"         # Eliminate stack unwinding tables
+strip = true            # Strip debug info and symbol tables
 overflow-checks = false # Disable runtime integer overflow checks in release
-incremental = false     # Ensure clean, deterministic release artifacts
+incremental = false     # Enforce deterministic, non-incremental release builds

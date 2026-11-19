@@ -1,10 +1,13 @@
+// Copyright 2026 Azka Putra
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { execSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-console.log('[Xmusic Build] Starting SvelteKit 3 + Vite 8 production build...');
+console.log('[Xmusic Build] Starting pnpm SvelteKit 3 + Tailwind v4 + Konsta UI build...');
 
-execSync('npx vite build', { stdio: 'inherit' });
+execSync('pnpm exec vite build', { stdio: 'inherit' });
 
 mkdirSync('dist', { recursive: true });
 

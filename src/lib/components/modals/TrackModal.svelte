@@ -1,4 +1,6 @@
+<!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script>
+  import { Block, Button, Chip, Link, Navbar, Page, Popup, Range } from 'konsta/svelte';
   import { engine } from '#lib/audio/engine.svelte.js';
   import { parseLrcLyrics } from '#lib/api/services.js';
   import { EQ_PRESETS } from '#lib/data/presets.js';
@@ -16,11 +18,7 @@
       ? findActiveLyricIndex(parsedLyrics, engine.position)
       : -1
   );
-  const progressPct = $derived(
-    engine.duration > 0 ? Math.min(100, (engine.position / engine.duration) * 100) : 0
-  );
 
-  // Auto-scroll active synced lyric line when card is flipped
   $effect(() => {
     if (appStore.modalFlipped && activeLyricIdx >= 0 && lyricsScrollEl) {
       const target = lyricsScrollEl.querySelector(`[data-lrc-idx="${activeLyricIdx}"]`);
@@ -31,7 +29,6 @@
     }
   });
 
-  // 60fps FFT visualizer loop that automatically stops when closed, hidden, or reduced-motion
   $effect(() => {
     if (!appStore.trackModalOpen || !vizCanvas) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -52,8 +49,8 @@
         const barWidth = w / bars.length;
         for (let i = 0; i < bars.length; i++) {
           const val = bars[i];
-          const barHeight = Math.max(3, val * (h * 0.24));
-          ctx.fillStyle = `rgba(125, 211, 252, ${0.12 + val * 0.34})`;
+          const barHeight = Math.max(3, val * (h * 0.22));
+          ctx.fillStyle = `rgba(10, 132, 255, ${0.14 + val * 0.36})`;
           ctx.fillRect(i * barWidth + 2, h - barHeight, Math.max(2, barWidth - 4), barHeight);
         }
       }
@@ -65,313 +62,308 @@
   });
 
   function handleDoubleTap(event) {
-    if (event.target.closest('button, input, textarea, .progress, .lyric-line')) return;
+    if (event.target.closest('button, input, textarea, .lyric-line')) return;
     appStore.toggleModalFlip();
-  }
-
-  function handleSeekClick(event) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    if (rect.width > 0) {
-      engine.seekTo((event.clientX - rect.left) / rect.width);
-    }
   }
 </script>
 
-{#if appStore.trackModalOpen && track}
-  <div class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="track-modal-title">
-    <div class="modal-backdrop" onclick={() => appStore.closeTrackModal()} role="presentation"></div>
+<Popup
+  opened={appStore.trackModalOpen && Boolean(track)}
+  onBackdropClick={() => appStore.closeTrackModal()}
+>
+  {#if track}
+    <Page>
+      <Navbar title={appStore.modalFlipped ? 'Lirik Sinkron' : 'Sedang Diputar'}>
+        {#snippet left()}
+          <Link iconOnly onclick={() => appStore.toggleModalFlip()} aria-label="Balik kartu lirik">
+            <Icon name="flip" size={20} />
+          </Link>
+        {/snippet}
+        {#snippet right()}
+          <div class="flex items-center gap-1">
+            <Link
+              iconOnly
+              onclick={() => {
+                appStore.targetTrackForPlaylist = track;
+                appStore.playlistModalOpen = true;
+              }}
+              aria-label="Tambahkan ke playlist"
+            >
+              <Icon name="folder" size={20} />
+            </Link>
+            <Link iconOnly onclick={() => appStore.closeTrackModal()} aria-label="Tutup pemutar">
+              <Icon name="close" size={20} />
+            </Link>
+          </div>
+        {/snippet}
+      </Navbar>
 
-    <div class="flip-scene">
-      <div class="flip-inner" class:is-flipped={appStore.modalFlipped} ondblclick={handleDoubleTap}>
-        <!-- FRONT FACE -->
-        <div class="track-card flip-face" aria-hidden={appStore.modalFlipped}>
+      <Block class="mx-auto max-w-md !my-3">
+        <div class="xmusic-flip-scene">
           <div
-            class="tc-bg-tint"
-            style={track.imageUrl
-              ? `background-image:url(${track.imageUrl})`
-              : `background:linear-gradient(135deg,${track.c1 || '#3b82f6'},${track.c2 || '#172554'})`}
-            aria-hidden="true"
-          ></div>
-          <canvas class="tc-viz" bind:this={vizCanvas} aria-hidden="true"></canvas>
+            class="xmusic-flip-inner"
+            class:is-flipped={appStore.modalFlipped}
+            ondblclick={handleDoubleTap}
+          >
+            <!-- FRONT FACE -->
+            <div
+              class="xmusic-flip-face relative overflow-hidden rounded-3xl border border-black/10 bg-white dark:border-white/10 dark:bg-[#1c1c1e] p-5 shadow-2xl"
+              aria-hidden={appStore.modalFlipped}
+            >
+              <canvas
+                class="pointer-events-none absolute inset-0 h-full w-full"
+                bind:this={vizCanvas}
+                aria-hidden="true"
+              ></canvas>
 
-          <div class="tc-content">
-            <div class="tc-topbar">
-              <span class="tc-hint">Ketuk 2x Kartu → Lirik Sinkron</span>
-              <div class="row-gap-xs">
-                <button
-                  type="button"
-                  class="icon-btn icon-btn-overlay"
-                  aria-label="Balik kartu ke lirik"
-                  onclick={() => appStore.toggleModalFlip()}
-                >
-                  <Icon name="flip" size={15} />
-                </button>
-                <button
-                  type="button"
-                  class="icon-btn icon-btn-overlay"
-                  aria-label="Tambahkan ke playlist"
-                  onclick={() => {
-                    appStore.targetTrackForPlaylist = track;
-                    appStore.playlistModalOpen = true;
-                  }}
-                >
-                  <Icon name="folder" size={15} />
-                </button>
-                <button
-                  type="button"
-                  class="icon-btn icon-btn-overlay"
-                  class:liked={appStore.isLiked(track.id)}
-                  aria-label={appStore.isLiked(track.id) ? 'Hapus dari favorit' : 'Tambah ke favorit'}
-                  aria-pressed={appStore.isLiked(track.id)}
-                  onclick={() => appStore.toggleLike(track)}
-                >
-                  <Icon name={appStore.isLiked(track.id) ? 'heart-filled' : 'heart'} size={15} />
-                </button>
-                <button
-                  type="button"
-                  class="icon-btn icon-btn-overlay"
-                  aria-label="Tutup pemutar"
-                  onclick={() => appStore.closeTrackModal()}
-                >
-                  <Icon name="close" size={15} />
-                </button>
+              <div class="relative z-10 flex flex-col">
+                {#if track.videoId}
+                  <div class="mb-4 aspect-video w-full overflow-hidden rounded-2xl bg-black">
+                    <iframe
+                      title={track.title}
+                      class="h-full w-full border-0"
+                      src="https://www.youtube.com/embed/{track.videoId}?autoplay=1&playsinline=1&rel=0"
+                      allow="autoplay; encrypted-media; picture-in-picture"
+                      allowfullscreen
+                    ></iframe>
+                  </div>
+                {:else if track.spotifyId}
+                  <div class="mb-4 overflow-hidden rounded-2xl">
+                    <iframe
+                      title={track.title}
+                      class="w-full border-0"
+                      src="https://open.spotify.com/embed/{track.spotifyType || 'track'}/{track.spotifyId}?theme=0"
+                      height="152"
+                      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                    ></iframe>
+                  </div>
+                {:else}
+                  <div
+                    class="mx-auto mb-5 grid aspect-square w-full max-w-[260px] place-items-center overflow-hidden rounded-2xl shadow-xl"
+                    style={track.imageUrl
+                      ? ''
+                      : `background: linear-gradient(135deg, ${track.c1 || '#0a84ff'}, ${track.c2 || '#1c1c1e'})`}
+                  >
+                    {#if track.imageUrl}
+                      <img src={track.imageUrl} alt="Sampul {track.title}" class="h-full w-full object-cover" />
+                    {:else}
+                      <span class="text-6xl font-extrabold text-white/90">
+                        {getTrackInitial(track.title)}
+                      </span>
+                    {/if}
+                  </div>
+                {/if}
+
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0 flex-1">
+                    <h2 class="truncate text-xl font-bold text-zinc-950 dark:text-white">{track.title}</h2>
+                    <p class="truncate text-sm text-zinc-600 dark:text-zinc-300">{track.artist}</p>
+                  </div>
+                  <button
+                    type="button"
+                    class="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-black/5 dark:bg-white/10 {appStore.isLiked(track.id)
+                      ? 'text-[#ff2d55] dark:text-[#ff375f]'
+                      : 'text-zinc-900 dark:text-white'}"
+                    aria-label={appStore.isLiked(track.id) ? 'Hapus dari favorit' : 'Tambah ke favorit'}
+                    aria-pressed={appStore.isLiked(track.id)}
+                    onclick={() => appStore.toggleLike(track)}
+                  >
+                    <Icon name={appStore.isLiked(track.id) ? 'heart-filled' : 'heart'} size={18} />
+                  </button>
+                </div>
+
+                {#if !track.videoId && !track.spotifyId}
+                  <div class="mt-5 space-y-1">
+                    <Range
+                      min={0}
+                      max={Math.max(1, Math.round(engine.duration || 100))}
+                      step={1}
+                      value={Math.round(engine.position)}
+                      onInput={(e) => {
+                        const d = engine.duration || 1;
+                        engine.seekTo(Number(e.target.value) / d);
+                      }}
+                    />
+                    <div class="flex justify-between text-xs tabular-nums text-zinc-600 dark:text-zinc-300">
+                      <span>{formatTime(engine.position)}</span>
+                      <span>-{formatTime(Math.max(0, (engine.duration || 0) - engine.position))}</span>
+                    </div>
+                  </div>
+
+                  <div class="mt-4 flex items-center justify-between">
+                    <button
+                      type="button"
+                      class="grid h-11 w-11 place-items-center rounded-full hover:bg-black/5 dark:hover:bg-white/10 {engine.shuffle
+                        ? 'text-[#007aff] dark:text-[#0a84ff]'
+                        : 'text-zinc-600 dark:text-zinc-300'}"
+                      aria-label="Mode acak"
+                      aria-pressed={engine.shuffle}
+                      onclick={() => engine.toggleShuffle()}
+                    >
+                      <Icon name="shuffle" size={19} />
+                    </button>
+
+                    <button
+                      type="button"
+                      class="grid h-11 w-11 place-items-center rounded-full text-zinc-900 hover:bg-black/5 dark:text-white dark:hover:bg-white/10"
+                      aria-label="Lagu sebelumnya"
+                      onclick={() => engine.prev()}
+                    >
+                      <Icon name="prev" size={20} />
+                    </button>
+
+                    <button
+                      type="button"
+                      class="grid h-14 w-14 place-items-center rounded-full bg-zinc-950 text-white shadow-lg dark:bg-white dark:text-black active:scale-95"
+                      aria-label={engine.playing ? 'Jeda' : 'Putar'}
+                      onclick={() => engine.togglePlay()}
+                    >
+                      <Icon name={engine.playing ? 'pause' : 'play'} size={24} />
+                    </button>
+
+                    <button
+                      type="button"
+                      class="grid h-11 w-11 place-items-center rounded-full text-zinc-900 hover:bg-black/5 dark:text-white dark:hover:bg-white/10"
+                      aria-label="Lagu berikutnya"
+                      onclick={() => engine.next(false)}
+                    >
+                      <Icon name="next" size={20} />
+                    </button>
+
+                    <button
+                      type="button"
+                      class="relative grid h-11 w-11 place-items-center rounded-full hover:bg-black/5 dark:hover:bg-white/10 {engine.repeat !== 'off'
+                        ? 'text-[#007aff] dark:text-[#0a84ff]'
+                        : 'text-zinc-600 dark:text-zinc-300'}"
+                      aria-label="Mode ulangi: {engine.repeat}"
+                      onclick={() => engine.cycleRepeat()}
+                    >
+                      <Icon name="repeat" size={19} />
+                      {#if engine.repeat === 'one'}
+                        <span class="absolute top-1.5 right-1.5 grid h-3.5 w-3.5 place-items-center rounded-full bg-[#0a84ff] text-[9px] font-bold text-white">
+                          1
+                        </span>
+                      {/if}
+                    </button>
+                  </div>
+
+                  <div class="mt-4 flex items-center gap-3 text-zinc-600 dark:text-zinc-300">
+                    <Icon name="mute" size={16} />
+                    <Range
+                      min={0}
+                      max={1}
+                      step={0.02}
+                      value={engine.volume}
+                      onInput={(e) => engine.setVolume(e.target.value)}
+                    />
+                    <Icon name="volume" size={16} />
+                  </div>
+                {/if}
+
+                <div class="mt-5 flex flex-wrap justify-center gap-2">
+                  <Chip outline class="cursor-pointer" onclick={() => appStore.toggleModalFlip()}>
+                    Lirik Sinkron (2x Ketuk)
+                  </Chip>
+                  <Chip
+                    outline
+                    class="cursor-pointer"
+                    onclick={() => {
+                      appStore.closeTrackModal();
+                      appStore.view = 'eq';
+                    }}
+                  >
+                    EQ: {EQ_PRESETS[engine.eqPreset]?.name || 'Custom'}
+                  </Chip>
+                  {#if track.videoId}
+                    <Chip
+                      class="cursor-pointer !bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
+                      onclick={() => {
+                        appStore.closeTrackModal();
+                        appStore.openDownloaderWithUrl(`https://youtu.be/${track.videoId}`);
+                      }}
+                    >
+                      Unduh MP3
+                    </Chip>
+                  {/if}
+                </div>
               </div>
             </div>
 
-            {#if track.videoId}
-              <div class="tc-embed-video">
-                <iframe
-                  title={track.title}
-                  width="100%"
-                  height="100%"
-                  src="https://www.youtube.com/embed/{track.videoId}?autoplay=1&playsinline=1&rel=0"
-                  allow="autoplay; encrypted-media; picture-in-picture"
-                  allowfullscreen
-                ></iframe>
+            <!-- BACK FACE (SYNCED LYRICS) -->
+            <div
+              class="xmusic-flip-face xmusic-flip-back flex flex-col rounded-3xl border border-[#007aff] bg-white dark:border-[#0a84ff] dark:bg-[#1c1c1e] p-5 shadow-2xl"
+              aria-hidden={!appStore.modalFlipped}
+            >
+              <div class="mb-3 flex items-center justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-bold text-zinc-950 dark:text-white">{track.title}</div>
+                  <div class="truncate text-xs text-[#007aff] dark:text-[#64d2ff]">{track.artist} • Lirik LRC</div>
+                </div>
+                <div class="flex gap-1.5">
+                  <Button tonal rounded small inline onclick={() => appStore.autoFetchLyricsForTrack(track)}>
+                    Cari
+                  </Button>
+                  <Button tonal rounded small inline onclick={() => appStore.openEditTrack(track)}>
+                    Edit
+                  </Button>
+                </div>
               </div>
-            {:else if track.spotifyId}
-              <div class="tc-embed-spotify">
-                <iframe
-                  title={track.title}
-                  src="https://open.spotify.com/embed/{track.spotifyType || 'track'}/{track.spotifyId}?theme=0"
-                  width="100%"
-                  height="152"
-                  allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                ></iframe>
-              </div>
-            {:else}
-              <div
-                class="tc-cover-wrapper"
-                style={track.imageUrl
-                  ? ''
-                  : `background:linear-gradient(135deg,${track.c1 || '#3b82f6'},${track.c2 || '#172554'})`}
-              >
-                {#if track.imageUrl}
-                  <img src={track.imageUrl} alt="Sampul {track.title}" />
+
+              <div class="flex-1 space-y-1.5 overflow-y-auto py-1" bind:this={lyricsScrollEl}>
+                {#if appStore.fetchingLyrics}
+                  <p class="py-12 text-center text-sm text-[#007aff] dark:text-[#64d2ff]" role="status">
+                    Mencari lirik sinkron dari LRCLIB...
+                  </p>
+                {:else if parsedLyrics.length > 0}
+                  {#each parsedLyrics as line, idx}
+                    <button
+                      type="button"
+                      class="lyric-line block w-full rounded-xl px-3 py-2 text-left text-sm transition-colors {idx === activeLyricIdx
+                        ? 'bg-[#007aff]/15 font-bold text-zinc-950 dark:bg-[#0a84ff]/25 dark:text-white'
+                        : 'text-zinc-600 hover:bg-black/5 dark:text-zinc-300 dark:hover:bg-white/5'}"
+                      data-lrc-idx={idx}
+                      onclick={() => {
+                        if (line.synced && engine.duration > 0 && engine.current?.id === track.id) {
+                          engine.seekTo(line.time / engine.duration);
+                        }
+                      }}
+                    >
+                      {#if line.synced}
+                        <span class="mr-2 text-[11px] tabular-nums opacity-70">
+                          {formatTime(line.time)}
+                        </span>
+                      {/if}
+                      {line.text}
+                    </button>
+                  {/each}
                 {:else}
-                  <span class="local-cover-text local-cover-lg">{getTrackInitial(track.title)}</span>
+                  <div class="flex flex-col items-center gap-3 py-12 text-center">
+                    <p class="text-sm text-zinc-600 dark:text-zinc-300">Belum ada lirik untuk lagu ini.</p>
+                    <Button
+                      rounded
+                      small
+                      inline
+                      class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
+                      onclick={() => appStore.autoFetchLyricsForTrack(track)}
+                    >
+                      Cari Lirik Otomatis (LRCLIB)
+                    </Button>
+                  </div>
                 {/if}
               </div>
-            {/if}
 
-            <h2 id="track-modal-title" class="tc-title">{track.title}</h2>
-            <div class="tc-artist">{track.artist}</div>
-
-            {#if !track.videoId && !track.spotifyId}
-              <div class="tc-seek-block">
-                <div class="tc-time-row">
-                  <span>{formatTime(engine.position)}</span>
-                  <span>-{formatTime(Math.max(0, (engine.duration || 0) - engine.position))}</span>
-                </div>
-                <div
-                  class="progress progress-lg"
-                  role="slider"
-                  tabindex="0"
-                  aria-label="Posisi lagu"
-                  aria-valuemin={0}
-                  aria-valuemax={Math.round(engine.duration || 100)}
-                  aria-valuenow={Math.round(engine.position)}
-                  onclick={handleSeekClick}
-                  onkeydown={(e) => {
-                    if (e.key === 'ArrowRight') engine.seekBySeconds(5);
-                    if (e.key === 'ArrowLeft') engine.seekBySeconds(-5);
-                  }}
-                >
-                  <div class="progress-fill" style="width:{progressPct}%"></div>
-                </div>
+              <div class="mt-3 flex items-center justify-between border-t border-black/10 dark:border-white/10 pt-3">
+                <span class="text-xs tabular-nums text-zinc-600 dark:text-zinc-300">
+                  {formatTime(engine.position)} / {formatTime(engine.duration)}
+                </span>
+                <Button tonal rounded small inline onclick={() => appStore.toggleModalFlip()}>
+                  Kembali ke Sampul
+                </Button>
               </div>
-
-              <div class="tc-controls">
-                <button
-                  type="button"
-                  class="icon-btn"
-                  class:active={engine.shuffle}
-                  aria-label="Mode acak"
-                  aria-pressed={engine.shuffle}
-                  onclick={() => engine.toggleShuffle()}
-                >
-                  <Icon name="shuffle" size={18} />
-                </button>
-                <button type="button" class="icon-btn" aria-label="Lagu sebelumnya" onclick={() => engine.prev()}>
-                  <Icon name="prev" size={18} />
-                </button>
-                <button
-                  type="button"
-                  class="play-btn play-btn-lg"
-                  aria-label={engine.playing ? 'Jeda' : 'Putar'}
-                  onclick={() => engine.togglePlay()}
-                >
-                  <Icon name={engine.playing ? 'pause' : 'play'} size={22} />
-                </button>
-                <button type="button" class="icon-btn" aria-label="Lagu berikutnya" onclick={() => engine.next(false)}>
-                  <Icon name="next" size={18} />
-                </button>
-                <button
-                  type="button"
-                  class="icon-btn repeat-btn"
-                  class:active={engine.repeat !== 'off'}
-                  aria-label="Mode ulangi: {engine.repeat}"
-                  onclick={() => engine.cycleRepeat()}
-                >
-                  <Icon name="repeat" size={18} />
-                  {#if engine.repeat === 'one'}
-                    <span class="repeat-badge" aria-hidden="true">1</span>
-                  {/if}
-                </button>
-              </div>
-
-              <div class="tc-volume-row">
-                <Icon name="mute" size={15} />
-                <input
-                  type="range"
-                  class="range-input flex-1"
-                  min="0"
-                  max="1"
-                  step="0.02"
-                  aria-label="Volume"
-                  value={engine.volume}
-                  oninput={(e) => engine.setVolume(e.currentTarget.value)}
-                />
-                <Icon name="volume" size={15} />
-              </div>
-            {/if}
-
-            <div class="tc-footer-chips">
-              <button type="button" class="chip" onclick={() => appStore.toggleModalFlip()}>
-                <Icon name="flip" size={13} />
-                <span>Lirik Sinkron</span>
-              </button>
-              <button
-                type="button"
-                class="chip"
-                onclick={() => {
-                  appStore.closeTrackModal();
-                  appStore.view = 'eq';
-                }}
-              >
-                <Icon name="eq" size={13} />
-                <span>{EQ_PRESETS[engine.eqPreset]?.name || 'Custom'}</span>
-              </button>
-              {#if track.videoId}
-                <button
-                  type="button"
-                  class="chip chip-spotify"
-                  onclick={() => {
-                    appStore.closeTrackModal();
-                    appStore.openDownloaderWithUrl(`https://youtu.be/${track.videoId}`);
-                  }}
-                >
-                  <Icon name="download" size={13} />
-                  <span>Unduh MP3</span>
-                </button>
-              {/if}
             </div>
           </div>
         </div>
-
-        <!-- BACK FACE (SYNCED LYRICS) -->
-        <div class="track-card flip-face flip-face-back" aria-hidden={!appStore.modalFlipped}>
-          <div class="tc-back-head">
-            <div class="min-w-0">
-              <div class="truncate fw-bold">{track.title}</div>
-              <div class="text-accent text-xs truncate">{track.artist} • Lirik Sinkron</div>
-            </div>
-            <div class="row-gap-xs">
-              <button
-                type="button"
-                class="icon-btn icon-btn-overlay"
-                aria-label="Cari lirik otomatis di LRCLIB"
-                onclick={() => appStore.autoFetchLyricsForTrack(track)}
-              >
-                <Icon name="search" size={15} />
-              </button>
-              <button
-                type="button"
-                class="icon-btn icon-btn-overlay"
-                aria-label="Edit atau tempel lirik"
-                onclick={() => appStore.openEditTrack(track)}
-              >
-                <Icon name="edit" size={15} />
-              </button>
-              <button
-                type="button"
-                class="icon-btn icon-btn-overlay"
-                aria-label="Balik ke sampul depan"
-                onclick={() => appStore.toggleModalFlip()}
-              >
-                <Icon name="flip" size={15} />
-              </button>
-            </div>
-          </div>
-
-          <div class="lyrics-scroll" bind:this={lyricsScrollEl}>
-            {#if appStore.fetchingLyrics}
-              <p class="lyrics-status" role="status">Mencari lirik sinkron dari LRCLIB...</p>
-            {:else if parsedLyrics.length > 0}
-              {#each parsedLyrics as line, idx}
-                <button
-                  type="button"
-                  class="lyric-line"
-                  class:active={idx === activeLyricIdx}
-                  data-lrc-idx={idx}
-                  onclick={() => {
-                    if (line.synced && engine.duration > 0 && engine.current?.id === track.id) {
-                      engine.seekTo(line.time / engine.duration);
-                    }
-                  }}
-                >
-                  {#if line.synced}
-                    <span class="lyric-ts">{formatTime(line.time)}</span>
-                  {/if}
-                  <span>{line.text}</span>
-                </button>
-              {/each}
-            {:else}
-              <div class="lyrics-empty">
-                <p>Belum ada lirik untuk lagu ini.</p>
-                <button
-                  type="button"
-                  class="pill-btn spotify pill-btn-sm"
-                  onclick={() => appStore.autoFetchLyricsForTrack(track)}
-                >
-                  <Icon name="search" size={14} />
-                  <span>Cari Lirik Sinkron Otomatis</span>
-                </button>
-              </div>
-            {/if}
-          </div>
-
-          <div class="tc-back-foot">
-            <span class="text-muted text-xs">
-              {formatTime(engine.position)} / {formatTime(engine.duration)}
-            </span>
-            <button type="button" class="chip" onclick={() => appStore.toggleModalFlip()}>
-              <Icon name="flip" size={13} />
-              <span>Kembali ke Sampul</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-{/if}
+      </Block>
+    </Page>
+  {/if}
+</Popup>

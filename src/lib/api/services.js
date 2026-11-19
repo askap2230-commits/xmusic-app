@@ -1,3 +1,6 @@
+// Copyright 2026 Azka Putra
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * External streaming, metadata, and synced lyrics integrations:
  * - Audius v1 API with automatic multi-host discovery failover
