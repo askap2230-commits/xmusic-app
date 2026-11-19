@@ -2,6 +2,15 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [5.5.0] - 2026-11-19
+
+### Changed & Fixed
+- **Strict Pure YouTube Music Filter (`filter=music_songs`)**: Eliminated regular YouTube videos, vlogs, Shorts, podcasts, and livestreams from `fetchYtTrending` and `fetchYtSearch` using Piped's official YouTube Music `music_songs` endpoint plus strict duration (60s–12m) and non-music keyword validation.
+- **Native Playable Spotify Integration (Zero Broken WebView Embeds)**: Removed broken Spotify `<iframe>` web-in-app embeds from `HomeView`, `HubModal`, and `TrackModal`. Tapping any Spotify Chart (`Top 50 Indonesia`, `Top 50 Global`, `Today's Top Hits`) or pasting a Spotify track link now resolves and plays full-length audio natively inside Xmusic with 5-Band EQ and synced lyrics.
+- **Working Algorithm Refresh (`refreshSeed`)**: Added a live **Segarkan** button in `HomeView` that rotates regional music queries and algorithm rankings cleanly with real-time loading feedback.
+- **Cleaner Industry-Standard Home Layout**: Reordered `HomeView` so full-length music (`Koleksi Offline`, `YouTube Music`, `Audius Global`) appears first, compacted Era & Genre explorers into clean Konsta `<Chip>` rows, and moved 30-second public catalog previews to the bottom section.
+- **Version Bump**: Upgraded single-source version in `package.json` to `5.5.0` (`Xmusic-v5.5.0-android-<abi>-release.apk`).
+
 ## [5.4.0] - 2026-11-19
 
 ### Added

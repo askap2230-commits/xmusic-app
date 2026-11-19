@@ -381,26 +381,88 @@ async function getHealthyInvidiousInstances(): Promise<string[]> {
   return invidiousCache.hosts;
 }
 
+const NON_MUSIC_REGEX =
+  /\b(live\s*stream|livestream|live\s*24\/7|24\/7\s*live|radio\s*live|#shorts|podcast|reaction|vlog|gameplay|full\s*album|1\s*hour|2\s*hours|10\s*hours|interview|trailer|behind\s*the\s*scenes|berita|news)\b/i;
+
+function isValidMusicSong(
+  title: string,
+  durationSec: number,
+  isLive = false,
+  isShort = false
+): boolean {
+  if (isLive || isShort) return false;
+  // Strictly enforce standard song duration (60s to 12m) — blocks livestreams (0s), Shorts (<60s), and long VODs
+  if (!Number.isFinite(durationSec) || durationSec < 60 || durationSec > 720) return false;
+  if (NON_MUSIC_REGEX.test(title)) return false;
+  return true;
+}
+
+const REGIONAL_YTMUSIC_QUERIES: Record<string, string[]> = {
+  ID: [
+    'top hits indonesia 2025 2026',
+    'lagu pop indonesia viral terbaru',
+    'indie pop indonesia terbaik',
+    'lagu indonesia populer 2000an 2020an'
+  ],
+  US: [
+    'billboard hot 100 songs 2025 2026',
+    'top pop hits global 2026',
+    'viral english songs 2025',
+    'best modern pop rnb hits'
+  ],
+  JP: [
+    'top jpop songs 2025 2026',
+    'anime opening hits japan',
+    'japanese city pop classics',
+    'viral japan music 2025'
+  ],
+  KR: [
+    'top kpop songs 2025 2026',
+    'viral kpop hits korea',
+    'kdrama ost best songs',
+    'korean pop trending'
+  ],
+  GB: [
+    'uk top 40 songs 2025 2026',
+    'british indie pop hits',
+    'uk chart pop music',
+    'london viral hits 2025'
+  ],
+  GLOBAL: [
+    'global top 50 songs 2025 2026',
+    'worldwide viral pop hits',
+    'international chart hits 2026',
+    'most played songs 2025'
+  ]
+};
+
 interface PipedItem {
   url?: string;
+  type?: string;
   title?: string;
   uploaderName?: string;
   thumbnail?: string;
   duration?: number;
+  isShort?: boolean;
+  uploadedDate?: string | null;
 }
 
 function pipedItemToTrack(item: PipedItem): Track | null {
+  if (item.type && item.type !== 'stream') return null;
   const rawUrl = String(item.url || '');
   const match = rawUrl.match(/v=([A-Za-z0-9_-]{11})/);
   const videoId = match ? match[1] : '';
   if (!videoId) return null;
   const dur = Number(item.duration) || 0;
+  const title = String(item.title || '').trim();
+  const isLive = dur <= 0 || String(item.uploadedDate || '').toLowerCase().includes('live');
+  if (!title || !isValidMusicSong(title, dur, isLive, Boolean(item.isShort))) return null;
   return {
     id: `yt_${videoId}`,
-    title: item.title || 'YouTube Music',
+    title,
     artist: String(item.uploaderName || 'YouTube Music').replace(/ - Topic$/, ''),
-    album: 'YouTube Music (FOSS)',
-    dur: dur > 0 ? dur : 0,
+    album: 'YouTube Music',
+    dur,
     isPreview: false,
     c1: '#dc2626',
     c2: '#2b1014',
@@ -412,24 +474,32 @@ function pipedItemToTrack(item: PipedItem): Track | null {
 }
 
 interface InvidiousItem {
+  type?: string;
   videoId?: string;
   title?: string;
   author?: string;
   lengthSeconds?: number;
+  liveNow?: boolean;
+  isUpcoming?: boolean;
   videoThumbnails?: Array<{ url?: string; quality?: string }>;
 }
 
 function invidiousItemToTrack(item: InvidiousItem): Track | null {
-  if (!item.videoId) return null;
+  if (!item.videoId || (item.type && item.type !== 'video')) return null;
+  const dur = Number(item.lengthSeconds) || 0;
+  const title = String(item.title || '').trim();
+  if (!title || !isValidMusicSong(title, dur, Boolean(item.liveNow || item.isUpcoming), false)) {
+    return null;
+  }
   const thumb =
     item.videoThumbnails?.find((t) => t.quality === 'high' || t.quality === 'medium')?.url ||
     `https://img.youtube.com/vi/${item.videoId}/hqdefault.jpg`;
   return {
     id: `yt_${item.videoId}`,
-    title: item.title || 'YouTube Music',
+    title,
     artist: String(item.author || 'YouTube Music').replace(/ - Topic$/, ''),
-    album: 'YouTube Music (FOSS)',
-    dur: Number(item.lengthSeconds) || 0,
+    album: 'YouTube Music',
+    dur,
     isPreview: false,
     c1: '#dc2626',
     c2: '#2b1014',
@@ -503,65 +573,87 @@ export async function resolveYoutubeAudioStream(videoId: string): Promise<string
 /**
  * Fetches regional trending YouTube Music (uses optional YouTube API key if set, otherwise FOSS Piped/Invidious zero-API-key).
  */
-export async function fetchYtTrending(region = 'ID'): Promise<Track[]> {
+export async function fetchYtTrending(region = 'ID', refreshSeed = 0): Promise<Track[]> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
   const { ytApiKey } = getApiConfig();
-  const safeRegion = /^[A-Z]{2}$/.test(region) ? region : 'ID';
+  const regionKey = REGIONAL_YTMUSIC_QUERIES[region] ? region : 'ID';
+  const safeStore = /^[A-Z]{2}$/.test(region) ? region : 'ID';
 
   if (ytApiKey) {
     try {
       const res = await fetchWithTimeout(
-        `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&videoCategoryId=10&regionCode=${safeRegion}&maxResults=24&key=${ytApiKey}`,
+        `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&videoCategoryId=10&regionCode=${safeStore}&maxResults=24&key=${ytApiKey}`,
         5000
       );
       if (res.ok) {
         const data = (await res.json()) as { items?: unknown[] };
-        const items = (data.items || []).map(ytToTrack);
+        const items = (data.items || [])
+          .map(ytToTrack)
+          .filter((t) => !NON_MUSIC_REGEX.test(t.title));
         if (items.length > 0) return items;
       }
     } catch {
-      // Fall through to FOSS Piped/Invidious
+      // Fall through to FOSS YouTube Music (filter=music_songs)
     }
   }
 
+  // Strictly query YouTube Music songs (filter=music_songs) — zero vlogs, zero livestreams, zero Shorts
+  const pool = REGIONAL_YTMUSIC_QUERIES[regionKey];
+  const query = pool[Math.abs(refreshSeed) % pool.length];
+
   for (const host of getPipedCandidates().slice(0, 4)) {
     try {
-      const res = await fetchWithTimeout(`${host}/trending?region=${safeRegion}`, 4200);
+      const res = await fetchWithTimeout(
+        `${host}/search?q=${encodeURIComponent(query)}&filter=music_songs`,
+        4200
+      );
       if (!res.ok) continue;
-      const data = (await res.json()) as PipedItem[];
-      if (Array.isArray(data) && data.length > 0) {
-        const tracks = data
-          .map(pipedItemToTrack)
-          .filter((t): t is Track => Boolean(t && t.dur >= 60 && t.dur <= 900))
-          .slice(0, 20);
-        if (tracks.length > 0) return tracks;
-      }
+      const data = (await res.json()) as { items?: PipedItem[] };
+      const tracks = (data.items || [])
+        .map(pipedItemToTrack)
+        .filter((t): t is Track => Boolean(t))
+        .slice(0, 18);
+      if (tracks.length > 0) return tracks;
     } catch {
       // Failover to next Piped instance
     }
   }
 
+  // Strict music-only Invidious fallback (excludes livestreams, Shorts, and non-music videos)
   const invHosts = await getHealthyInvidiousInstances();
   for (const host of invHosts.slice(0, 3)) {
     try {
       const res = await fetchWithTimeout(
-        `${host}/api/v1/trending?type=Music&region=${safeRegion}`,
+        `${host}/api/v1/search?q=${encodeURIComponent(query + ' official audio')}&type=video`,
         4200
       );
       if (!res.ok) continue;
       const data = (await res.json()) as InvidiousItem[];
-      if (Array.isArray(data) && data.length > 0) {
-        const tracks = data
-          .map(invidiousItemToTrack)
-          .filter((t): t is Track => Boolean(t))
-          .slice(0, 20);
-        if (tracks.length > 0) return tracks;
-      }
+      const tracks = (data || [])
+        .map(invidiousItemToTrack)
+        .filter((t): t is Track => Boolean(t))
+        .slice(0, 18);
+      if (tracks.length > 0) return tracks;
     } catch {
       // Failover to next Invidious instance
     }
   }
   return [];
+}
+
+/**
+ * Fetches native playable full-length tracks for a Spotify Chart using YouTube Music FOSS (zero broken WebView iframe).
+ */
+export async function fetchSpotifyChartTracks(chartTitle: string): Promise<Track[]> {
+  const queryMap: Record<string, string> = {
+    'Top 50 Indonesia': 'top 50 indonesia spotify hits 2025 2026',
+    'Top 50 Global': 'top 50 global spotify hits 2025 2026',
+    "Today's Top Hits": 'todays top hits pop 2025 2026'
+  };
+  const q = queryMap[chartTitle] || `${chartTitle} songs`;
+  const ytSongs = await fetchYtSearch(q);
+  if (ytSongs.length > 0) return ytSongs.slice(0, 12);
+  return fetchPublicCatalogSearch(q, 12);
 }
 
 /**
@@ -876,7 +968,8 @@ export async function fetchSmartSuggestions(
  */
 export async function fetchRegionalViralFeed(
   config: AlgorithmConfig,
-  limit = 20
+  limit = 20,
+  refreshSeed = 0
 ): Promise<Track[]> {
   const regionObj = REGION_OPTIONS.find((r) => r.code === config.region) || REGION_OPTIONS[0];
   const eraObj =
@@ -884,7 +977,9 @@ export async function fetchRegionalViralFeed(
       ? ERA_PRESETS.find((e) => e.id === config.preferredEra)
       : undefined;
 
-  const queries: string[] = [regionObj.viralQuery];
+  const altPool = REGIONAL_YTMUSIC_QUERIES[config.region] || REGIONAL_YTMUSIC_QUERIES.ID;
+  const baseQuery = refreshSeed === 0 ? regionObj.viralQuery : altPool[Math.abs(refreshSeed) % altPool.length];
+  const queries: string[] = [baseQuery];
   if (config.mode === 'nostalgia') {
     queries.push('classic hits 1980s 1990s 2000s');
   } else if (eraObj) {
@@ -922,7 +1017,8 @@ export function rankTracksByAlgorithm(
   tracks: Track[],
   config: AlgorithmConfig,
   likedIds: string[],
-  history: Track[]
+  history: Track[],
+  refreshSeed = 0
 ): Track[] {
   const likedSet = new Set(likedIds);
   const recentIds = new Set(history.slice(0, 12).map((h) => h.id));
@@ -982,6 +1078,10 @@ export function rankTracksByAlgorithm(
       score -= 28;
     }
 
+    if (refreshSeed > 0) {
+      const hash = ((idx + 1) * 31 + refreshSeed * 17 + track.id.length * 13) % 19;
+      score += hash - 9;
+    }
     return { track, score };
   });
 

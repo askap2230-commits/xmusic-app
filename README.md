@@ -54,5 +54,5 @@ Automatic push builds are **disabled**. Run manually via:
 - **[CI_CD_GUIDE.md](./CI_CD_GUIDE.md)** — Manual GitHub Web UI / CLI build guide, reproducible build verification, and 2026 action versions.
 - **[WCAG_ACCESSIBILITY.md](./WCAG_ACCESSIBILITY.md)** — Strict WCAG 2.2 AA & WebQual 4.0 compliance matrix.
 - **[CONTRIBUTING.md](./CONTRIBUTING.md)** — Code style, `addlicense` workflow, and security policy.
-- **[CHANGELOG.md](./CHANGELOG.md)** — Version history (`v5.4.0`).
+- **[CHANGELOG.md](./CHANGELOG.md)** — Version history (`v5.5.0`).
 - **[LICENSE](./LICENSE)** — GNU AGPL v3.0-or-later (`Copyright 2026 Azka Putra`).

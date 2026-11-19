@@ -6,8 +6,10 @@
     extractYouTubeId,
     fetchOEmbedMeta,
     fetchSpotifyMetadata,
-    fetchSyncedLyrics
+    fetchSyncedLyrics,
+    fetchYtSearch
   } from '#lib/api/services.ts';
+  import { engine } from '#lib/audio/engine.svelte.ts';
   import { saveLocalTrack } from '#lib/db/storage.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
   import type { HubMeta, SpotifyEmbedRef, Track } from '#lib/types/music.ts';
@@ -98,21 +100,31 @@
       ? await fetchSyncedLyrics(title, artist, meta?.dur || 0)
       : null;
 
+    let resolvedVideoId = hubVideoId || undefined;
+    let resolvedDur = meta?.dur || 0;
+    if (isSpotify && !resolvedVideoId && appStore.isOnline) {
+      const ytMatches = await fetchYtSearch(`${title} ${artist}`);
+      if (ytMatches.length > 0 && ytMatches[0].videoId) {
+        resolvedVideoId = ytMatches[0].videoId;
+        resolvedDur = ytMatches[0].dur || resolvedDur;
+      }
+    }
+
     const track: Track = {
       id: `embed_${Date.now()}`,
       title,
       artist,
-      album: meta?.album || (isSpotify ? 'Spotify Hub' : 'YouTube Hub'),
+      album: meta?.album || (isSpotify ? 'Spotify (Audio Penuh)' : 'YouTube Music'),
       imageUrl,
-      c1: isSpotify ? '#30d158' : '#ff453a',
+      c1: isSpotify ? '#248a3d' : '#dc2626',
       c2: '#1c1c1e',
-      dur: meta?.dur || 0,
+      dur: resolvedDur,
       source: 'local',
       createdAt: Date.now(),
       lyrics: syncedLyrics || '',
-      videoId: hubVideoId || undefined,
-      spotifyId: hubSpotify?.id || undefined,
-      spotifyType: hubSpotify?.type || undefined
+      videoId: resolvedVideoId,
+      spotifyId: resolvedVideoId ? undefined : hubSpotify?.id || undefined,
+      spotifyType: resolvedVideoId ? undefined : hubSpotify?.type || undefined
     };
 
     await saveLocalTrack(track);
@@ -120,6 +132,7 @@
     hubSaving = false;
     appStore.hubModalOpen = false;
     appStore.view = 'library';
+    engine.playTrack(track, appStore.allTracks);
     appStore.openTrackModal(track, false);
     appStore.showToast(
       syncedLyrics
@@ -200,14 +213,13 @@
     {/if}
 
     {#if appStore.isOnline && hubEmbedType === 'spotify' && hubSpotify}
-      <Block>
-        <iframe
-          title="Spotify Preview"
-          class="w-full rounded-2xl border-0"
-          src="https://open.spotify.com/embed/{hubSpotify.type}/{hubSpotify.id}?theme=0"
-          height="152"
-          allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-        ></iframe>
+      <Block strong inset class="space-y-1.5">
+        <div class="text-xs font-bold text-[#248a3d] dark:text-[#30d158]">
+          Siap Diputar Penuh Secara Native (Tanpa Web Embed)
+        </div>
+        <p class="text-xs text-black/65 dark:text-white/65">
+          Metadata & sampul HD Spotify terdeteksi. Ketuk <strong>Simpan & Putar Penuh</strong> di bawah untuk memutar lagu ini langsung di pemutar Xmusic dengan 5-Band EQ & lirik sinkron.
+        </p>
       </Block>
     {:else if appStore.isOnline && hubEmbedType === 'youtube' && hubVideoId}
       <Block>
@@ -231,7 +243,7 @@
           class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
           onclick={saveHubToLibrary}
         >
-          {hubSaving ? 'Menyimpan Sampul & Lirik...' : 'Simpan ke Koleksi'}
+          {hubSaving ? 'Menyimpan Sampul & Lirik...' : 'Simpan & Putar Penuh'}
         </Button>
         {#if hubVideoId}
           <Button

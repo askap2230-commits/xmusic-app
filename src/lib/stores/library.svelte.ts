@@ -9,6 +9,7 @@ import {
   rankTracksByAlgorithm,
   fetchSearch,
   fetchSmartSuggestions,
+  fetchSpotifyChartTracks,
   fetchSyncedLyrics,
   fetchTrending,
   fetchYtSearch,
@@ -66,6 +67,11 @@ class AppStore {
   searchSuggestions = $state<SearchSuggestion[]>([]);
   recentSearches = $state<string[]>([]);
   loadingHome = $state<boolean>(true);
+  refreshing = $state<boolean>(false);
+  refreshSeed = $state<number>(0);
+  activeSpotifyChartTitle = $state<string>('');
+  spotifyChartTracks = $state<Track[]>([]);
+  loadingSpotifyChart = $state<boolean>(false);
 
   // Collections
   localTracks = $state<Track[]>([]);
@@ -79,7 +85,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '5.4.0',
+    version: '5.5.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
@@ -131,7 +137,18 @@ class AppStore {
       this.catalogTrending,
       this.algoConfig,
       this.likedIds,
-      engine.history
+      engine.history,
+      this.refreshSeed
+    );
+  }
+
+  get rankedYtFeed(): Track[] {
+    return rankTracksByAlgorithm(
+      this.ytTracks,
+      this.algoConfig,
+      this.likedIds,
+      engine.history,
+      this.refreshSeed
     );
   }
 
@@ -298,26 +315,65 @@ class AppStore {
     }
   }
 
-  async refreshOnlineFeeds(): Promise<void> {
+  async refreshOnlineFeeds(manual = false): Promise<void> {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       this.isOnline = false;
       this.networkReachable = false;
       this.loadingHome = false;
+      this.refreshing = false;
+      if (manual) this.showToast('Mode Offline: tidak dapat menyegarkan feed online.');
       return;
     }
-    this.loadingHome = true;
-    const [catalog, trending, yt] = await Promise.all([
-      fetchRegionalViralFeed(this.algoConfig, 20),
-      fetchTrending(24),
-      fetchYtTrending(this.activeRegionOption.storeCode)
+    if (manual) {
+      this.refreshSeed += 1;
+      this.refreshing = true;
+    } else {
+      this.loadingHome = true;
+    }
+
+    const [yt, trending, catalog] = await Promise.all([
+      fetchYtTrending(this.algoConfig.region, this.refreshSeed),
+      fetchTrending(20),
+      fetchRegionalViralFeed(this.algoConfig, 18, this.refreshSeed)
     ]);
-    this.catalogTrending = catalog;
-    this.trendingTracks = trending;
+
     this.ytTracks = yt;
-    this.networkReachable = catalog.length > 0 || trending.length > 0 || yt.length > 0;
+    this.trendingTracks = trending;
+    this.catalogTrending = catalog;
+    this.networkReachable = yt.length > 0 || trending.length > 0 || catalog.length > 0;
     this.loadingHome = false;
+    this.refreshing = false;
+
     if (engine.queue.length === 0) {
-      engine.queue = [...this.localTracks, ...catalog, ...trending];
+      engine.queue = [...this.localTracks, ...yt, ...trending, ...catalog];
+    }
+    if (manual) {
+      this.showToast(
+        this.networkReachable
+          ? `Algoritma & daftar musik ${this.activeRegionOption.label} berhasil disegarkan.`
+          : 'Server streaming belum merespons. Coba beberapa saat lagi.'
+      );
+    }
+  }
+
+  async openSpotifyChart(title: string): Promise<void> {
+    if (this.activeSpotifyChartTitle === title && this.spotifyChartTracks.length > 0) {
+      this.activeSpotifyChartTitle = '';
+      this.spotifyChartTracks = [];
+      return;
+    }
+    if (!this.isOnline) {
+      this.showToast('Mode Offline: tidak dapat memuat Chart Spotify.');
+      return;
+    }
+    this.activeSpotifyChartTitle = title;
+    this.loadingSpotifyChart = true;
+    this.spotifyChartTracks = [];
+    const tracks = await fetchSpotifyChartTracks(title);
+    this.spotifyChartTracks = tracks;
+    this.loadingSpotifyChart = false;
+    if (tracks.length === 0) {
+      this.showToast(`Gagal memuat ${title}. Coba segarkan koneksi.`);
     }
   }
 

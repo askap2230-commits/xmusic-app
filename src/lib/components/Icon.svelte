@@ -31,7 +31,8 @@
     | 'wifi-off'
     | 'upload'
     | 'key'
-    | 'spark';
+    | 'spark'
+    | 'refresh';
 </script>
 
 <script lang="ts">
@@ -121,6 +122,9 @@
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
   {:else if name === 'key'}
     <circle cx="7.5" cy="15.5" r="4.5" /><path d="m11 12 9-9M17 6l3 3" />
+  {:else if name === 'refresh'}
+    <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+    <polyline points="21 3 21 9 15 9" />
   {:else if name === 'spark'}
     <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" />
   {/if}

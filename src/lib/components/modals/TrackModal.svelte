@@ -141,24 +141,28 @@
                       </div>
                     {/if}
                   {:else if track.spotifyId}
-                    {#if appStore.isOnline && appStore.networkReachable}
-                      <div class="mb-4 overflow-hidden rounded-2xl">
-                        <iframe
-                          title={track.title}
-                          class="w-full border-0"
-                          src="https://open.spotify.com/embed/{track.spotifyType || 'track'}/{track.spotifyId}?theme=0"
-                          height="152"
-                          allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                        ></iframe>
-                      </div>
-                    {:else}
-                      <div class="mb-4 flex flex-col items-center gap-2 rounded-2xl border border-black/10 bg-black/5 p-6 text-center dark:border-white/10 dark:bg-white/5">
-                        <Icon name="wifi-off" size={28} />
-                        <p class="text-xs text-black/60 dark:text-white/65">
-                          Pemutar Spotify Embed memerlukan koneksi internet.
-                        </p>
-                      </div>
-                    {/if}
+                    <div class="mb-4 flex flex-col items-center gap-3 rounded-2xl border border-black/10 bg-black/5 p-5 text-center dark:border-white/10 dark:bg-white/5">
+                      {#if track.imageUrl && !imgFailed}
+                        <img
+                          src={track.imageUrl}
+                          alt="Sampul {track.title}"
+                          class="h-36 w-36 rounded-2xl object-cover shadow-md"
+                          onerror={() => (imgFailed = true)}
+                        />
+                      {/if}
+                      <p class="text-xs text-black/65 dark:text-white/65">
+                        Putar audio penuh lagu Spotify ini langsung di pemutar Xmusic tanpa halaman web.
+                      </p>
+                      <Button
+                        rounded
+                        small
+                        inline
+                        class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
+                        onclick={() => appStore.findFullVersion(track)}
+                      >
+                        Putar Penuh di Xmusic
+                      </Button>
+                    </div>
                   {:else}
                     <div
                       class="mx-auto mb-3 grid aspect-square w-full max-w-[248px] place-items-center overflow-hidden rounded-2xl shadow-lg"
