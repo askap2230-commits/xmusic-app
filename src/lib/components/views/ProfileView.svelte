@@ -5,12 +5,14 @@
     Block,
     BlockTitle,
     Button,
+    Chip,
     List,
     ListItem,
     Segmented,
     SegmentedButton,
     Toggle
   } from 'konsta/svelte';
+  import { ALGORITHM_GENRES, ERA_PRESETS, REGION_OPTIONS } from '#lib/data/presets.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
   import { getTrackInitial } from '#lib/utils/format.ts';
 
@@ -31,9 +33,9 @@
   </div>
 
   <div class="min-w-[200px] flex-1 space-y-1">
-    <h2 class="text-xl font-bold text-zinc-950 dark:text-white">{appStore.userProfile.name}</h2>
+    <h2 class="text-xl font-bold text-black dark:text-white">{appStore.userProfile.name}</h2>
     <div class="text-sm font-medium text-[#007aff] dark:text-[#64d2ff]">{appStore.userProfile.handle}</div>
-    <p class="text-sm text-zinc-600 dark:text-zinc-300">{appStore.userProfile.bio}</p>
+    <p class="text-sm text-black/65 dark:text-white/65">{appStore.userProfile.bio}</p>
     <div class="flex flex-wrap gap-2 pt-2">
       <Button rounded small inline onclick={() => (appStore.editProfileOpen = true)}>
         Edit Profil & API Key
@@ -89,6 +91,142 @@
           </SegmentedButton>
         </Segmented>
       </div>
+    {/snippet}
+  </ListItem>
+</List>
+
+<BlockTitle>Algoritma Musik & Privasi (100% Lokal)</BlockTitle>
+<List strong inset>
+  <ListItem
+    label
+    title="Personalisasi Lokal (On-Device)"
+    subtitle={appStore.algoConfig.personalizeFromHistory
+      ? 'Diproses lokal dari riwayat & favorit tanpa pelacakan server'
+      : 'Mode Privasi Penuh: hanya tampilkan chart viral regional'}
+  >
+    {#snippet after()}
+      <Toggle
+        component="div"
+        checked={appStore.algoConfig.personalizeFromHistory}
+        onChange={() =>
+          appStore.updateAlgorithmConfig(
+            { personalizeFromHistory: !appStore.algoConfig.personalizeFromHistory },
+            false
+          )}
+      />
+    {/snippet}
+  </ListItem>
+
+  <ListItem>
+    {#snippet inner()}
+      <div class="w-full py-1">
+        <div class="mb-2 text-sm font-medium text-black dark:text-white">Mode Rekomendasi</div>
+        <Segmented strong rounded>
+          <SegmentedButton
+            active={appStore.algoConfig.mode === 'viral'}
+            onclick={() => appStore.updateAlgorithmConfig({ mode: 'viral' }, true)}
+          >
+            Viral
+          </SegmentedButton>
+          <SegmentedButton
+            active={appStore.algoConfig.mode === 'balanced'}
+            onclick={() => appStore.updateAlgorithmConfig({ mode: 'balanced' }, true)}
+          >
+            Seimbang
+          </SegmentedButton>
+          <SegmentedButton
+            active={appStore.algoConfig.mode === 'discovery'}
+            onclick={() => appStore.updateAlgorithmConfig({ mode: 'discovery' }, true)}
+          >
+            Baru
+          </SegmentedButton>
+          <SegmentedButton
+            active={appStore.algoConfig.mode === 'nostalgia'}
+            onclick={() => appStore.updateAlgorithmConfig({ mode: 'nostalgia' }, true)}
+          >
+            Nostalgia
+          </SegmentedButton>
+        </Segmented>
+      </div>
+    {/snippet}
+  </ListItem>
+
+  <ListItem>
+    {#snippet inner()}
+      <div class="w-full py-1">
+        <div class="mb-2 text-sm font-medium text-black dark:text-white">Region Katalog & Viral</div>
+        <div class="flex flex-wrap gap-1.5">
+        {#each REGION_OPTIONS as reg (reg.code)}
+          <Chip
+            outline={appStore.algoConfig.region !== reg.code}
+            class="cursor-pointer {appStore.algoConfig.region === reg.code
+              ? '!bg-[#007aff] !text-white font-semibold'
+              : ''}"
+            onclick={() => appStore.updateAlgorithmConfig({ region: reg.code }, true)}
+          >
+            {reg.label}
+          </Chip>
+        {/each}
+        </div>
+      </div>
+    {/snippet}
+  </ListItem>
+
+  <ListItem>
+    {#snippet inner()}
+      <div class="w-full py-1">
+        <div class="mb-2 text-sm font-medium text-black dark:text-white">Prioritas Era Musik</div>
+        <div class="flex flex-wrap gap-1.5">
+        <Chip
+          outline={appStore.algoConfig.preferredEra !== 'all'}
+          class="cursor-pointer {appStore.algoConfig.preferredEra === 'all'
+            ? '!bg-[#007aff] !text-white font-semibold'
+            : ''}"
+          onclick={() => appStore.updateAlgorithmConfig({ preferredEra: 'all' }, true)}
+        >
+          Semua Era
+        </Chip>
+        {#each ERA_PRESETS as era (era.id)}
+          <Chip
+            outline={appStore.algoConfig.preferredEra !== era.id}
+            class="cursor-pointer {appStore.algoConfig.preferredEra === era.id
+              ? '!bg-[#007aff] !text-white font-semibold'
+              : ''}"
+            onclick={() => appStore.updateAlgorithmConfig({ preferredEra: era.id }, true)}
+          >
+            {era.label}
+          </Chip>
+        {/each}
+        </div>
+      </div>
+    {/snippet}
+  </ListItem>
+
+  <ListItem>
+    {#snippet inner()}
+      <div class="w-full py-1">
+        <div class="mb-2 text-sm font-medium text-black dark:text-white">Minat Genre (Maks. 4)</div>
+        <div class="flex flex-wrap gap-1.5">
+        {#each ALGORITHM_GENRES as genre}
+          {@const selected = appStore.algoConfig.preferredGenres.includes(genre)}
+          <Chip
+            outline={!selected}
+            class="cursor-pointer {selected ? '!bg-[#007aff] !text-white font-semibold' : ''}"
+            onclick={() => appStore.toggleAlgorithmGenre(genre)}
+          >
+            {genre}
+          </Chip>
+        {/each}
+        </div>
+      </div>
+    {/snippet}
+  </ListItem>
+
+  <ListItem title="Privasi & Data Algoritma" subtitle="Zero telemetri • tersimpan hanya di perangkat">
+    {#snippet after()}
+      <Button tonal rounded small inline onclick={() => appStore.resetAlgorithmConfig()}>
+        Reset
+      </Button>
     {/snippet}
   </ListItem>
 </List>

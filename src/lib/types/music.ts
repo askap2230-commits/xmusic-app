@@ -1,11 +1,30 @@
 // Copyright 2026 Azka Putra
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-export type TrackSource = 'local' | 'audius' | 'youtube' | 'spotify';
+export type TrackSource = 'local' | 'audius' | 'catalog' | 'youtube' | 'spotify';
 export type RepeatMode = 'off' | 'all' | 'one';
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type AppView = 'home' | 'search' | 'library' | 'eq' | 'profile';
 export type DrawerTab = 'queue' | 'lyrics';
+
+export type MusicRegion = 'ID' | 'US' | 'JP' | 'KR' | 'GB' | 'GLOBAL';
+export type AlgorithmMode = 'viral' | 'balanced' | 'discovery' | 'nostalgia';
+
+export interface RegionOption {
+  code: MusicRegion;
+  storeCode: string;
+  label: string;
+  viralQuery: string;
+}
+
+export interface AlgorithmConfig {
+  region: MusicRegion;
+  mode: AlgorithmMode;
+  preferredEra: string;
+  preferredGenres: string[];
+  personalizeFromHistory: boolean;
+}
+
 
 export interface Track {
   id: string;
@@ -14,6 +33,8 @@ export interface Track {
   album: string;
   dur: number;
   source: TrackSource;
+  releaseYear?: number;
+  isPreview?: boolean;
   c1?: string;
   c2?: string;
   imageUrl?: string | null;
@@ -27,6 +48,27 @@ export interface Track {
   videoId?: string;
   spotifyId?: string;
   spotifyType?: 'track' | 'album' | 'playlist' | 'artist' | 'episode';
+}
+
+export interface EraPreset {
+  id: string;
+  label: string;
+  sub: string;
+  minYear: number;
+  maxYear: number;
+  query: string;
+  accent: string;
+  bg: string;
+}
+
+export interface SearchSuggestion {
+  id: string;
+  query: string;
+  title: string;
+  subtitle: string;
+  year?: number;
+  kind: 'recent' | 'local' | 'public' | 'era';
+  track?: Track;
 }
 
 export interface Playlist {

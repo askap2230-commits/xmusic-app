@@ -94,3 +94,6 @@ This document defines **non-negotiable architectural and design rules** for all 
   - NEVER apply global `:focus-visible` blue outlines on touch screens — scope keyboard focus rings to `@media (hover: hover) and (pointer: fine)` and keep `-webkit-tap-highlight-color: transparent`.
   - ALWAYS attach `onerror` artwork fallback on every track cover `<img>` and NEVER auto-mount external Spotify `<iframe>`s on `HomeView` (use on-demand Konsta `<List>` items gated by `appStore.isOnline && appStore.networkReachable`).
   - ALWAYS sync native Android status/navigation bars via `window.XmusicAndroidMedia?.setSystemBarTheme(isDark)` and `themes.xml` (`#F2F2F7` light / `#000000` dark — never default Material purple).
+- **Zero Hardcoded Generic Cards & Privacy-First Algorithm**:
+  - NEVER use raw `<button style="background:#...; border-left:...">` dark boxes for Genre or Era cards — ALWAYS use native Konsta UI `<Card contentWrapPadding="p-3.5" class="!m-0 ...">` so Light Mode and Dark Mode stay 100% consistent with Konsta UI v5.5 iOS.
+  - Keep `rankTracksByAlgorithm` and `algoConfig` 100% on-device (`localStorage` only, zero telemetry or user data sent to external servers).

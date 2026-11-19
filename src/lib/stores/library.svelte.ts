@@ -3,7 +3,11 @@
 
 import { engine } from '#lib/audio/engine.svelte.ts';
 import {
+  fetchPublicCatalogSearch,
+  fetchRegionalViralFeed,
+  rankTracksByAlgorithm,
   fetchSearch,
+  fetchSmartSuggestions,
   fetchSyncedLyrics,
   fetchTrending,
   fetchYtSearch,
@@ -11,7 +15,7 @@ import {
   getApiConfig,
   saveApiConfig
 } from '#lib/api/services.ts';
-import { generateDemoSynthBlob } from '#lib/data/presets.ts';
+import { DEFAULT_ALGORITHM_CONFIG, ERA_PRESETS, REGION_OPTIONS, generateDemoSynthBlob } from '#lib/data/presets.ts';
 import {
   deleteLocalTrack,
   getAllLocalTracks,
@@ -23,11 +27,14 @@ import {
   saveLocalTrack
 } from '#lib/db/storage.ts';
 import type {
+  AlgorithmConfig,
   ApiConfig,
   AppView,
   DrawerTab,
   Playlist,
+  RegionOption,
   RuntimeInfo,
+  SearchSuggestion,
   ThemeMode,
   Track,
   UserProfile
@@ -50,11 +57,17 @@ class AppStore {
   view = $state<AppView>('home');
   libFilter = $state<string>('local');
   searchQuery = $state<string>('');
+  eraFilter = $state<string>('all');
   searching = $state<boolean>(false);
+  suggesting = $state<boolean>(false);
+  showSuggestions = $state<boolean>(false);
+  searchSuggestions = $state<SearchSuggestion[]>([]);
+  recentSearches = $state<string[]>([]);
   loadingHome = $state<boolean>(true);
 
   // Collections
   localTracks = $state<Track[]>([]);
+  catalogTrending = $state<Track[]>([]);
   trendingTracks = $state<Track[]>([]);
   ytTracks = $state<Track[]>([]);
   searchResults = $state<Track[]>([]);
@@ -64,7 +77,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '5.0.0',
+    version: '5.2.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
@@ -78,6 +91,7 @@ class AppStore {
   });
 
   apiConfig = $state<ApiConfig>(getApiConfig());
+  algoConfig = $state<AlgorithmConfig>({ ...DEFAULT_ALGORITHM_CONFIG });
 
   // Overlay & modal visibility
   npDrawerOpen = $state<boolean>(false);
@@ -102,6 +116,22 @@ class AppStore {
   toastMsg = $state<string>('');
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private searchDebounceId: ReturnType<typeof setTimeout> | null = null;
+  private suggestDebounceId: ReturnType<typeof setTimeout> | null = null;
+  private searchAbort: AbortController | null = null;
+  private suggestAbort: AbortController | null = null;
+
+  get activeRegionOption(): RegionOption {
+    return REGION_OPTIONS.find((r) => r.code === this.algoConfig.region) || REGION_OPTIONS[0];
+  }
+
+  get recommendedFeed(): Track[] {
+    return rankTracksByAlgorithm(
+      this.catalogTrending,
+      this.algoConfig,
+      this.likedIds,
+      engine.history
+    );
+  }
 
   get isDark(): boolean {
     if (this.themeMode === 'dark') return true;
@@ -114,12 +144,25 @@ class AppStore {
     for (const track of [
       ...this.localTracks,
       ...this.searchResults,
+      ...this.catalogTrending,
       ...this.ytTracks,
       ...this.trendingTracks
     ]) {
       if (track?.id && !map.has(track.id)) map.set(track.id, track);
     }
     return [...map.values()];
+  }
+
+  get filteredSearchResults(): Track[] {
+    if (this.eraFilter === 'all') return this.searchResults;
+    const era = ERA_PRESETS.find((e) => e.id === this.eraFilter);
+    if (!era) return this.searchResults;
+    return this.searchResults.filter(
+      (t) =>
+        typeof t.releaseYear === 'number' &&
+        t.releaseYear >= era.minYear &&
+        t.releaseYear <= era.maxYear
+    );
   }
 
   get filteredLibrary(): Track[] {
@@ -257,13 +300,18 @@ class AppStore {
       return;
     }
     this.loadingHome = true;
-    const [trending, yt] = await Promise.all([fetchTrending(32), fetchYtTrending('ID')]);
+    const [catalog, trending, yt] = await Promise.all([
+      fetchRegionalViralFeed(this.algoConfig, 20),
+      fetchTrending(24),
+      fetchYtTrending(this.activeRegionOption.storeCode)
+    ]);
+    this.catalogTrending = catalog;
     this.trendingTracks = trending;
     this.ytTracks = yt;
-    this.networkReachable = trending.length > 0 || yt.length > 0;
+    this.networkReachable = catalog.length > 0 || trending.length > 0 || yt.length > 0;
     this.loadingHome = false;
     if (engine.queue.length === 0) {
-      engine.queue = [...this.localTracks, ...trending];
+      engine.queue = [...this.localTracks, ...catalog, ...trending];
     }
   }
 
@@ -273,6 +321,9 @@ class AppStore {
     engine.init(this.showToast);
 
     this.likedIds = loadJSON<string[]>('nys_liked_ids', []);
+    this.recentSearches = loadJSON<string[]>('nys_recent_searches', []);
+    const savedAlgo = loadJSON<Partial<AlgorithmConfig> | null>('nys_algo_config', null);
+    if (savedAlgo) this.algoConfig = { ...DEFAULT_ALGORITHM_CONFIG, ...savedAlgo };
     this.playlists = loadJSON<Playlist[]>('nys_playlists', [
       { id: 'pl_default_chill', name: 'Jalan Pulang', trackIds: [], createdAt: Date.now() }
     ]);
@@ -535,20 +586,160 @@ class AppStore {
     saveJSON('nys_playlists', this.playlists);
   }
 
-  updateSearch(query: string): void {
+  private recordRecentSearch(query: string): void {
+    const clean = query.trim();
+    if (clean.length < 2) return;
+    const filtered = this.recentSearches.filter((q) => q.toLowerCase() !== clean.toLowerCase());
+    this.recentSearches = [clean, ...filtered].slice(0, 8);
+    saveJSON('nys_recent_searches', this.recentSearches);
+  }
+
+  removeRecentSearch(query: string): void {
+    this.recentSearches = this.recentSearches.filter((q) => q !== query);
+    saveJSON('nys_recent_searches', this.recentSearches);
+  }
+
+  clearRecentSearches(): void {
+    this.recentSearches = [];
+    saveJSON('nys_recent_searches', []);
+  }
+
+  private buildInstantSuggestions(rawQuery: string): SearchSuggestion[] {
+    const qLow = rawQuery.trim().toLowerCase();
+    if (!qLow) return [];
+    const out: SearchSuggestion[] = [];
+
+    // 1. Matching recent searches
+    for (const recent of this.recentSearches) {
+      if (recent.toLowerCase().includes(qLow) && out.length < 2) {
+        out.push({
+          id: `recent_${recent}`,
+          query: recent,
+          title: recent,
+          subtitle: 'Riwayat Pencarian',
+          kind: 'recent'
+        });
+      }
+    }
+
+    // 2. Matching eras (e.g. typing 1980, 1990, 2000, 2025, klasik)
+    for (const era of ERA_PRESETS) {
+      const yearNum = Number(qLow);
+      const matchesYear = Number.isInteger(yearNum) && yearNum >= era.minYear && yearNum <= era.maxYear;
+      if (
+        matchesYear ||
+        era.label.toLowerCase().includes(qLow) ||
+        era.sub.toLowerCase().includes(qLow)
+      ) {
+        out.push({
+          id: `era_${era.id}`,
+          query: era.query,
+          title: `Jelajahi ${era.label}`,
+          subtitle: era.sub,
+          kind: 'era'
+        });
+        break;
+      }
+    }
+
+    // 3. Matching local offline tracks (0ms latency)
+    for (const t of this.localTracks) {
+      if (
+        (t.title?.toLowerCase().includes(qLow) || t.artist?.toLowerCase().includes(qLow)) &&
+        out.length < 5
+      ) {
+        out.push({
+          id: `local_${t.id}`,
+          query: `${t.title} ${t.artist}`,
+          title: t.title,
+          subtitle: `${t.artist} • Koleksi Offline`,
+          year: t.releaseYear,
+          kind: 'local',
+          track: t
+        });
+      }
+    }
+    return out;
+  }
+
+  setEraFilter(eraId: string): void {
+    this.eraFilter = eraId;
+  }
+
+  exploreEra(eraId: string): void {
+    const era = ERA_PRESETS.find((e) => e.id === eraId);
+    if (!era) return;
+    this.eraFilter = era.id;
+    this.showSuggestions = false;
+    this.updateSearch(era.query, true);
+  }
+
+  applySuggestion(suggestion: SearchSuggestion): void {
+    this.showSuggestions = false;
+    if (suggestion.kind === 'era') {
+      const eraId = suggestion.id.replace('era_', '');
+      this.exploreEra(eraId);
+      return;
+    }
+    if (suggestion.track && suggestion.kind === 'local') {
+      engine.playTrack(suggestion.track, this.allTracks);
+    }
+    this.updateSearch(suggestion.query, true);
+  }
+
+  updateSearch(query: string, immediate = false): void {
     this.searchQuery = query;
     if (this.view !== 'search') this.view = 'search';
     if (this.searchDebounceId) clearTimeout(this.searchDebounceId);
+    if (this.suggestDebounceId) clearTimeout(this.suggestDebounceId);
+    if (this.searchAbort) this.searchAbort.abort();
+    if (this.suggestAbort) this.suggestAbort.abort();
 
-    if (!query.trim()) {
+    const trimmed = query.trim();
+    if (!trimmed) {
       this.searchResults = [];
+      this.searchSuggestions = [];
+      this.showSuggestions = false;
       this.searching = false;
+      this.suggesting = false;
+      this.eraFilter = 'all';
       return;
     }
 
+    // Instant 0ms local + recent + era suggestions
+    const instant = this.buildInstantSuggestions(trimmed);
+    this.searchSuggestions = instant;
+    this.showSuggestions = !immediate;
+
+    // Fast 180ms live public autocomplete suggestions
+    if (!immediate && this.isOnline && trimmed.length >= 2) {
+      this.suggesting = true;
+      const suggestController = new AbortController();
+      this.suggestAbort = suggestController;
+      this.suggestDebounceId = setTimeout(async () => {
+        const pub = await fetchSmartSuggestions(trimmed, suggestController.signal, this.activeRegionOption.storeCode);
+        if (suggestController.signal.aborted) return;
+        const merged = [...instant];
+        for (const item of pub) {
+          if (merged.length >= 8) break;
+          if (!merged.some((m) => m.title.toLowerCase() === item.title.toLowerCase())) {
+            merged.push(item);
+          }
+        }
+        this.searchSuggestions = merged;
+        this.suggesting = false;
+      }, 180);
+    } else {
+      this.suggesting = false;
+    }
+
+    // Full multi-source search (local + public 1900-2026 catalog + Audius + YouTube)
     this.searching = true;
+    const searchController = new AbortController();
+    this.searchAbort = searchController;
+    const delay = immediate ? 0 : 300;
     this.searchDebounceId = setTimeout(async () => {
-      const qLow = query.toLowerCase();
+      const qLow = trimmed.toLowerCase();
       const localMatch = this.localTracks.filter(
         (t) =>
           t.title?.toLowerCase().includes(qLow) ||
@@ -560,10 +751,41 @@ class AppStore {
         this.searching = false;
         return;
       }
-      const [audius, youtube] = await Promise.all([fetchSearch(query), fetchYtSearch(query)]);
-      this.searchResults = [...localMatch, ...youtube, ...audius];
+      const [catalog, audius, youtube] = await Promise.all([
+        fetchPublicCatalogSearch(trimmed, 30, searchController.signal, this.activeRegionOption.storeCode),
+        fetchSearch(trimmed, 18),
+        fetchYtSearch(trimmed)
+      ]);
+      if (searchController.signal.aborted) return;
+      this.searchResults = [...localMatch, ...catalog, ...youtube, ...audius];
       this.searching = false;
-    }, 320);
+      this.recordRecentSearch(trimmed);
+    }, delay);
+  }
+
+  updateAlgorithmConfig(partial: Partial<AlgorithmConfig>, refreshFeed = true): void {
+    this.algoConfig = { ...this.algoConfig, ...partial };
+    saveJSON('nys_algo_config', this.algoConfig);
+    if (refreshFeed && this.isOnline) {
+      void this.refreshOnlineFeeds();
+    }
+  }
+
+  toggleAlgorithmGenre(genre: string): void {
+    const exists = this.algoConfig.preferredGenres.includes(genre);
+    const next = exists
+      ? this.algoConfig.preferredGenres.filter((g) => g !== genre)
+      : [...this.algoConfig.preferredGenres, genre].slice(0, 4);
+    this.updateAlgorithmConfig({ preferredGenres: next }, true);
+  }
+
+  resetAlgorithmConfig(): void {
+    this.algoConfig = { ...DEFAULT_ALGORITHM_CONFIG };
+    saveJSON('nys_algo_config', this.algoConfig);
+    this.showToast('Algoritma musik direset ke pengaturan awal.');
+    if (this.isOnline) {
+      void this.refreshOnlineFeeds();
+    }
   }
 
   saveProfileSettings(profile: UserProfile, nextApiConfig: Partial<ApiConfig>): void {

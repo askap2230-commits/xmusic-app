@@ -1,13 +1,20 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
-  import { Block, BlockTitle, Button, List, ListItem, Preloader } from 'konsta/svelte';
-  import { CATEGORIES, SPOTIFY_CHARTS } from '#lib/data/presets.ts';
+  import { Block, BlockTitle, Button, Card, List, ListItem, Preloader } from 'konsta/svelte';
+  import { CATEGORIES, ERA_PRESETS, SPOTIFY_CHARTS } from '#lib/data/presets.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
   import { getTimeGreeting } from '#lib/utils/format.ts';
   import Icon from '../Icon.svelte';
   import TrackCard from '../TrackCard.svelte';
 
   let activeChartId = $state<string | null>(null);
+
+  const MODE_LABELS: Record<string, string> = {
+    viral: 'Viral',
+    balanced: 'Seimbang',
+    discovery: 'Eksplorasi',
+    nostalgia: 'Nostalgia'
+  };
 </script>
 
 <Block strong inset class="space-y-4">
@@ -15,10 +22,10 @@
     nys Xmusic v{appStore.runtimeInfo.version} • {getTimeGreeting()}, {appStore.userProfile.name}
   </div>
   <h2 class="text-2xl font-bold tracking-tight text-black dark:text-white">
-    Audio Jernih, Tanpa Kompromi.
+    Audio Jernih, Katalog 1900–2026.
   </h2>
   <p class="max-w-2xl text-sm leading-relaxed text-black/65 dark:text-white/65">
-    Ketuk <strong>2x kartu lagu</strong> untuk membalik dan melihat lirik sinkron sesuai irama. Tempel tautan Spotify di Hub Musik untuk deteksi sampul HD dan artis otomatis.
+    Jelajahi lagu viral regional dan katalog klasik hingga 2026, ketuk <strong>2x kartu lagu</strong> untuk lirik sinkron, atau putar koleksi offline kamu kapan saja.
   </p>
 
   <div class="grid grid-cols-2 gap-2.5 sm:flex sm:flex-wrap">
@@ -59,24 +66,15 @@
   </Block>
 {/if}
 
-<BlockTitle>Eksplorasi Genre & Suasana</BlockTitle>
-<Block>
-  <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-    {#each CATEGORIES as cat}
-      <button
-        type="button"
-        class="flex min-h-[72px] flex-col justify-center rounded-2xl border border-white/10 p-3.5 text-left transition-transform active:scale-[0.98]"
-        style="background:{cat.bg}; border-left: 4px solid {cat.accent};"
-        onclick={() => appStore.updateSearch(cat.q)}
-      >
-        <span class="text-sm font-bold text-white">{cat.label}</span>
-        <span class="mt-0.5 text-xs text-white/80">{cat.sub}</span>
-      </button>
-    {/each}
-  </div>
-</Block>
+<BlockTitle class="flex items-center justify-between">
+  <span>
+    Viral & Rekomendasi • {appStore.activeRegionOption.label} ({MODE_LABELS[appStore.algoConfig.mode] || 'Seimbang'})
+  </span>
+  <Button clear small inline onclick={() => (appStore.view = 'profile')}>
+    Atur
+  </Button>
+</BlockTitle>
 
-<BlockTitle>Trending Streaming (Audius Global)</BlockTitle>
 {#if !appStore.isOnline || (!appStore.loadingHome && !appStore.networkReachable)}
   <Block strong inset class="space-y-3">
     <div class="flex items-center gap-3">
@@ -86,7 +84,7 @@
       <div class="min-w-0 flex-1">
         <div class="text-sm font-bold text-black dark:text-white">Mode Offline Aktif</div>
         <p class="text-xs text-black/65 dark:text-white/65">
-          Streaming Audius memerlukan koneksi internet. Koleksi lokal dan lagu demo tetap siap diputar 100% offline.
+          Katalog musik publik memerlukan koneksi internet. Koleksi lokal dan lagu demo tetap siap diputar 100% offline.
         </p>
       </div>
     </div>
@@ -103,13 +101,90 @@
   <Block>
     <div class="flex items-center gap-3 py-4 text-sm text-black/65 dark:text-white/65" role="status">
       <Preloader class="w-5 h-5" />
-      <span>Memuat daftar lagu trending...</span>
+      <span>Menyusun rekomendasi {appStore.activeRegionOption.label}...</span>
     </div>
   </Block>
-{:else}
+{:else if appStore.recommendedFeed.length > 0}
   <Block>
     <div class="xmusic-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-      {#each appStore.trendingTracks.slice(0, 24) as track (track.id)}
+      {#each appStore.recommendedFeed as track (track.id)}
+        <TrackCard {track} />
+      {/each}
+    </div>
+  </Block>
+{/if}
+
+<!-- Authentic Konsta UI v5.5 iOS Cards for Era Explorer (zero hardcoded dark boxes) -->
+<BlockTitle>Jelajah Musik Lintas Era (1900–2026)</BlockTitle>
+<Block>
+  <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+    {#each ERA_PRESETS as era (era.id)}
+      <button
+        type="button"
+        class="w-full text-left active:scale-[0.98] transition-transform"
+        onclick={() => appStore.exploreEra(era.id)}
+      >
+        <Card
+          contentWrapPadding="p-3.5"
+          class="!m-0 h-full border border-black/8 dark:border-white/10"
+        >
+          <div class="flex items-center gap-2">
+            <span
+              class="h-2.5 w-2.5 shrink-0 rounded-full"
+              style="background-color: {era.accent};"
+              aria-hidden="true"
+            ></span>
+            <span class="truncate text-sm font-semibold text-black dark:text-white">
+              {era.label}
+            </span>
+          </div>
+          <div class="mt-1 truncate text-xs text-black/55 dark:text-white/55">
+            {era.sub}
+          </div>
+        </Card>
+      </button>
+    {/each}
+  </div>
+</Block>
+
+<!-- Authentic Konsta UI v5.5 iOS Cards for Genre Explorer -->
+<BlockTitle>Eksplorasi Genre & Suasana</BlockTitle>
+<Block>
+  <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+    {#each CATEGORIES as cat}
+      <button
+        type="button"
+        class="w-full text-left active:scale-[0.98] transition-transform"
+        onclick={() => appStore.updateSearch(cat.q, true)}
+      >
+        <Card
+          contentWrapPadding="p-3.5"
+          class="!m-0 h-full border border-black/8 dark:border-white/10"
+        >
+          <div class="flex items-center gap-2">
+            <span
+              class="h-2.5 w-2.5 shrink-0 rounded-full"
+              style="background-color: {cat.accent};"
+              aria-hidden="true"
+            ></span>
+            <span class="truncate text-sm font-semibold text-black dark:text-white">
+              {cat.label}
+            </span>
+          </div>
+          <div class="mt-1 truncate text-xs text-black/55 dark:text-white/55">
+            {cat.sub}
+          </div>
+        </Card>
+      </button>
+    {/each}
+  </div>
+</Block>
+
+{#if appStore.isOnline && appStore.networkReachable && appStore.trendingTracks.length > 0}
+  <BlockTitle>Streaming Penuh (Audius Global)</BlockTitle>
+  <Block>
+    <div class="xmusic-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+      {#each appStore.trendingTracks.slice(0, 18) as track (track.id)}
         <TrackCard {track} />
       {/each}
     </div>
@@ -117,7 +192,7 @@
 {/if}
 
 {#if appStore.isOnline && appStore.networkReachable && appStore.ytTracks.length > 0}
-  <BlockTitle>Trending YouTube Music Indonesia</BlockTitle>
+  <BlockTitle>Trending YouTube Music ({appStore.activeRegionOption.label})</BlockTitle>
   <Block>
     <div class="xmusic-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       {#each appStore.ytTracks as track (track.id)}
@@ -129,7 +204,6 @@
 
 <BlockTitle>Chart Resmi Spotify</BlockTitle>
 {#if appStore.isOnline && appStore.networkReachable}
-  <!-- On-demand Konsta iOS list prevents slow iframe startup and offline WebView error pages -->
   <List strong inset>
     {#each SPOTIFY_CHARTS as chart}
       <ListItem

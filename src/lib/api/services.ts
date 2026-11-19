@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { loadJSON, saveJSON } from '#lib/db/storage.ts';
+import { ERA_PRESETS, REGION_OPTIONS } from '#lib/data/presets.ts';
 import type {
+  AlgorithmConfig,
   ApiConfig,
   DownloadResult,
   HubMeta,
   ParsedLyricLine,
+  SearchSuggestion,
   SpotifyEmbedRef,
   Track
 } from '#lib/types/music.ts';
@@ -442,4 +445,276 @@ export async function rapidDownloadMp3(videoId: string): Promise<DownloadResult>
     break;
   }
   return { ok: false, msg: data.msg || 'API tidak mengembalikan tautan unduhan.' };
+}
+
+interface ItunesTrackItem {
+  trackId?: number;
+  trackName?: string;
+  artistName?: string;
+  collectionName?: string;
+  previewUrl?: string;
+  artworkUrl100?: string;
+  artworkUrl60?: string;
+  releaseDate?: string;
+  primaryGenreName?: string;
+  trackTimeMillis?: number;
+}
+
+function itunesItemToTrack(item: ItunesTrackItem): Track | null {
+  if (!item.trackId || !item.previewUrl) return null;
+  const parsedYear = item.releaseDate ? Number(String(item.releaseDate).slice(0, 4)) : undefined;
+  const releaseYear =
+    parsedYear && Number.isFinite(parsedYear) && parsedYear >= 1900 && parsedYear <= 2026
+      ? parsedYear
+      : undefined;
+  const rawArt = item.artworkUrl100 || item.artworkUrl60 || null;
+  const imageUrl = rawArt ? rawArt.replace(/100x100bb|60x60bb/, '600x600bb') : null;
+  return {
+    id: `catalog_${item.trackId}`,
+    title: item.trackName || 'Untitled',
+    artist: item.artistName || 'Artis Publik',
+    album: item.collectionName || item.primaryGenreName || 'Katalog Publik',
+    dur: 30,
+    releaseYear,
+    isPreview: true,
+    c1: '#007aff',
+    c2: '#1c1c1e',
+    imageUrl,
+    url: item.previewUrl,
+    source: 'catalog'
+  };
+}
+
+function fetchItunesJsonp(url: string): Promise<ItunesTrackItem[]> {
+  if (typeof document === 'undefined' || typeof window === 'undefined') {
+    return Promise.resolve([]);
+  }
+  return new Promise((resolve) => {
+    const cbName = `__xmusicItunesCb_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const win = window as unknown as Record<string, unknown>;
+    const script = document.createElement('script');
+    const cleanup = (): void => {
+      delete win[cbName];
+      script.remove();
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve([]);
+    }, 5500);
+
+    win[cbName] = (payload: { results?: ItunesTrackItem[] }) => {
+      clearTimeout(timer);
+      cleanup();
+      resolve(Array.isArray(payload?.results) ? payload.results : []);
+    };
+    script.onerror = () => {
+      clearTimeout(timer);
+      cleanup();
+      resolve([]);
+    };
+    script.src = `${url}&callback=${cbName}`;
+    document.head.appendChild(script);
+  });
+}
+
+async function queryItunesCatalog(
+  term: string,
+  limit = 25,
+  signal?: AbortSignal,
+  country = 'ID'
+): Promise<ItunesTrackItem[]> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
+  const cleanTerm = term.trim();
+  if (!cleanTerm) return [];
+  const safeCountry = /^[A-Z]{2}$/.test(country) ? country : 'ID';
+  const url = `https://itunes.apple.com/search?media=music&entity=song&country=${safeCountry}&limit=${limit}&term=${encodeURIComponent(cleanTerm)}`;
+  try {
+    const res = await fetch(url, { signal });
+    if (res.ok) {
+      const data = (await res.json()) as { results?: ItunesTrackItem[] };
+      return Array.isArray(data.results) ? data.results : [];
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') return [];
+  }
+  if (signal?.aborted) return [];
+  return fetchItunesJsonp(url);
+}
+
+/**
+ * Searches the public mainstream music catalog spanning 1900-2026 (iTunes Search API + JSONP fallback).
+ */
+export async function fetchPublicCatalogSearch(
+  query: string,
+  limit = 30,
+  signal?: AbortSignal,
+  country = 'ID'
+): Promise<Track[]> {
+  const items = await queryItunesCatalog(query, limit, signal, country);
+  const tracks: Track[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const track = itunesItemToTrack(item);
+    if (track && !seen.has(track.id)) {
+      seen.add(track.id);
+      tracks.push(track);
+    }
+  }
+  return tracks;
+}
+
+/**
+ * Fetches trending mainstream public hits for HomeView (2020-2026 Indonesia & Global).
+ */
+export async function fetchPublicCatalogTrending(limit = 16): Promise<Track[]> {
+  return fetchPublicCatalogSearch('pop indonesia hits 2025 2026', limit);
+}
+
+/**
+ * Fetches lightweight real-time smart autocomplete suggestions with title, artist, and release year.
+ */
+export async function fetchSmartSuggestions(
+  query: string,
+  signal?: AbortSignal,
+  country = 'ID'
+): Promise<SearchSuggestion[]> {
+  const items = await queryItunesCatalog(query, 8, signal, country);
+  const suggestions: SearchSuggestion[] = [];
+  const seenKeys = new Set<string>();
+
+  for (const item of items) {
+    const track = itunesItemToTrack(item);
+    if (!track) continue;
+    const key = `${track.title.toLowerCase()}__${track.artist.toLowerCase()}`;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    suggestions.push({
+      id: `pub_${track.id}`,
+      query: `${track.title} ${track.artist}`,
+      title: track.title,
+      subtitle: track.releaseYear ? `${track.artist} • ${track.releaseYear}` : track.artist,
+      year: track.releaseYear,
+      kind: 'public',
+      track
+    });
+  }
+  return suggestions;
+}
+
+/**
+ * Fetches regional viral & algorithm-tailored public hits (zero tracking; no user data leaves the device).
+ */
+export async function fetchRegionalViralFeed(
+  config: AlgorithmConfig,
+  limit = 20
+): Promise<Track[]> {
+  const regionObj = REGION_OPTIONS.find((r) => r.code === config.region) || REGION_OPTIONS[0];
+  const eraObj =
+    config.preferredEra !== 'all'
+      ? ERA_PRESETS.find((e) => e.id === config.preferredEra)
+      : undefined;
+
+  const queries: string[] = [regionObj.viralQuery];
+  if (config.mode === 'nostalgia') {
+    queries.push('classic hits 1980s 1990s 2000s');
+  } else if (eraObj) {
+    queries.push(eraObj.query);
+  }
+  if (config.preferredGenres.length > 0) {
+    queries.push(`${config.preferredGenres.slice(0, 2).join(' ')} ${regionObj.label} hits`);
+  }
+
+  const perQuery = Math.max(10, Math.ceil(limit / queries.length) + 4);
+  const batches = await Promise.all(
+    queries.map((q) => fetchPublicCatalogSearch(q, perQuery, undefined, regionObj.storeCode))
+  );
+
+  const merged: Track[] = [];
+  const seen = new Set<string>();
+  for (const list of batches) {
+    for (const track of list) {
+      const dedupeKey = `${track.title.toLowerCase()}__${track.artist.toLowerCase()}`;
+      if (!seen.has(track.id) && !seen.has(dedupeKey)) {
+        seen.add(track.id);
+        seen.add(dedupeKey);
+        merged.push(track);
+      }
+    }
+  }
+  return merged;
+}
+
+/**
+ * 100% On-Device Privacy-First Recommendation & Viral Ranking Algorithm.
+ * All taste signals remain strictly in local browser/WebView storage.
+ */
+export function rankTracksByAlgorithm(
+  tracks: Track[],
+  config: AlgorithmConfig,
+  likedIds: string[],
+  history: Track[]
+): Track[] {
+  const likedSet = new Set(likedIds);
+  const recentIds = new Set(history.slice(0, 12).map((h) => h.id));
+  const artistAffinity = new Map<string, number>();
+
+  if (config.personalizeFromHistory) {
+    for (const h of history) {
+      const key = (h.artist || '').toLowerCase().trim();
+      if (key) artistAffinity.set(key, (artistAffinity.get(key) || 0) + 1);
+    }
+  }
+
+  const eraObj =
+    config.preferredEra !== 'all'
+      ? ERA_PRESETS.find((e) => e.id === config.preferredEra)
+      : undefined;
+  const genreTokens = config.preferredGenres.map((g) => g.toLowerCase());
+
+  const scored = tracks.map((track, idx) => {
+    let score = Math.max(0, 40 - idx * 0.6); // Preserve regional viral base ordering
+
+    // Mode-based era & recency weighting
+    if (config.mode === 'viral' && track.releaseYear && track.releaseYear >= 2023) {
+      score += 24;
+    } else if (config.mode === 'nostalgia' && track.releaseYear && track.releaseYear <= 2009) {
+      score += 26;
+    }
+
+    // Explicit user preferred era boost
+    if (
+      eraObj &&
+      typeof track.releaseYear === 'number' &&
+      track.releaseYear >= eraObj.minYear &&
+      track.releaseYear <= eraObj.maxYear
+    ) {
+      score += 22;
+    }
+
+    // Preferred genres match
+    if (genreTokens.length > 0) {
+      const hay = `${track.title} ${track.artist} ${track.album}`.toLowerCase();
+      for (const token of genreTokens) {
+        if (hay.includes(token)) score += 16;
+      }
+    }
+
+    // On-device personalization (strictly opt-in & local)
+    if (config.personalizeFromHistory) {
+      const artistKey = (track.artist || '').toLowerCase().trim();
+      const affinity = artistAffinity.get(artistKey) || 0;
+      if (affinity > 0) score += Math.min(20, affinity * 6);
+      if (likedSet.has(track.id)) score += config.mode === 'discovery' ? -8 : 14;
+    }
+
+    // Discovery mode penalizes recently played tracks to surface fresh music
+    if (config.mode === 'discovery' && recentIds.has(track.id)) {
+      score -= 28;
+    }
+
+    return { track, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map((item) => item.track);
 }

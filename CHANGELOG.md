@@ -2,6 +2,21 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [5.2.0] - 2026-11-19
+
+### Added
+- **Privacy-First On-Device Music Algorithm (`rankTracksByAlgorithm`)**: Added a configurable local recommendation and regional viral ranking engine (`AlgorithmConfig`) with 6 regions (`ID`, `US`, `JP`, `KR`, `GB`, `GLOBAL`), 4 modes (`Viral`, `Seimbang`, `Baru`, `Nostalgia`), preferred era/genre weights, and an opt-in local personalization toggle (`personalizeFromHistory`) — zero telemetry, 100% stored on-device.
+- **Konsta UI v5.5 iOS Card Consistency**: Replaced all legacy hardcoded dark genre and era boxes in `HomeView` and `SearchView` with native Konsta UI `<Card>` components that adapt cleanly to both iOS Light and iOS Dark surfaces.
+- **Version Bump**: Upgraded single-source version in `package.json` to `5.2.0` (automatically reflected in `tauri.conf.json`, Rust `package_info()`, and APK filename `Xmusic-v5.2.0-android-<abi>-release.apk`).
+
+## [5.1.0] - 2026-11-19
+
+### Added
+- **Public Mainstream Music Catalog (1900–2026)**: Integrated Apple's free public iTunes Search API (with automatic JSONP fallback) alongside Audius Global and YouTube Music, unlocking mainstream Indonesian and global songs from 1900 through 2026 with exact release year badges (`releaseYear`), 600x600 HD cover art, and Web Audio 5-Band EQ playback.
+- **Cross-Era Explorer (1900–2026)**: Added 7 curated era cards (`2020–2026`, `2010-an`, `2000-an`, `1990-an`, `1980-an`, `1970-an`, `Klasik 1900–1969`) on `HomeView` and interactive Era Filter Chips in `SearchView`.
+- **Smart Real-Time Search Suggestions**: Added a debounced (180ms) `AbortController`-backed autocomplete engine combining 0ms local/recent/era suggestions with live public song & artist suggestions, release year badges, one-tap quick play, and persistent recent searches.
+- **Version Bump**: Upgraded single-source version in `package.json` to `5.1.0` (automatically reflected in `tauri.conf.json`, Rust `package_info()`, and dynamic APK filenames `Xmusic-v5.1.0-android-<abi>-release.apk`).
+
 ## [5.0.0] — 2026-11-19 (Strict TypeScript, Pixel-Perfect Konsta UI iOS, Audiophile DSP & Native Android Media Notification)
 
 - **SvelteKit 3.4 + TypeScript 6.0 CI Compliance**:
