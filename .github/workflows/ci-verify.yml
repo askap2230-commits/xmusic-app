@@ -65,18 +65,32 @@ jobs:
           pnpm check
           pnpm build
 
-      - name: Validate Python Scripts
+      - name: Validate Python Scripts (Zero-Dependency Stdlib)
         run: |
           python3 -m py_compile scripts/sync-android-icons.py scripts/optimize-android-gradle.py scripts/license-manager.py
+          python3 scripts/sync-android-icons.py --stdlib-only
 
-      - name: Install Linux System Dependencies for Tauri Check
+      - name: Install Linux System Dependencies for Tauri Check (Resilient APT)
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf
+          set -euo pipefail
+          APT_OPTS="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          for attempt in 1 2 3 4 5; do
+            if [ "$attempt" -eq 3 ] && [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+              echo "Switching APT mirror to archive.ubuntu.com after transient 503..."
+              sudo sed -i 's|mirror+file:/etc/apt/apt-mirrors.txt|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
+            fi
+            if sudo apt-get $APT_OPTS update -qq && sudo apt-get $APT_OPTS install -y -qq --no-install-recommends --fix-missing \
+              libwebkit2gtk-4.1-dev \
+              libappindicator3-dev \
+              librsvg2-dev \
+              patchelf; then
+              exit 0
+            fi
+            echo "APT attempt ${attempt}/5 failed; retrying in $((attempt * 5))s..."
+            sleep $((attempt * 5))
+          done
+          echo "ERROR: APT failed after 5 resilient attempts."
+          exit 1
 
       - name: Setup Rust Stable Toolchain
         uses: dtolnay/rust-toolchain@stable

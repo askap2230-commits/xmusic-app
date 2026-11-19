@@ -2,6 +2,14 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.10.0] - 2026-11-19
+
+### Fixed (Fatal CI/CD `apt-get` 503 Mirror Failure & Zero-Dependency Icon Pipeline)
+- **Eliminasi Total `sudo apt-get install python3-pil` di `build-apk.yml`**: Menghapus langkah instalasi APT `python3-pil` dari `.github/workflows/build-apk.yml` yang sebelumnya gagal fatal (`503 Service Unavailable` / exit code `100`) saat mirror Ubuntu 24.04 di GitHub Actions sedang terganggu. Pipeline build APK kini 100% bebas APT (`Zero-APT`).
+- **Engine Ikon Adaptif 100% Pure Python Stdlib (`scripts/sync-android-icons.py`)**: Menulis ulang `scripts/sync-android-icons.py` dengan codec PNG 32-bit RGBA, area-averaging resizer, masking lingkaran anti-aliased, dan komposisi foreground Adaptive Icon berbasis Python 3 standard library (`struct`, `zlib`, `math`) dengan fast-path opsional Pillow bila sudah terpasang — nol dependensi eksternal dan nol kebutuhan jaringan.
+- **Ketahanan APT Mirror Failover di `ci-verify.yml`**: Menambahkan retry 5 kali dengan backoff, `-o Acquire::Retries=5`, `--fix-missing`, serta perpindahan otomatis ke `http://archive.ubuntu.com/ubuntu` apabila mirror Azure Ubuntu 24.04 mengembalikan HTTP 503, plus verifikasi otomatis `python3 scripts/sync-android-icons.py --stdlib-only`.
+- **Sinkronisasi Dokumentasi & Kontrak AI (`AGENTS.md`, `CI_CD_GUIDE.md`, `ARCHITECTURE.md`, `README.md`, `WCAG_ACCESSIBILITY.md`, `CONTRIBUTING.md`)**: Menambahkan aturan non-negotiable Zero-APT & Zero-Dependency Python stdlib agar AI di masa depan tidak pernah mengembalikan bug `apt-get` di `build-apk.yml`, serta menyelaraskan seluruh versi aplikasi ke `v6.10.0`.
+
 ## [6.9.0] - 2026-11-19
 
 ### Fixed (Fatal Play/Pause Loop & Stuck Play Button Elimination)

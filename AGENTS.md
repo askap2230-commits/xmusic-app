@@ -21,16 +21,15 @@ This document defines **non-negotiable architectural and design rules** for all 
 3. **Use Native Konsta UI Components First**:
    - Navigation: `Page`, `Navbar`, `Searchbar`, `Tabbar`, `ToolbarPane`, `TabbarLink`, `Link`.
    - Containers & Lists: `Block`, `BlockTitle`, `Card`, `List`, `ListItem`, `ListInput`.
-   - Controls & Overlays: `Button`, `Chip`, `Badge`, `Segmented`, `SegmentedButton`, `Toggle`, `Range`, `Progressbar`, `Preloader`, `Fab`, `Panel`, `Popup`, `Toast`.
+   - Controls & Overlays: `Button`, `Chip`, `Badge`, `Segmented`, `SegmentedButton`, `Toggle`, `Range`, `Progressbar`, `Preloader`, `Panel`, `Popup`, `Toast`.
    - Use **Svelte 5 Snippets** (`{#snippet left()}`, `{#snippet right()}`, `{#snippet subnavbar()}`, `{#snippet icon()}`, `{#snippet media()}`, `{#snippet after()}`) as specified by Konsta UI v5.5 Svelte docs.
+4. **SvelteKit 3 + TypeScript 6 Strictness**:
+   - `package.json` MUST pin `"typescript": "^6.0.0"` (exact peer required by `@sveltejs/kit@3.4.x`; do NOT downgrade to TS 5 or jump to TS 7 until `svelte-check` supports it).
+   - `tsconfig.json` MUST extend `"$app/tsconfig"` (NOT legacy `./.svelte-kit/tsconfig.json`) with explicit `"include": ["src", "test"]` and `"exclude": ["src/service-worker", "src-tauri", "dist"]`. NEVER override `paths` or `types` in `tsconfig.json`.
+   - Every `#lib/*` subpath import MUST include its explicit file extension (e.g., `#lib/stores/library.svelte.ts`, `#lib/types/music.ts`, `#lib/components/Icon.svelte`).
+   - Exported types inside `.svelte` files MUST live in `<script module lang="ts">`, never in the instance `<script lang="ts">`.
 
 ---
-
-- **SvelteKit 3 + TypeScript 6 Strictness**:
-  - `package.json` MUST pin `"typescript": "^6.0.0"` (exact peer required by `@sveltejs/kit@3.4.x`; do NOT downgrade to TS 5 or jump to TS 7 until `svelte-check` supports it).
-  - `tsconfig.json` MUST extend `"$app/tsconfig"` (NOT legacy `./.svelte-kit/tsconfig.json`) with explicit `"include": ["src", "test"]` and `"exclude": ["src/service-worker", "src-tauri", "dist"]`. NEVER override `paths` or `types` in `tsconfig.json`.
-  - Every `#lib/*` subpath import MUST include its explicit file extension (e.g., `#lib/stores/library.svelte.ts`, `#lib/types/music.ts`, `#lib/components/Icon.svelte`).
-  - Exported types inside `.svelte` files MUST live in `<script module lang="ts">`, never in the instance `<script lang="ts">`.
 
 ## 2. Package Manager, Versioning & Licensing Rules
 
@@ -40,19 +39,23 @@ This document defines **non-negotiable architectural and design rules** for all 
 2. **Single Source of Truth Versioning**:
    - `src-tauri/tauri.conf.json` MUST keep `"version": "../package.json"` ([Tauri Configuration Reference](https://v2.tauri.app/reference/config/)).
    - `src-tauri/src/lib.rs` MUST read the runtime version from `app.package_info().version.to_string()`.
-   - To bump the app version, edit **only** `"version"` in `package.json` (and optionally mirror in `Cargo.toml` for crate metadata).
+   - When bumping the app version, update `"version"` in `package.json`, mirror it in `src-tauri/Cargo.toml` and `src/lib/stores/library.svelte.ts` (`runtimeInfo.version` web fallback), add a matching `## [<version>] - YYYY-MM-DD` section to `CHANGELOG.md`, and keep `README.md`, `ARCHITECTURE.md`, `CI_CD_GUIDE.md`, and `WCAG_ACCESSIBILITY.md` synchronized.
 3. **AGPL-3.0-or-later + Google `addlicense` (Author: Azka Putra)**:
-   - Every source code file (`.js`, `.mjs`, `.svelte`, `.css`, `.html`, `.rs`, `.py`, `.yml`, `.toml`) MUST include the header defined in `.license-header.txt`:
+   - Every source code file (`.js`, `.mjs`, `.ts`, `.svelte`, `.css`, `.html`, `.rs`, `.py`, `.yml`, `.toml`) MUST include the header defined in `.license-header.txt`:
      - `Copyright 2026 Azka Putra`
      - `SPDX-License-Identifier: AGPL-3.0-or-later`
    - After creating or modifying any file, run `pnpm license:apply` and verify with `pnpm license:check` (and `addlicense -check -f .license-header.txt ...` in CI).
 
 ---
 
-## 3. Code Quality, Performance & Security Rules
+## 3. Code Quality, CI/CD Resilience, Performance & Security Rules
 
-- **English Source Code / Indonesian UI Copy**: All filenames, identifiers, comments, scripts, and YAML steps MUST be in English; end-user UI strings remain natural Indonesian.
+- **English Source Code / Indonesian UI Copy**: All filenames, identifiers, comments, scripts, and YAML steps MUST be in English; end-user UI strings remain natural Indonesian (with full `en.ts` / `id.ts` i18n parity).
 - **Svelte 5 Runes Only**: Use `$state`, `$derived`, `$effect`, `$props`. Never use Svelte 4 syntax (`export let`, `$:`, `on:click`, `<slot>`).
+- **Zero-APT `build-apk.yml` & Zero-Dependency Python Build Scripts (HARD RULE)**:
+  - **NEVER** add `sudo apt-get update`, `sudo apt-get install`, or `pip install` steps to `.github/workflows/build-apk.yml`. GitHub Actions `ubuntu-24.04` APT mirrors intermittently return HTTP `503 Service Unavailable` / exit code `100`, causing fatal APK build failures.
+  - All build scripts under `scripts/` (`sync-android-icons.py`, `optimize-android-gradle.py`, `license-manager.py`) MUST run with **100% Python 3 standard library only**. Optional third-party libraries (such as `PIL`/Pillow) may ONLY be imported inside `try ... except ImportError` with a complete, tested stdlib fallback (`--stdlib-only`).
+  - Any Linux desktop dependency installation in `.github/workflows/ci-verify.yml` MUST keep the resilient retry loop (`-o Acquire::Retries=5`, `--fix-missing`, timeout flags, backoff, and automatic `archive.ubuntu.com` mirror failover).
 - **Zero Mobile Lag**:
   - Keep `AudioEngine` position sync throttled (`150ms`) — never mutate `$state` inside 60fps `requestAnimationFrame`.
   - Parse LRC lyrics lazily on flipped grid cards (`TrackCard.svelte`).
@@ -70,11 +73,11 @@ This document defines **non-negotiable architectural and design rules** for all 
 - [ ] Every icon-only button has `type="button"` and explicit `aria-label`; no nested interactive controls.
 - [ ] Primary green CTA buttons (`#30d158`) use dark text (`#000000`, `> 10:1` contrast), never white text.
 - [ ] Toast feedback renders in `role="status" aria-live="polite"`; loading states use `<Preloader />`.
-- [ ] All checks pass: `pnpm license:check`, `pnpm build`, Python `py_compile`, and YAML manual-only trigger check.
+- [ ] All checks pass: `pnpm license:check`, `pnpm check`, `pnpm build`, Python `py_compile`, `python3 scripts/sync-android-icons.py --stdlib-only`, and YAML manual-only trigger check.
 
 ---
 
-## 5. Layout Overlap Prevention, TypeScript & Android Media Notification Rules (v5.0)
+## 5. Layout Overlap Prevention, TypeScript & Android Media Notification Rules
 
 1. **Zero Overlap on Konsta UI v5.5 iOS**:
    - **NEVER** apply `!my-2` or `!mt-0` to `<Block>` immediately after `<BlockTitle>` — Konsta UI's native margins prevent title clipping.
@@ -87,13 +90,12 @@ This document defines **non-negotiable architectural and design rules** for all 
 3. **Audiophile DSP & Native Android Media Notification**:
    - Keep the mastering `DynamicsCompressorNode` anti-clipping limiter and `latencyHint: 'playback'` intact in `src/lib/audio/engine.svelte.ts`.
    - Keep `XmusicMediaService.kt`, `MainActivity.kt` (`XmusicAndroidMedia` bridge), and ProGuard `@JavascriptInterface` keep rules in `scripts/optimize-android-gradle.py`.
-
-- **Konsta UI v5.5 iOS Polish & Zero-Overlap Rules**:
-  - NEVER put more than 1 icon button inside `<Navbar>` `{#snippet left()}` or `{#snippet right()}` (Konsta v5.5 iOS 26 wraps each side in a single Liquid Glass capsule; multiple icons get cramped).
-  - NEVER add a floating top DynamicBar over `<Navbar>`. `PlayerBar` docks cleanly above the floating `<Tabbar>` only when `engine.current` is active, and MUST include a Stop/Close (`X`) button (`engine.stopTrack()`).
-  - NEVER apply global `:focus-visible` blue outlines on touch screens — scope keyboard focus rings to `@media (hover: hover) and (pointer: fine)` and keep `-webkit-tap-highlight-color: transparent`.
-  - ALWAYS attach `onerror` artwork fallback on every track cover `<img>` and NEVER auto-mount external Spotify `<iframe>`s on `HomeView` (use on-demand Konsta `<List>` items gated by `appStore.isOnline && appStore.networkReachable`).
-  - ALWAYS sync native Android status/navigation bars via `window.XmusicAndroidMedia?.setSystemBarTheme(isDark)` and `themes.xml` (`#F2F2F7` light / `#000000` dark — never default Material purple).
-- **Zero Hardcoded Generic Cards & Privacy-First Algorithm**:
-  - NEVER use raw `<button style="background:#...; border-left:...">` dark boxes for Genre or Era cards — ALWAYS use native Konsta UI `<Card contentWrapPadding="p-3.5" class="!m-0 ...">` so Light Mode and Dark Mode stay 100% consistent with Konsta UI v5.5 iOS.
-  - Keep `rankTracksByAlgorithm` and `algoConfig` 100% on-device (`localStorage` only, zero telemetry or user data sent to external servers).
+   - **NEVER** re-add `AudioManager.requestAudioFocus(...)` inside `XmusicMediaService.kt` (Chromium WebView's internal `AudioFocusDelegate` owns AudioFocus; dual focus causes fatal play/pause ping-pong loops).
+4. **Konsta UI v5.5 iOS Polish & Privacy-First Rules**:
+   - NEVER put more than 1 icon button inside `<Navbar>` `{#snippet left()}` or `{#snippet right()}` (Konsta v5.5 iOS 26 wraps each side in a single Liquid Glass capsule; multiple icons get cramped).
+   - NEVER add a floating top DynamicBar over `<Navbar>`. `PlayerBar` docks cleanly above the floating `<Tabbar>` only when `engine.current` is active, and MUST include a Stop/Close (`X`) button (`engine.stopTrack()`).
+   - NEVER apply global `:focus-visible` blue outlines on touch screens — scope keyboard focus rings to `@media (hover: hover) and (pointer: fine)` and keep `-webkit-tap-highlight-color: transparent`.
+   - ALWAYS attach `onerror` artwork fallback on every track cover `<img>` and NEVER auto-mount external Spotify `<iframe>`s on `HomeView` (use on-demand Konsta `<List>` items gated by `appStore.isOnline && appStore.networkReachable`).
+   - ALWAYS sync native Android status/navigation bars via `window.XmusicAndroidMedia?.setSystemBarTheme(isDark)` and `themes.xml` (`#F2F2F7` light / `#000000` dark — never default Material purple).
+   - NEVER use raw `<button style="background:#...; border-left:...">` dark boxes for Genre or Era cards — ALWAYS use native Konsta UI `<Card contentWrapPadding="p-3.5" class="!m-0 ...">` so Light Mode and Dark Mode stay 100% consistent with Konsta UI v5.5 iOS.
+   - Keep `rankTracksByAlgorithm` and `algoConfig` 100% on-device (`localStorage` only, zero telemetry or user data sent to external servers).
