@@ -7,10 +7,10 @@
     fetchOEmbedMeta,
     fetchSpotifyMetadata,
     fetchSyncedLyrics
-  } from '#lib/api/services';
-  import { saveLocalTrack } from '#lib/db/storage';
-  import { appStore } from '#lib/stores/library.svelte';
-  import type { HubMeta, SpotifyEmbedRef, Track } from '#lib/types/music';
+  } from '#lib/api/services.ts';
+  import { saveLocalTrack } from '#lib/db/storage.ts';
+  import { appStore } from '#lib/stores/library.svelte.ts';
+  import type { HubMeta, SpotifyEmbedRef, Track } from '#lib/types/music.ts';
   import Icon from '../Icon.svelte';
 
   let hubUrlInput = $state<string>('');

@@ -1,8 +1,8 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { Block, BlockTitle, Button, Chip } from 'konsta/svelte';
-  import { engine } from '#lib/audio/engine.svelte';
-  import { appStore } from '#lib/stores/library.svelte';
+  import { engine } from '#lib/audio/engine.svelte.ts';
+  import { appStore } from '#lib/stores/library.svelte.ts';
   import TrackCard from '../TrackCard.svelte';
 </script>
 

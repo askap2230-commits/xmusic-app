@@ -17,9 +17,9 @@
  *   Synchronizes track metadata, playback state, and position to both W3C MediaSession API
  *   and the native Android Foreground MediaStyle Service bridge (window.XmusicAndroidMedia).
  */
-import { EQ_BANDS, EQ_PRESETS } from '#lib/data/presets';
-import { loadJSON, saveJSON } from '#lib/db/storage';
-import type { RepeatMode, Track } from '#lib/types/music';
+import { EQ_BANDS, EQ_PRESETS } from '#lib/data/presets.ts';
+import { loadJSON, saveJSON } from '#lib/db/storage.ts';
+import type { RepeatMode, Track } from '#lib/types/music.ts';
 
 interface SavedEqState {
   eqEnabled: boolean;

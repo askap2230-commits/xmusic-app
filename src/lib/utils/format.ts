@@ -1,7 +1,7 @@
 // Copyright 2026 Azka Putra
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { ParsedLyricLine } from '#lib/types/music';
+import type { ParsedLyricLine } from '#lib/types/music.ts';
 
 /**
  * Formats seconds as M:SS.

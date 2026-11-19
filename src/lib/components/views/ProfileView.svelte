@@ -11,8 +11,8 @@
     SegmentedButton,
     Toggle
   } from 'konsta/svelte';
-  import { appStore } from '#lib/stores/library.svelte';
-  import { getTrackInitial } from '#lib/utils/format';
+  import { appStore } from '#lib/stores/library.svelte.ts';
+  import { getTrackInitial } from '#lib/utils/format.ts';
 
   const hasSpotifyApi = $derived(
     Boolean(appStore.apiConfig.spotifyClientId && appStore.apiConfig.spotifyClientSecret)

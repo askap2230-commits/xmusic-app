@@ -1,7 +1,7 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { Block, BlockTitle, Button, Link, List, ListInput, Navbar, Page, Popup } from 'konsta/svelte';
-  import { appStore } from '#lib/stores/library.svelte';
+  import { appStore } from '#lib/stores/library.svelte.ts';
   import Icon from '../Icon.svelte';
 
   let name = $state<string>('');

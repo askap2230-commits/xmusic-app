@@ -1,7 +1,7 @@
 // Copyright 2026 Azka Putra
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { CategoryItem, EqBand, EqPreset, SleepOption, SpotifyChart } from '#lib/types/music';
+import type { CategoryItem, EqBand, EqPreset, SleepOption, SpotifyChart } from '#lib/types/music.ts';
 
 export const EQ_BANDS: EqBand[] = [
   { freq: 60, label: '60 Hz', sub: 'Sub Bass', type: 'lowshelf' },

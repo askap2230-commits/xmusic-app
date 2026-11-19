@@ -1,9 +1,9 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { Block, Button, Link, List, ListInput, Navbar, Page, Popup, Preloader } from 'konsta/svelte';
-  import { extractYouTubeId, rapidDownloadMp3 } from '#lib/api/services';
-  import { appStore } from '#lib/stores/library.svelte';
-  import type { DownloadResult } from '#lib/types/music';
+  import { extractYouTubeId, rapidDownloadMp3 } from '#lib/api/services.ts';
+  import { appStore } from '#lib/stores/library.svelte.ts';
+  import type { DownloadResult } from '#lib/types/music.ts';
   import Icon from '../Icon.svelte';
 
   let urlInput = $state<string>('');

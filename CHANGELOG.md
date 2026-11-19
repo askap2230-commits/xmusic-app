@@ -4,6 +4,11 @@ All notable changes to **nys Xmusic** are documented in this file.
 
 ## [5.0.0] — 2026-11-19 (Strict TypeScript, Pixel-Perfect Konsta UI iOS, Audiophile DSP & Native Android Media Notification)
 
+- **SvelteKit 3.4 + TypeScript 6.0 CI Compliance**:
+  - Updated `tsconfig.json` to extend SvelteKit 3's generated `$app/tsconfig` with explicit `include`/`exclude` arrays (resolving `tsconfig_extends_missing` and missing `.svelte-kit/tsconfig.json` in `svelte-check`).
+  - Upgraded `typescript` to `^6.0.0` in `package.json` to satisfy `@sveltejs/kit@3.4.x` peer dependency with zero warnings.
+  - Added standard `src/app.d.ts` ambient type declarations, appended explicit `.ts` file extensions to all `#lib/*` subpath imports across 24 files, and moved `export type IconName` in `Icon.svelte` into `<script module lang="ts">`.
+
 ### UI/UX & Konsta UI v5.5 iOS Fixes
 - Eliminated all layout overlaps observed on Android devices: removed colliding bottom-right `<Fab>`, elevated floating `PlayerBar` cleanly above Konsta v5.5's floating Liquid Glass `Tabbar` (`bottom: 86px + safe-area`), and increased `<Page>` bottom clearance to `pb-52`.
 - Restored native Konsta UI `<BlockTitle>` spacing (removed conflicting `!my-2` overrides) so section headings never clip into cards below.

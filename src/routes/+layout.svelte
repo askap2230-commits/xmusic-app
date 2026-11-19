@@ -3,7 +3,7 @@
   import '../app.css';
   import type { Snippet } from 'svelte';
   import { App } from 'konsta/svelte';
-  import { appStore } from '#lib/stores/library.svelte';
+  import { appStore } from '#lib/stores/library.svelte.ts';
 
   let { children }: { children: Snippet } = $props();
 </script>

@@ -1,11 +1,11 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { Block, Button, Chip, Link, Navbar, Page, Popup, Range } from 'konsta/svelte';
-  import { engine } from '#lib/audio/engine.svelte';
-  import { parseLrcLyrics } from '#lib/api/services';
-  import { EQ_PRESETS } from '#lib/data/presets';
-  import { appStore } from '#lib/stores/library.svelte';
-  import { findActiveLyricIndex, formatTime, getTrackInitial } from '#lib/utils/format';
+  import { engine } from '#lib/audio/engine.svelte.ts';
+  import { parseLrcLyrics } from '#lib/api/services.ts';
+  import { EQ_PRESETS } from '#lib/data/presets.ts';
+  import { appStore } from '#lib/stores/library.svelte.ts';
+  import { findActiveLyricIndex, formatTime, getTrackInitial } from '#lib/utils/format.ts';
   import Icon from '../Icon.svelte';
 
   let vizCanvas = $state<HTMLCanvasElement | null>(null);

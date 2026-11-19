@@ -1,7 +1,7 @@
 // Copyright 2026 Azka Putra
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { loadJSON, saveJSON } from '#lib/db/storage';
+import { loadJSON, saveJSON } from '#lib/db/storage.ts';
 import type {
   ApiConfig,
   DownloadResult,
@@ -9,7 +9,7 @@ import type {
   ParsedLyricLine,
   SpotifyEmbedRef,
   Track
-} from '#lib/types/music';
+} from '#lib/types/music.ts';
 
 const APP_NAME = 'nysxmusic';
 const DEFAULT_AUDIUS_BASE = 'https://api.audius.co/v1';

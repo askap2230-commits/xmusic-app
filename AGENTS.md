@@ -26,6 +26,12 @@ This document defines **non-negotiable architectural and design rules** for all 
 
 ---
 
+- **SvelteKit 3 + TypeScript 6 Strictness**:
+  - `package.json` MUST pin `"typescript": "^6.0.0"` (exact peer required by `@sveltejs/kit@3.4.x`; do NOT downgrade to TS 5 or jump to TS 7 until `svelte-check` supports it).
+  - `tsconfig.json` MUST extend `"$app/tsconfig"` (NOT legacy `./.svelte-kit/tsconfig.json`) with explicit `"include": ["src", "test"]` and `"exclude": ["src/service-worker", "src-tauri", "dist"]`. NEVER override `paths` or `types` in `tsconfig.json`.
+  - Every `#lib/*` subpath import MUST include its explicit file extension (e.g., `#lib/stores/library.svelte.ts`, `#lib/types/music.ts`, `#lib/components/Icon.svelte`).
+  - Exported types inside `.svelte` files MUST live in `<script module lang="ts">`, never in the instance `<script lang="ts">`.
+
 ## 2. Package Manager, Versioning & Licensing Rules
 
 1. **pnpm Only**:

@@ -12,9 +12,9 @@
     Segmented,
     SegmentedButton
   } from 'konsta/svelte';
-  import { engine } from '#lib/audio/engine.svelte';
-  import { appStore } from '#lib/stores/library.svelte';
-  import { getTrackInitial } from '#lib/utils/format';
+  import { engine } from '#lib/audio/engine.svelte.ts';
+  import { appStore } from '#lib/stores/library.svelte.ts';
+  import { getTrackInitial } from '#lib/utils/format.ts';
   import Icon from './Icon.svelte';
 </script>
 

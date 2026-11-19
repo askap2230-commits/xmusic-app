@@ -1,8 +1,8 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { Block, BlockTitle, Preloader, Searchbar } from 'konsta/svelte';
-  import { CATEGORIES } from '#lib/data/presets';
-  import { appStore } from '#lib/stores/library.svelte';
+  import { CATEGORIES } from '#lib/data/presets.ts';
+  import { appStore } from '#lib/stores/library.svelte.ts';
   import Icon from '../Icon.svelte';
   import TrackCard from '../TrackCard.svelte';
 </script>

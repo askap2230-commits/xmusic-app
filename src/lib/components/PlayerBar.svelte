@@ -1,9 +1,9 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { Progressbar } from 'konsta/svelte';
-  import { engine } from '#lib/audio/engine.svelte';
-  import { appStore } from '#lib/stores/library.svelte';
-  import { formatTime, getTrackInitial } from '#lib/utils/format';
+  import { engine } from '#lib/audio/engine.svelte.ts';
+  import { appStore } from '#lib/stores/library.svelte.ts';
+  import { formatTime, getTrackInitial } from '#lib/utils/format.ts';
   import Icon from './Icon.svelte';
 
   const progressFraction = $derived(

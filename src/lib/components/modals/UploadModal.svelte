@@ -12,7 +12,7 @@
     Segmented,
     SegmentedButton
   } from 'konsta/svelte';
-  import { appStore } from '#lib/stores/library.svelte';
+  import { appStore } from '#lib/stores/library.svelte.ts';
   import Icon from '../Icon.svelte';
 
   let uploadTab = $state<'file' | 'url'>('file');

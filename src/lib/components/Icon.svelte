@@ -1,5 +1,5 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script lang="ts">
+<script module lang="ts">
   export type IconName =
     | 'home'
     | 'search'
@@ -32,7 +32,9 @@
     | 'upload'
     | 'key'
     | 'spark';
+</script>
 
+<script lang="ts">
   let { name, size = 18 }: { name: IconName; size?: number } = $props();
 </script>
 

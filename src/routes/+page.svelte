@@ -12,11 +12,11 @@
     ToolbarPane
   } from 'konsta/svelte';
 
-  import { engine } from '#lib/audio/engine.svelte';
-  import { revokeAllTrackUrls } from '#lib/db/storage';
-  import { appStore } from '#lib/stores/library.svelte';
-  import type { AppView } from '#lib/types/music';
-  import { formatTime } from '#lib/utils/format';
+  import { engine } from '#lib/audio/engine.svelte.ts';
+  import { revokeAllTrackUrls } from '#lib/db/storage.ts';
+  import { appStore } from '#lib/stores/library.svelte.ts';
+  import type { AppView } from '#lib/types/music.ts';
+  import { formatTime } from '#lib/utils/format.ts';
 
   import DynamicBar from '#lib/components/DynamicBar.svelte';
   import Icon from '#lib/components/Icon.svelte';

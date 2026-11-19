@@ -1,9 +1,9 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { Block, BlockTitle, Button, Preloader } from 'konsta/svelte';
-  import { CATEGORIES, SPOTIFY_CHARTS } from '#lib/data/presets';
-  import { appStore } from '#lib/stores/library.svelte';
-  import { getTimeGreeting } from '#lib/utils/format';
+  import { CATEGORIES, SPOTIFY_CHARTS } from '#lib/data/presets.ts';
+  import { appStore } from '#lib/stores/library.svelte.ts';
+  import { getTimeGreeting } from '#lib/utils/format.ts';
   import Icon from '../Icon.svelte';
   import TrackCard from '../TrackCard.svelte';
 </script>

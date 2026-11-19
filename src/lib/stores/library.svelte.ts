@@ -1,7 +1,7 @@
 // Copyright 2026 Azka Putra
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { engine } from '#lib/audio/engine.svelte';
+import { engine } from '#lib/audio/engine.svelte.ts';
 import {
   fetchSearch,
   fetchSyncedLyrics,
@@ -10,8 +10,8 @@ import {
   fetchYtTrending,
   getApiConfig,
   saveApiConfig
-} from '#lib/api/services';
-import { generateDemoSynthBlob } from '#lib/data/presets';
+} from '#lib/api/services.ts';
+import { generateDemoSynthBlob } from '#lib/data/presets.ts';
 import {
   deleteLocalTrack,
   getAllLocalTracks,
@@ -21,7 +21,7 @@ import {
   probeAudioDuration,
   saveJSON,
   saveLocalTrack
-} from '#lib/db/storage';
+} from '#lib/db/storage.ts';
 import type {
   ApiConfig,
   AppView,
@@ -31,7 +31,7 @@ import type {
   ThemeMode,
   Track,
   UserProfile
-} from '#lib/types/music';
+} from '#lib/types/music.ts';
 
 class AppStore {
   // Theme mode ('system' | 'light' | 'dark')

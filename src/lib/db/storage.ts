@@ -5,7 +5,7 @@
  * Unified local persistence layer (IndexedDB v2 + LocalStorage + ObjectURL cache).
  * Prevents Android WebView memory leaks by caching and revoking Blob URLs deterministically.
  */
-import type { Track } from '#lib/types/music';
+import type { Track } from '#lib/types/music.ts';
 
 const DB_NAME = 'nys_xmusic_db';
 const DB_VERSION = 2;

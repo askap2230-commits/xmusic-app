@@ -10,9 +10,9 @@
     Range,
     Toggle
   } from 'konsta/svelte';
-  import { engine } from '#lib/audio/engine.svelte';
-  import { EQ_BANDS, EQ_PRESETS, SLEEP_OPTIONS, SPEED_OPTIONS } from '#lib/data/presets';
-  import { formatTime } from '#lib/utils/format';
+  import { engine } from '#lib/audio/engine.svelte.ts';
+  import { EQ_BANDS, EQ_PRESETS, SLEEP_OPTIONS, SPEED_OPTIONS } from '#lib/data/presets.ts';
+  import { formatTime } from '#lib/utils/format.ts';
 </script>
 
 <BlockTitle>5-Band Web Audio Equalizer & Mastering DSP</BlockTitle>
