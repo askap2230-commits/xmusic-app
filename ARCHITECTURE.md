@@ -1,4 +1,4 @@
-# System Architecture — nys Xmusic v6.10.0
+# System Architecture — nys Xmusic v6.12.0
 
 ## 1. Layered Architecture
 
@@ -38,9 +38,9 @@
 
 ## 2. Single Source of Truth Versioning
 
-- **`package.json`** owns the canonical SemVer `"version": "6.10.0"`.
+- **`package.json`** owns the canonical SemVer `"version": "6.12.0"`.
 - **`src-tauri/tauri.conf.json`** declares `"version": "../package.json"`, which Tauri v2 resolves automatically during Android and Desktop bundling ([Tauri Configuration Reference](https://v2.tauri.app/reference/config/)).
-- **`src-tauri/Cargo.toml`** and **`src/lib/stores/library.svelte.ts`** mirror `"6.10.0"` for Rust crate metadata and web fallback runtime info.
+- **`src-tauri/Cargo.toml`** and **`src/lib/stores/library.svelte.ts`** mirror `"6.12.0"` for Rust crate metadata and web fallback runtime info.
 - **`src-tauri/src/lib.rs`** exposes `app.package_info().version.to_string()` via `get_runtime_info`.
 - **`.github/workflows/build-apk.yml`** reads `require('./package.json').version` to construct the dynamic release APK filename `Xmusic-v<version>-android-<abi>-release.apk` and default GitHub Release tag `v<version>`.
 
@@ -58,3 +58,9 @@
    - Enforces `TZ=UTC`, `LC_ALL=C.UTF-8`, and `SOURCE_DATE_EPOCH` from the latest Git commit timestamp.
 4. **Cryptographic Verification**:
    - Every build outputs `Xmusic-v<version>-android-<abi>-release.apk` alongside `.sha256` and `.sha512` checksums.
+
+## 4. YouTube Music Background Playback & Zero-Stuck Recovery
+
+- **Direct Native `<audio>` Priority (`directAudioEl`)**: `src-tauri/src/lib.rs` (`ytm_resolve_audio`) prioritizes `ANDROID_VR` (with `X-YouTube-Client-Name`/`X-YouTube-Client-Version` headers) followed by `IOS`, `ANDROID`, and `TVHTML5`. Whenever a direct stream resolves while `ytBridge` is active, `AudioEngine` hands off seamlessly to `directAudioEl` at the exact live timestamp (`resumeAt`), avoiding cross-origin iframe suspension on screen-off or app switching.
+- **Android WebView Background Keep-Alive (`MainActivity.kt`)**: While `XmusicMediaService.isPlayingNow` is true, `onPause()`/`onStop()` re-assert `dispatchWindowVisibilityChanged(View.VISIBLE)`, `onResume()`, and `resumeTimers()` (immediate + 250ms delayed) so Chromium WebView does not suspend background media decoders; `onResume()` dispatches `appResumed` to reconcile playback immediately on return.
+- **Zombie IFrame & Expired-URL Self-Healing**: `ytAudioStreamCache` enforces a 30-minute TTL with explicit invalidation (`invalidateYoutubeAudioCache`). On stalled resume (including frozen `BUFFERING` state `3` or `0.00s` progress over 2.0s), `retryYoutubeAudio(true)` calls `ytBridge.destroy()` to wipe the DOM slot and rebuild cleanly at the saved timestamp.

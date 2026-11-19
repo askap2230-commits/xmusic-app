@@ -92,7 +92,11 @@
               >
                 {track.isPreview ? i18n.t('common.preview30s') : i18n.t('common.full')}
               </span>
-              <span class="absolute bottom-2 left-2 max-w-[calc(100%-16px)] truncate rounded-full bg-black/75 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white">
+              <span
+                class="absolute bottom-2 left-2 truncate rounded-full bg-black/75 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white {track.source === 'local'
+                  ? 'max-w-[calc(100%-88px)]'
+                  : 'max-w-[calc(100%-16px)]'}"
+              >
                 {track.releaseYear ? `${track.releaseYear} • ` : ''}{track.dur ? formatTime(track.dur) : track.album || 'Stream'}
               </span>
             </span>
@@ -118,7 +122,10 @@
             >
               <Icon name={isLiked ? 'heart-filled' : 'heart'} size={14} />
             </button>
-            {#if track.source === 'local'}
+          </div>
+
+          {#if track.source === 'local'}
+            <div class="absolute right-2 bottom-2 flex gap-1.5">
               <button
                 type="button"
                 class="grid h-8 w-8 place-items-center rounded-full bg-black/70 text-white active:scale-95"
@@ -135,8 +142,8 @@
               >
                 <Icon name="trash" size={14} />
               </button>
-            {/if}
-          </div>
+            </div>
+          {/if}
         </div>
 
         <div class="mt-2.5 flex items-center justify-between gap-2">

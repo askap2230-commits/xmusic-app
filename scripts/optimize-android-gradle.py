@@ -363,6 +363,7 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
@@ -435,6 +436,21 @@ class MainActivity : TauriActivity() {
         webView.addJavascriptInterface(AndroidMediaBridge(), "XmusicAndroidMedia")
     }
 
+    override fun onResume() {
+        super.onResume()
+        val wv = webViewRef?.get()
+        if (wv != null) {
+            wv.post {
+                try {
+                    wv.onResume()
+                    wv.resumeTimers()
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        dispatchMediaAction("appResumed")
+    }
+
     override fun onPause() {
         super.onPause()
         keepWebViewAudioAliveIfPlaying()
@@ -448,13 +464,19 @@ class MainActivity : TauriActivity() {
     private fun keepWebViewAudioAliveIfPlaying() {
         if (!XmusicMediaService.isPlayingNow) return
         val wv = webViewRef?.get() ?: return
-        wv.post {
+        val keepAlive = Runnable {
+            if (!XmusicMediaService.isPlayingNow) return@Runnable
             try {
+                // Re-assert View.VISIBLE so Chromium WebView does not call WasHidden() and suspend
+                // background <audio>/<video> (YouTube Music) when screen turns off or user switches apps.
+                wv.dispatchWindowVisibilityChanged(View.VISIBLE)
                 wv.onResume()
                 wv.resumeTimers()
             } catch (_: Throwable) {
             }
         }
+        wv.post(keepAlive)
+        wv.postDelayed(keepAlive, 250L)
     }
 
     override fun onDestroy() {

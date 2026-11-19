@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.9.0).
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.11.0).
  *
  * Signal Chain (Zero-Clipping Lossless-Clear DSP):
  *   MediaElementAudioSourceNode
@@ -13,7 +13,7 @@
  *     -> AnalyserNode (pull-based FFT visualizer)
  *     -> AudioContext.destination (latencyHint: 'playback')
  *
- * Stability Guarantees (v6.9.0):
+ * Stability Guarantees (v6.11.0):
  *   - Monotonic playSessionId eliminates async race conditions and phantom restarts after pause.
  *   - Transition guard suppresses spurious pause/play flicker during track switches.
  *   - Idempotent resume() + automatic self-healing recovery prevents stuck Play buttons on all sources.
@@ -320,6 +320,23 @@ class AudioEngine {
           ) {
             this.bgAutoResumeCount += 1;
             const sessionId = this.playSessionId;
+            const trackSnap = this.current;
+            const resumePos = Math.max(this.position, this.ytBridge.getCurrentTime());
+            // Try upgrading to a native background-immune <audio> stream if YouTube IFrame paused in background
+            if (trackSnap?.videoId && this.bgAutoResumeCount === 1) {
+              void ytPreloader.resolveNow(trackSnap.videoId, true).then((url) => {
+                if (
+                  url &&
+                  sessionId === this.playSessionId &&
+                  !this.userPaused &&
+                  this.usingYtBridge &&
+                  this.current?.id === trackSnap.id
+                ) {
+                  this.current = { ...trackSnap, url };
+                  this.playDirectUrl(url, this.current, sessionId, resumePos);
+                }
+              });
+            }
             setTimeout(() => {
               if (
                 sessionId === this.playSessionId &&
@@ -329,7 +346,7 @@ class AudioEngine {
               ) {
                 this.ytBridge.resume();
               }
-            }, 150);
+            }, 180);
             return;
           }
           this.playing = false;
@@ -734,8 +751,9 @@ class AudioEngine {
     }
   }
 
-  private playDirectUrl(url: string, track: Track, sessionId: number): void {
+  private playDirectUrl(url: string, track: Track, sessionId: number, resumeAt = 0): void {
     if (!this.directAudioEl || sessionId !== this.playSessionId || this.userPaused) return;
+    const el = this.directAudioEl;
     this.isTransitioning = true;
     try {
       if (this.audioEl && !this.audioEl.paused) this.audioEl.pause();
@@ -746,22 +764,39 @@ class AudioEngine {
       this.resolvingAudio = false;
       this.audioResolveFailed = false;
       this.buffering = false;
-      this.directAudioEl.volume = this.ducked ? Math.max(0.05, this.volume * 0.25) : this.volume;
-      this.directAudioEl.muted = this.muted;
-      this.directAudioEl.src = url;
+      el.volume = this.ducked ? Math.max(0.05, this.volume * 0.25) : this.volume;
+      el.muted = this.muted;
+      el.src = url;
+      if (resumeAt > 1) {
+        const applyResumeSeek = (): void => {
+          if (sessionId !== this.playSessionId || !this.usingDirectAudio) return;
+          try {
+            const cap = Number.isFinite(el.duration) && el.duration > 2 ? el.duration - 1 : resumeAt;
+            el.currentTime = Math.min(resumeAt, cap);
+            this.position = el.currentTime;
+          } catch {
+            // Ignore seek errors before metadata is ready
+          }
+        };
+        if (el.readyState >= 1) {
+          applyResumeSeek();
+        } else {
+          el.addEventListener('loadedmetadata', applyResumeSeek, { once: true });
+        }
+      }
       this.applyPlaybackRate();
     } finally {
       this.isTransitioning = false;
     }
 
-    this.directAudioEl.play().catch((err: Error) => {
+    el.play().catch((err: Error) => {
       if (err.name === 'AbortError' || sessionId !== this.playSessionId || this.userPaused) return;
       if (track.videoId) {
         ytPreloader.invalidate(track.videoId);
         this.usingDirectAudio = false;
         this.usingYtBridge = true;
         this.resolvingAudio = true;
-        void this.startYoutubeAudioBridge({ ...track, url: undefined }, sessionId);
+        void this.startYoutubeAudioBridge({ ...track, url: undefined }, sessionId, resumeAt);
       } else {
         this.playing = false;
         this.buffering = false;
@@ -892,7 +927,11 @@ class AudioEngine {
     this.preloadUpcomingQueue();
   }
 
-  private async startYoutubeSmartPlayback(track: Track, sessionId: number): Promise<void> {
+  private async startYoutubeSmartPlayback(
+    track: Track,
+    sessionId: number,
+    resumeAt = 0
+  ): Promise<void> {
     if (!track.videoId) return;
     const videoId = track.videoId;
     const trackId = track.id;
@@ -914,7 +953,7 @@ class AudioEngine {
           }
           if (url) {
             this.current = { ...track, url };
-            this.playDirectUrl(url, this.current, sessionId);
+            this.playDirectUrl(url, this.current, sessionId, resumeAt);
           } else {
             this.resolvingAudio = false;
             this.audioResolveFailed = true;
@@ -923,29 +962,43 @@ class AudioEngine {
       }
     }, 4500);
 
-    // If direct stream resolves quickly before IFrame starts playing, use native <audio> immediately!
+    // ALWAYS upgrade to native <audio> (directAudioEl) when direct stream resolves, even if IFrame
+    // started first — native <audio> is 100% immune to Android WebView background & screen-off suspension!
     void directPromise.then((url) => {
       if (
         !url ||
         sessionId !== this.playSessionId ||
         this.userPaused ||
         this.current?.id !== trackId ||
-        this.playing
+        this.usingDirectAudio
       ) {
         return;
       }
+      const livePos = this.usingYtBridge
+        ? Math.max(resumeAt, this.ytBridge.getCurrentTime(), this.position)
+        : resumeAt;
       this.clearYtWatchdog();
       this.current = { ...track, url };
-      this.playDirectUrl(url, this.current, sessionId);
+      this.playDirectUrl(url, this.current, sessionId, livePos);
     });
 
-    // Simultaneously start pre-warmed YouTube IFrame Bridge
-    await this.startYoutubeAudioBridge(track, sessionId);
+    // Simultaneously start pre-warmed YouTube IFrame Bridge for instant playback while direct resolves
+    await this.startYoutubeAudioBridge(track, sessionId, resumeAt);
   }
 
-  private async startYoutubeAudioBridge(track: Track, sessionId: number): Promise<void> {
+  private async startYoutubeAudioBridge(
+    track: Track,
+    sessionId: number,
+    resumeAt = 0
+  ): Promise<void> {
     if (!track.videoId) return;
-    const ok = await this.ytBridge.play(track.videoId, this.volume, this.muted, this.playbackRate);
+    const ok = await this.ytBridge.play(
+      track.videoId,
+      this.volume,
+      this.muted,
+      this.playbackRate,
+      resumeAt
+    );
     if (
       sessionId !== this.playSessionId ||
       this.userPaused ||
@@ -957,17 +1010,19 @@ class AudioEngine {
     }
     if (!ok) {
       this.usingYtBridge = false;
-      void this.resolveAndPlayYoutubeAudio(track, sessionId);
+      void this.resolveAndPlayYoutubeAudio(track, sessionId, resumeAt);
     }
   }
 
-  retryYoutubeAudio(): void {
+  retryYoutubeAudio(preservePosition = false): void {
     if (!this.current?.videoId) return;
+    const resumeAt = preservePosition ? Math.max(0, this.position || 0) : 0;
     const sessionId = ++this.playSessionId;
     ytPreloader.invalidate(this.current.videoId);
     this.clearYtWatchdog();
     this.clearResumeRecovery();
     this.clearStallWatchdog();
+    this.clearBgResumeTimers();
     this.userPaused = false;
     this.bgAutoResumeCount = 0;
     this.buffering = false;
@@ -975,7 +1030,8 @@ class AudioEngine {
     try {
       if (this.audioEl && !this.audioEl.paused) this.audioEl.pause();
       if (this.directAudioEl && !this.directAudioEl.paused) this.directAudioEl.pause();
-      this.ytBridge.stop();
+      // Destroy (not merely stop) the YouTube IFrame so suspended/zombie decoders are rebuilt clean
+      this.ytBridge.destroy();
     } finally {
       this.isTransitioning = false;
     }
@@ -985,10 +1041,14 @@ class AudioEngine {
     this.audioResolveFailed = false;
     const cleanTrack: Track = { ...this.current, url: undefined };
     this.current = cleanTrack;
-    void this.startYoutubeSmartPlayback(cleanTrack, sessionId);
+    void this.startYoutubeSmartPlayback(cleanTrack, sessionId, resumeAt);
   }
 
-  private async resolveAndPlayYoutubeAudio(track: Track, sessionId: number): Promise<void> {
+  private async resolveAndPlayYoutubeAudio(
+    track: Track,
+    sessionId: number,
+    resumeAt = 0
+  ): Promise<void> {
     if (!track.videoId) return;
     this.resolvingAudio = true;
     this.audioResolveFailed = false;
@@ -1004,7 +1064,7 @@ class AudioEngine {
     }
 
     this.current = { ...track, url: streamUrl };
-    this.playDirectUrl(streamUrl, this.current, sessionId);
+    this.playDirectUrl(streamUrl, this.current, sessionId, resumeAt);
   }
 
   /**
@@ -1030,13 +1090,23 @@ class AudioEngine {
           el.error !== null ||
           el.networkState === HTMLMediaElement.NETWORK_NO_SOURCE;
         if (needsReload) {
-          this.retryYoutubeAudio();
+          this.retryYoutubeAudio(true);
           return;
         }
+        const sessionId = this.playSessionId;
+        const beforeTime = el.currentTime || 0;
         el.play().catch((err: Error) => {
           if (err.name === 'AbortError' || this.userPaused) return;
-          this.retryYoutubeAudio();
+          this.retryYoutubeAudio(true);
         });
+        // Liveness watchdog: if expired googlevideo URL stalls after returning from background, refresh cleanly
+        this.resumeRecoveryTimer = setTimeout(() => {
+          this.resumeRecoveryTimer = null;
+          if (sessionId !== this.playSessionId || this.userPaused || !this.usingDirectAudio) return;
+          if (el.paused || (!this.playing && Math.abs((el.currentTime || 0) - beforeTime) < 0.05)) {
+            this.retryYoutubeAudio(true);
+          }
+        }, 2500);
         return;
       }
 
@@ -1046,31 +1116,35 @@ class AudioEngine {
         if (
           !this.ytBridge.isReady() ||
           this.audioResolveFailed ||
+          this.resolvingAudio ||
           !sameVideo ||
           st === -1 ||
           st === 0
         ) {
-          this.retryYoutubeAudio();
+          this.retryYoutubeAudio(true);
           return;
         }
+        const beforeTime = this.ytBridge.getCurrentTime();
         const ok = this.ytBridge.resume();
         if (!ok) {
-          this.retryYoutubeAudio();
+          this.retryYoutubeAudio(true);
           return;
         }
         const sessionId = this.playSessionId;
+        // Liveness watchdog: catches both frozen BUFFERING (state 3) and zombie iframes with 0s progress
         this.resumeRecoveryTimer = setTimeout(() => {
           this.resumeRecoveryTimer = null;
-          if (sessionId !== this.playSessionId || this.userPaused || this.playing) return;
+          if (sessionId !== this.playSessionId || this.userPaused || !this.usingYtBridge) return;
           const liveState = this.ytBridge.getPlayerState();
-          if (liveState !== 1 && liveState !== 3) {
-            this.retryYoutubeAudio();
+          const progressed = Math.abs(this.ytBridge.getCurrentTime() - beforeTime) >= 0.05;
+          if (liveState !== 1 || (!this.playing && !progressed)) {
+            this.retryYoutubeAudio(true);
           }
-        }, 2500);
+        }, 2000);
         return;
       }
 
-      this.retryYoutubeAudio();
+      this.retryYoutubeAudio(true);
       return;
     }
 
@@ -1113,6 +1187,8 @@ class AudioEngine {
 
     if (this.playing && !this.resolvingAudio) {
       this.pause();
+    } else if (this.resolvingAudio && this.current.videoId) {
+      this.retryYoutubeAudio(true);
     } else {
       this.resume();
     }
@@ -1326,15 +1402,40 @@ class AudioEngine {
     if (this.usingYtBridge) this.ytBridge.setVolume(eff, this.muted);
   }
 
+  private handleForegroundResume(): void {
+    this.clearBgResumeTimers();
+    this.bgAutoResumeCount = 0;
+    if (!this.current || this.current.spotifyId) return;
+
+    if (this.audioCtx?.state === 'suspended' && !this.userPaused) {
+      this.audioCtx.resume().catch(() => {});
+    }
+
+    // Reconcile state if Android suspended the decoder/iframe while backgrounded
+    if (!this.userPaused) {
+      if (this.usingYtBridge) {
+        const st = this.ytBridge.getPlayerState();
+        if (!this.playing || !this.ytBridge.isReady() || st !== 1) {
+          this.resume();
+          return;
+        }
+      } else if (this.activeEl && (!this.playing || this.activeEl.paused)) {
+        this.resume();
+        return;
+      }
+    }
+
+    if (this.playing) {
+      this.updateMediaSessionState();
+      this.syncNativeAndroidNotification();
+    }
+  }
+
   private setupBackgroundPlaybackGuard(): void {
     if (typeof document === 'undefined') return;
     this.bgVisibilityHandler = () => {
       if (!document.hidden) {
-        this.bgAutoResumeCount = 0;
-        if (this.playing) {
-          this.updateMediaSessionState();
-          this.syncNativeAndroidNotification();
-        }
+        this.handleForegroundResume();
         return;
       }
       if (!this.playing || this.userPaused) return;
@@ -1352,7 +1453,7 @@ class AudioEngine {
           }
           if (this.usingYtBridge) {
             const st = this.ytBridge.getPlayerState();
-            if (st !== 1 && st !== 3) {
+            if (st !== 1) {
               this.ytBridge.resume();
             }
           } else if (this.activeEl && this.activeEl.paused) {
@@ -1374,6 +1475,7 @@ class AudioEngine {
       else if (action === 'next') this.next(false);
       else if (action === 'prev') this.prev();
       else if (action === 'stop') this.stopTrack();
+      else if (action === 'appResumed') this.handleForegroundResume();
       else if (action === 'duck') {
         this.ducked = true;
         this.applyEffectiveVolume();

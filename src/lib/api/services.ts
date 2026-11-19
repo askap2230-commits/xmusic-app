@@ -415,7 +415,12 @@ const DEFAULT_PIPED_INSTANCES: string[] = [
 
 let fastestPipedHost: string | null = null;
 let invidiousCache: { hosts: string[]; fetchedAt: number } = { hosts: [], fetchedAt: 0 };
-const ytAudioStreamCache = new Map<string, string>();
+const YT_AUDIO_CACHE_TTL_MS = 30 * 60 * 1000;
+const ytAudioStreamCache = new Map<string, { url: string; expiresAt: number }>();
+
+export function invalidateYoutubeAudioCache(videoId: string): void {
+  if (videoId) ytAudioStreamCache.delete(videoId);
+}
 
 function getPipedCandidates(): string[] {
   const custom = (getApiConfig().pipedInstance || '').trim().replace(/\/$/, '');
@@ -703,12 +708,15 @@ async function nativeYtmResolveAudio(videoId: string): Promise<string | null> {
 export async function resolveYoutubeAudioStream(videoId: string): Promise<string | null> {
   if (!videoId || (typeof navigator !== 'undefined' && !navigator.onLine)) return null;
   const cached = ytAudioStreamCache.get(videoId);
-  if (cached) return cached;
+  if (cached) {
+    if (Date.now() < cached.expiresAt) return cached.url;
+    ytAudioStreamCache.delete(videoId);
+  }
 
   // Fast native Rust InnerTube resolution directly from user's device IP (~300ms, zero public proxy)
   const nativeUrl = await nativeYtmResolveAudio(videoId);
   if (nativeUrl) {
-    ytAudioStreamCache.set(videoId, nativeUrl);
+    ytAudioStreamCache.set(videoId, { url: nativeUrl, expiresAt: Date.now() + YT_AUDIO_CACHE_TTL_MS });
     return nativeUrl;
   }
 
@@ -732,7 +740,7 @@ export async function resolveYoutubeAudioStream(videoId: string): Promise<string
 
   try {
     const url = await Promise.any(pipedAttempts);
-    ytAudioStreamCache.set(videoId, url);
+    ytAudioStreamCache.set(videoId, { url, expiresAt: Date.now() + YT_AUDIO_CACHE_TTL_MS });
     return url;
   } catch {
     // Fallback to parallel Invidious audio-only adaptive formats
@@ -755,7 +763,7 @@ export async function resolveYoutubeAudioStream(videoId: string): Promise<string
     });
     try {
       const url = await Promise.any(invAttempts);
-      ytAudioStreamCache.set(videoId, url);
+      ytAudioStreamCache.set(videoId, { url, expiresAt: Date.now() + YT_AUDIO_CACHE_TTL_MS });
       return url;
     } catch {
       return null;

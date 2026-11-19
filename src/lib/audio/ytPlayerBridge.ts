@@ -2,19 +2,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Official YouTube IFrame Player API Audio Bridge (Strict TypeScript).
+ * Official YouTube IFrame Player API Audio Bridge (Strict TypeScript, v6.11.0).
  *
- * Improvements in v6.9.0:
- * - Monotonic playGen counter cancels stale async ensurePlayer() / play() calls immediately on stop()
- *   or track switch so two playback paths never overlap or hijack active direct <audio> playback.
- * - Avoids redundant double playVideo() calls when loadVideoById / autoplay is already starting,
- *   preventing YouTube IFrame double state transitions (PLAYING -> PAUSED stutter).
- * - Exposes isReady() and boolean resume() so AudioEngine can detect dead/unready players and recover
- *   immediately instead of leaving the Play button stuck.
+ * Background & Anti-Stuck Guarantees:
+ * - Monotonic playGen counter cancels stale async ensurePlayer() / play() calls immediately on stop(),
+ *   destroy(), or track switch so two playback paths never overlap or hijack active direct <audio>.
+ * - Verifies live iframe DOM presence inside isReady() so detached/suspended iframes are detected instantly.
+ * - Supports startSeconds in play() so recovery after background suspend resumes at the exact timestamp.
+ * - resume() actively calls playVideo() whenever state !== 1 (including stalled BUFFERING state 3).
+ * - destroy() wipes the wrapper DOM slot so retryYoutubeAudio() always mounts a fresh media decoder.
  */
 
 export interface YtPlayerInstance {
-  loadVideoById(videoId: string): void;
+  loadVideoById(videoIdOrOptions: string | { videoId: string; startSeconds?: number }): void;
   playVideo(): void;
   pauseVideo(): void;
   stopVideo(): void;
@@ -123,7 +123,17 @@ export class YtAudioBridge {
   }
 
   isReady(): boolean {
-    return Boolean(this.player && this.ready);
+    if (!this.player || !this.ready) return false;
+    if (typeof document !== 'undefined') {
+      const wrapper = document.getElementById('xmusic-yt-audio-host');
+      if (!wrapper || !wrapper.querySelector('iframe')) {
+        this.ready = false;
+        this.player = null;
+        this.initPromise = null;
+        return false;
+      }
+    }
+    return true;
   }
 
   getCurrentVideoId(): string | null {
@@ -144,8 +154,8 @@ export class YtAudioBridge {
     return 'xmusic-yt-player-slot';
   }
 
-  private ensurePlayer(initialVideoId: string): Promise<YtPlayerInstance | null> {
-    if (this.player && this.ready) return Promise.resolve(this.player);
+  private ensurePlayer(initialVideoId: string, startSeconds = 0): Promise<YtPlayerInstance | null> {
+    if (this.isReady() && this.player) return Promise.resolve(this.player);
     if (this.initPromise) return this.initPromise;
 
     this.initPromise = (async () => {
@@ -177,6 +187,9 @@ export class YtAudioBridge {
           rel: 0,
           enablejsapi: 1
         };
+        if (startSeconds > 1) {
+          playerVars.start = Math.floor(startSeconds);
+        }
         const safeOrigin = getSafeOrigin();
         if (safeOrigin) playerVars.origin = safeOrigin;
 
@@ -206,13 +219,19 @@ export class YtAudioBridge {
     return this.initPromise;
   }
 
-  async play(videoId: string, volume01: number, muted: boolean, rate: number): Promise<boolean> {
+  async play(
+    videoId: string,
+    volume01: number,
+    muted: boolean,
+    rate: number,
+    startSeconds = 0
+  ): Promise<boolean> {
     const gen = ++this.playGen;
-    const wasReady = Boolean(this.player && this.ready);
+    const wasReady = this.isReady();
     const prevVideoId = this.currentVideoId;
     this.currentVideoId = videoId;
 
-    const p = await this.ensurePlayer(videoId);
+    const p = await this.ensurePlayer(videoId, startSeconds);
     // Abort immediately if stop(), destroy(), or a newer play() ran while awaiting onReady
     if (!p || gen !== this.playGen) return false;
 
@@ -223,11 +242,17 @@ export class YtAudioBridge {
       p.setPlaybackRate(rate);
 
       if (wasReady || prevVideoId !== videoId) {
-        p.loadVideoById(videoId);
+        if (startSeconds > 1) {
+          p.loadVideoById({ videoId, startSeconds: Math.floor(startSeconds) });
+        } else {
+          p.loadVideoById(videoId);
+        }
+      } else if (startSeconds > 1) {
+        p.seekTo(startSeconds, true);
       }
 
       const st = this.getPlayerState();
-      if (st !== 1 && st !== 3) {
+      if (st !== 1) {
         p.playVideo();
       }
       return true;
@@ -237,10 +262,10 @@ export class YtAudioBridge {
   }
 
   resume(): boolean {
-    if (!this.player || !this.ready) return false;
+    if (!this.isReady() || !this.player) return false;
     try {
       const st = this.getPlayerState();
-      if (st !== 1 && st !== 3) {
+      if (st !== 1) {
         this.player.playVideo();
       }
       return true;
@@ -328,5 +353,9 @@ export class YtAudioBridge {
     this.player = null;
     this.ready = false;
     this.initPromise = null;
+    if (typeof document !== 'undefined') {
+      const wrapper = document.getElementById('xmusic-yt-audio-host');
+      if (wrapper) wrapper.innerHTML = '';
+    }
   }
 }

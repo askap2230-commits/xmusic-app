@@ -81,6 +81,8 @@ This document defines **non-negotiable architectural and design rules** for all 
 
 1. **Zero Overlap on Konsta UI v5.5 iOS**:
    - **NEVER** apply `!my-2` or `!mt-0` to `<Block>` immediately after `<BlockTitle>` — Konsta UI's native margins prevent title clipping.
+   - Keep `SearchView.svelte` and `LibraryView.svelte` wrapped in a uniform `flex-col gap-4 px-4` container with `<List strong inset class="!mx-0 !my-0">` and `titleWrapClass="min-w-0 flex-1"` (never mix `<BlockTitle>` `-mb-6` with custom `!my-2` blocks or horizontal rails).
+   - Keep `TrackCard.svelte` top-right overlay limited to max 2 circular buttons (`flip`, `heart`); place local-track `edit`/`trash` actions at `bottom-2 right-2` with matching duration pill `max-w-[calc(100%-88px)]` so badges never collide on 360px 2-column grids.
    - Keep `<Page class="pb-52">` so scrolled content clears both the floating `PlayerBar` (`bottom-[calc(86px+env(safe-area-inset-bottom,0px))]`) and Konsta v5.5's floating Liquid Glass `Tabbar`.
    - **NEVER** re-add a bottom-right `<Fab>` that collides with `PlayerBar` playback controls.
    - **NEVER** render external `<iframe>`s (Spotify/YouTube) when `!appStore.isOnline`; always show a native Konsta `<Block strong inset>` offline fallback card.
@@ -91,6 +93,11 @@ This document defines **non-negotiable architectural and design rules** for all 
    - Keep the mastering `DynamicsCompressorNode` anti-clipping limiter and `latencyHint: 'playback'` intact in `src/lib/audio/engine.svelte.ts`.
    - Keep `XmusicMediaService.kt`, `MainActivity.kt` (`XmusicAndroidMedia` bridge), and ProGuard `@JavascriptInterface` keep rules in `scripts/optimize-android-gradle.py`.
    - **NEVER** re-add `AudioManager.requestAudioFocus(...)` inside `XmusicMediaService.kt` (Chromium WebView's internal `AudioFocusDelegate` owns AudioFocus; dual focus causes fatal play/pause ping-pong loops).
+   - **YouTube Music Background & Anti-Stuck Contract (v6.11.0)**:
+     - Keep `MainActivity.kt` calling `wv.dispatchWindowVisibilityChanged(View.VISIBLE)` + `wv.onResume()` + `wv.resumeTimers()` (immediate + 250ms delayed) in `keepWebViewAudioAliveIfPlaying()`, and keep `dispatchMediaAction("appResumed")` inside `MainActivity.onResume()`.
+     - NEVER discard a resolved direct HTTPS audio stream in `startYoutubeSmartPlayback()` just because `ytBridge` started playing first — ALWAYS hand off seamlessly to native `<audio>` (`directAudioEl`) at the live playback timestamp so screen-off and app-switching stay 100% uninterrupted.
+     - NEVER reuse a suspended/zombie YouTube `<iframe>` on recovery: `retryYoutubeAudio(preservePosition)` MUST call `ytBridge.destroy()` (clearing `#xmusic-yt-audio-host`) and `ytPreloader.invalidate()` (which also invalidates `services.ts` TTL cache) before restarting at the saved timestamp.
+     - Keep `ANDROID_VR` first with explicit `X-YouTube-Client-Name` and `X-YouTube-Client-Version` headers in `src-tauri/src/lib.rs` (`ytm_resolve_audio`).
 4. **Konsta UI v5.5 iOS Polish & Privacy-First Rules**:
    - NEVER put more than 1 icon button inside `<Navbar>` `{#snippet left()}` or `{#snippet right()}` (Konsta v5.5 iOS 26 wraps each side in a single Liquid Glass capsule; multiple icons get cramped).
    - NEVER add a floating top DynamicBar over `<Navbar>`. `PlayerBar` docks cleanly above the floating `<Tabbar>` only when `engine.current` is active, and MUST include a Stop/Close (`X`) button (`engine.stopTrack()`).

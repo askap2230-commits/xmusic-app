@@ -18,7 +18,7 @@
  * 5. Zero-Byte DNS+TLS Preconnect: Warms TCP/TLS handshakes for resolved stream origins without
  *    downloading any audio bytes, cutting playback start latency by 150-400ms.
  */
-import { resolveYoutubeAudioStream } from '#lib/api/services.ts';
+import { invalidateYoutubeAudioCache, resolveYoutubeAudioStream } from '#lib/api/services.ts';
 import type { Track } from '#lib/types/music.ts';
 
 interface CacheEntry {
@@ -145,6 +145,7 @@ class SmartYtPreloader {
   invalidate(videoId: string): void {
     this.cache.delete(videoId);
     this.failedUntil.delete(videoId);
+    invalidateYoutubeAudioCache(videoId);
     this.persistSessionCache();
   }
 

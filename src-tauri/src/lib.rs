@@ -517,53 +517,17 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<String>, String> {
     }
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(4))
         .build()
         .map_err(|e| e.to_string())?;
 
     let visitor_data = fetch_visitor_data(&client).await;
 
+    // Prioritize ANDROID_VR first (fastest direct audio URL without PO-Token), then IOS, ANDROID, TVHTML5
     let clients = [
         (
-            "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
-            json!({
-                "context": {
-                    "client": {
-                        "clientName": "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
-                        "clientVersion": "2.0",
-                        "hl": "en",
-                        "gl": "US"
-                    },
-                    "thirdParty": {
-                        "embedUrl": "https://www.youtube.com"
-                    }
-                },
-                "videoId": vid,
-                "contentCheckOk": true,
-                "racyCheckOk": true
-            }),
-        ),
-        (
-            "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
-            json!({
-                "context": {
-                    "client": {
-                        "clientName": "IOS",
-                        "clientVersion": "20.10.4",
-                        "deviceMake": "Apple",
-                        "deviceModel": "iPhone16,2",
-                        "osName": "iPhone",
-                        "osVersion": "18.3.2.22D82",
-                        "hl": "en",
-                        "gl": "US"
-                    }
-                },
-                "videoId": vid,
-                "contentCheckOk": true,
-                "racyCheckOk": true
-            }),
-        ),
-        (
+            "28",
+            "1.62.27",
             "com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
             json!({
                 "context": {
@@ -584,6 +548,30 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<String>, String> {
             }),
         ),
         (
+            "5",
+            "20.10.4",
+            "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+            json!({
+                "context": {
+                    "client": {
+                        "clientName": "IOS",
+                        "clientVersion": "20.10.4",
+                        "deviceMake": "Apple",
+                        "deviceModel": "iPhone16,2",
+                        "osName": "iPhone",
+                        "osVersion": "18.3.2.22D82",
+                        "hl": "en",
+                        "gl": "US"
+                    }
+                },
+                "videoId": vid,
+                "contentCheckOk": true,
+                "racyCheckOk": true
+            }),
+        ),
+        (
+            "3",
+            "20.10.38",
             "com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip",
             json!({
                 "context": {
@@ -601,13 +589,36 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<String>, String> {
                 "racyCheckOk": true
             }),
         ),
+        (
+            "85",
+            "2.0",
+            "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+            json!({
+                "context": {
+                    "client": {
+                        "clientName": "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
+                        "clientVersion": "2.0",
+                        "hl": "en",
+                        "gl": "US"
+                    },
+                    "thirdParty": {
+                        "embedUrl": "https://www.youtube.com"
+                    }
+                },
+                "videoId": vid,
+                "contentCheckOk": true,
+                "racyCheckOk": true
+            }),
+        ),
     ];
 
-    for (ua, body) in clients {
+    for (client_name_id, client_ver, ua, body) in clients {
         let mut req = client
             .post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
             .header("User-Agent", ua)
-            .header("Origin", "https://www.youtube.com");
+            .header("Origin", "https://www.youtube.com")
+            .header("X-YouTube-Client-Name", client_name_id)
+            .header("X-YouTube-Client-Version", client_ver);
         if let Some(ref vd) = visitor_data {
             req = req.header("X-Goog-Visitor-Id", vd);
         }

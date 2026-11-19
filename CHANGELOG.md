@@ -2,6 +2,22 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.12.0] - 2026-11-19
+
+### Fixed & Improved (Library Page UI/UX & Zero-Collision Layout Overhaul)
+- **Eliminasi Konflik Margin Konsta (`BlockTitle` / `Block`) di `LibraryView.svelte`**: Mengganti campuran `<BlockTitle>` (`-mb-6`) dan `<Block class="!my-2">` yang sebelumnya saling bertabrakan dengan kontainer vertikal seragam `flex-col gap-4 px-4`, kartu kontrol iOS terpadu, dan `<List strong inset class="!mx-0 !my-0">` agar seluruh seksi sejajar tanpa tumpang tindih di Mode Terang maupun Mode Gelap.
+- **Rail Playlist Edge-to-Edge & Kontrol Satu Baris**: Rail chip Playlist kini menggunakan scroll horizontal `-mx-4 px-4` dengan `whitespace-nowrap shrink-0`, tombol `<SegmentedButton>` (`Offline` | `Favorit` | `Riwayat`) serta tombol aksi (`Upload Audio`, `Buat Playlist`, `Putar Semua`, `Acak`) dikunci satu baris dengan `min-w-0 truncate` agar rapi di layar 360px.
+- **Artwork Fallback `onerror`, `flex-1` Anti-Timpa & Prewarm YouTube**: Menambahkan fallback gradien `onerror` pada semua sampul daftar Pustaka, `titleWrapClass="min-w-0 flex-1"` + sorotan baris aktif pada `<ListItem>`, serta `onpointerdown` prewarm untuk lagu YouTube Music di Favorit/Riwayat/Playlist.
+- **Fix Tabrakan 4 Tombol Kartu Lokal di Mode Grid (`TrackCard.svelte`)**: Memisahkan tombol `Edit` dan `Hapus` lagu lokal ke `bottom-2 right-2` (dengan batas lebar pill durasi `max-w-[calc(100%-88px)]`) sehingga sudut kanan atas hanya memuat 2 tombol (`Lirik` & `Favorit`) dan tidak lagi menimpa badge `Full` di layar ponsel 2 kolom.
+
+## [6.11.0] - 2026-11-19
+
+### Fixed (Fatal YouTube Music Background Playback & Stuck Play Button on Return)
+- **Native Android WebView `View.VISIBLE` Keep-Alive & `appResumed` Hook (`MainActivity.kt`)**: `keepWebViewAudioAliveIfPlaying()` kini menegaskan kembali `dispatchWindowVisibilityChanged(View.VISIBLE)`, `onResume()`, dan `resumeTimers()` secara langsung serta tertunda 250ms saat `onPause()`/`onStop()` aktif — mencegah Chromium Android WebView memanggil `WasHidden()` yang sebelumnya mematikan audio YouTube Music saat layar mati, pindah aplikasi, atau meminimalkan Xmusic. `onResume()` juga langsung mengirim `appResumed` ke `AudioEngine` untuk sinkronisasi otomatis saat kembali membuka aplikasi.
+- **Upgrade Mulus ke Native `<audio>` Anti-Suspend (`engine.svelte.ts`, `src-tauri/src/lib.rs`)**: `startYoutubeSmartPlayback()` tidak lagi membuang URL stream audio langsung saat `ytBridge` mulai lebih dulu, melainkan langsung melakukan handoff mulus ke elemen `<audio>` native (`directAudioEl`) pada posisi detik yang sama agar pemutaran latar belakang kebal terhadap jeda iframe lintas-origin. `ytm_resolve_audio` di Rust kini memprioritaskan klien `ANDROID_VR` terlebih dahulu dengan header `X-YouTube-Client-Name` & `X-YouTube-Client-Version` lengkap.
+- **Eliminasi 100% Bug Tombol Putar Macet / Zombie IFrame (`ytPlayerBridge.ts`, `engine.svelte.ts`, `services.ts`)**: `retryYoutubeAudio(preservePosition)` kini menghancurkan iframe zombie secara penuh (`ytBridge.destroy()` + bersihkan DOM `#xmusic-yt-audio-host`) dan melanjutkan tepat di detik terakhir (`startSeconds` / `resumeAt`). Liveness watchdog 2.0 detik mendeteksi iframe yang beku di state `BUFFERING (3)` atau progres `0.00s`, serta `ytAudioStreamCache` kini memiliki TTL 30 menit dengan `invalidateYoutubeAudioCache()` agar URL `googlevideo.com` yang kedaluwarsa tidak pernah dipakai ulang.
+- **Sinkronisasi Dokumentasi & Kontrak AI (`AGENTS.md`, `ARCHITECTURE.md`, `README.md`, `CI_CD_GUIDE.md`, `WCAG_ACCESSIBILITY.md`)**: Menambahkan aturan kontrak permanen latar belakang YouTube Music & anti-stuck ke `AGENTS.md` dan `ARCHITECTURE.md`, serta menaikkan seluruh versi aplikasi ke `v6.11.0`.
+
 ## [6.10.0] - 2026-11-19
 
 ### Fixed (Fatal CI/CD `apt-get` 503 Mirror Failure & Zero-Dependency Icon Pipeline)
