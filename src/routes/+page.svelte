@@ -50,6 +50,15 @@
       : undefined
   );
 
+  function switchTab(next: AppView): void {
+    if (appStore.view === next) {
+      if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    appStore.view = next;
+    if (typeof window !== 'undefined') window.scrollTo(0, 0);
+  }
+
   function handlePopState(): void {
     if (appStore.closeTopOverlay()) {
       window.history.pushState({ page: 'root' }, '');
@@ -127,12 +136,12 @@
 
   <PlayerBar />
 
-  <Tabbar labels icons class="left-0 bottom-0 fixed z-40">
+  <Tabbar labels icons class="xmusic-gpu-layer left-0 bottom-0 fixed z-40">
     <ToolbarPane>
       <TabbarLink
         active={appStore.view === 'home'}
         label="Beranda"
-        onclick={() => (appStore.view = 'home')}
+        onclick={() => switchTab('home')}
       >
         {#snippet icon()}
           <Icon name="home" size={22} />
@@ -142,7 +151,7 @@
       <TabbarLink
         active={appStore.view === 'search'}
         label="Cari"
-        onclick={() => (appStore.view = 'search')}
+        onclick={() => switchTab('search')}
       >
         {#snippet icon()}
           <Icon name="search" size={22} />
@@ -152,7 +161,7 @@
       <TabbarLink
         active={appStore.view === 'library'}
         label="Pustaka"
-        onclick={() => (appStore.view = 'library')}
+        onclick={() => switchTab('library')}
       >
         {#snippet icon()}
           <Icon name="library" size={22} />
@@ -162,7 +171,7 @@
       <TabbarLink
         active={appStore.view === 'eq'}
         label="EQ Studio"
-        onclick={() => (appStore.view = 'eq')}
+        onclick={() => switchTab('eq')}
       >
         {#snippet icon()}
           <Icon name="eq" size={22} />
@@ -172,7 +181,7 @@
       <TabbarLink
         active={appStore.view === 'profile'}
         label="Profil"
-        onclick={() => (appStore.view = 'profile')}
+        onclick={() => switchTab('profile')}
       >
         {#snippet icon()}
           <Icon name="profile" size={22} />

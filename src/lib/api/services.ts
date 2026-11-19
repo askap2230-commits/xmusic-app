@@ -578,6 +578,52 @@ async function raceInvidiousMusicSearch(query: string, limit = 16): Promise<Trac
   }
 }
 
+interface NativeYtmSong {
+  video_id: string;
+  title: string;
+  artist: string;
+  duration: number;
+  thumbnail: string;
+}
+
+async function nativeYtmSearch(query: string, region = 'ID'): Promise<Track[]> {
+  if (typeof window === 'undefined' || !window.__TAURI_INTERNALS__) return [];
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const rows = await invoke<NativeYtmSong[]>('ytm_search', { query, region });
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+    return rows.map((row) => ({
+      id: `yt_${row.video_id}`,
+      title: row.title || 'YouTube Music',
+      artist: row.artist || 'YouTube Music',
+      album: 'YouTube Music',
+      dur: Number(row.duration) || 0,
+      isPreview: false,
+      c1: '#dc2626',
+      c2: '#2b1014',
+      imageUrl: row.thumbnail || `https://img.youtube.com/vi/${row.video_id}/hqdefault.jpg`,
+      videoId: row.video_id,
+      source: 'youtube',
+      artistPhoto: null
+    }));
+  } catch (err) {
+    console.warn('[Native InnerTube Search Warning]', err);
+    return [];
+  }
+}
+
+async function nativeYtmResolveAudio(videoId: string): Promise<string | null> {
+  if (typeof window === 'undefined' || !window.__TAURI_INTERNALS__) return null;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const url = await invoke<string | null>('ytm_resolve_audio', { videoId });
+    return url && url.startsWith('https://') ? url : null;
+  } catch (err) {
+    console.warn('[Native InnerTube Audio Warning]', err);
+    return null;
+  }
+}
+
 /**
  * Resolves a direct high-bitrate audio stream URL in parallel (Promise.any) via FOSS Piped & Invidious.
  */
@@ -585,6 +631,13 @@ export async function resolveYoutubeAudioStream(videoId: string): Promise<string
   if (!videoId || (typeof navigator !== 'undefined' && !navigator.onLine)) return null;
   const cached = ytAudioStreamCache.get(videoId);
   if (cached) return cached;
+
+  // Fast native Rust InnerTube resolution directly from user's device IP (~300ms, zero public proxy)
+  const nativeUrl = await nativeYtmResolveAudio(videoId);
+  if (nativeUrl) {
+    ytAudioStreamCache.set(videoId, nativeUrl);
+    return nativeUrl;
+  }
 
   const pipedAttempts = getPipedCandidates().map(async (host) => {
     const data = await fetchJsonWithTimeout<{
@@ -666,6 +719,9 @@ export async function fetchYtTrending(region = 'ID', page = 0): Promise<Track[]>
   const pool = REGIONAL_YTMUSIC_QUERIES[regionKey];
   const query = pool[Math.abs(page) % pool.length];
 
+  const nativeSongs = await nativeYtmSearch(query, safeStore);
+  if (nativeSongs.length > 0) return nativeSongs;
+
   const piped = await racePipedMusicSearch(query, 18);
   if (piped.length > 0) return piped;
   return raceInvidiousMusicSearch(query, 16);
@@ -694,6 +750,9 @@ export async function fetchYtSearch(query: string): Promise<Track[]> {
       // Fall through to FOSS parallel race
     }
   }
+
+  const nativeSongs = await nativeYtmSearch(clean, 'ID');
+  if (nativeSongs.length > 0) return nativeSongs;
 
   const piped = await racePipedMusicSearch(clean, 20);
   if (piped.length > 0) return piped;

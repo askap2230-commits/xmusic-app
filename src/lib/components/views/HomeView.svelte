@@ -114,10 +114,10 @@
     clear
     small
     inline
-    disabled={appStore.refreshing}
-    onclick={() => appStore.refreshOnlineFeeds(true)}
+    disabled={appStore.ytLoading}
+    onclick={() => appStore.refreshYtOnly()}
   >
-    Segarkan
+    {appStore.ytLoading ? 'Memuat...' : 'Segarkan'}
   </Button>
 </BlockTitle>
 
@@ -183,7 +183,18 @@
 
 <!-- 3. Full-Length Free Streaming: Audius Global (Independent Progressive Load + Load More) -->
 {#if appStore.isOnline}
-  <BlockTitle>Streaming Penuh (Audius Global)</BlockTitle>
+  <BlockTitle class="flex items-center justify-between">
+    <span>Streaming Penuh (Audius Global)</span>
+    <Button
+      clear
+      small
+      inline
+      disabled={appStore.audiusLoading}
+      onclick={() => appStore.refreshAudiusOnly()}
+    >
+      {appStore.audiusLoading ? 'Memuat...' : 'Segarkan'}
+    </Button>
+  </BlockTitle>
   {#if appStore.audiusLoading && appStore.trendingTracks.length === 0}
     <Block>
       <div class="flex items-center gap-3 py-3 text-sm text-black/65 dark:text-white/65" role="status">

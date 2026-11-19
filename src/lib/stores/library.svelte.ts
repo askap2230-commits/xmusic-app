@@ -61,6 +61,10 @@ class AppStore {
   searchQuery = $state<string>('');
   eraFilter = $state<string>('all');
   fullOnlyFilter = $state<boolean>(false);
+  searchSourceFilter = $state<'all' | 'youtube' | 'audius' | 'local'>('all');
+  searchVisibleCount = $state<number>(12);
+  searchLoadingMore = $state<boolean>(false);
+  private searchArchiveLoaded = false;
   searching = $state<boolean>(false);
   suggesting = $state<boolean>(false);
   showSuggestions = $state<boolean>(false);
@@ -98,7 +102,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '5.6.0',
+    version: '5.8.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
@@ -191,6 +195,9 @@ class AppStore {
 
   get filteredSearchResults(): Track[] {
     let list = this.searchResults;
+    if (this.searchSourceFilter !== 'all') {
+      list = list.filter((t) => t.source === this.searchSourceFilter);
+    }
     if (this.fullOnlyFilter) {
       list = list.filter((t) => !t.isPreview);
     }
@@ -202,6 +209,17 @@ class AppStore {
         typeof t.releaseYear === 'number' &&
         t.releaseYear >= era.minYear &&
         t.releaseYear <= era.maxYear
+    );
+  }
+
+  get visibleSearchResults(): Track[] {
+    return this.filteredSearchResults.slice(0, this.searchVisibleCount);
+  }
+
+  get hasMoreSearchResults(): boolean {
+    return (
+      this.filteredSearchResults.length > this.searchVisibleCount ||
+      (this.isOnline && !this.searchArchiveLoaded && this.searchQuery.trim().length >= 2)
     );
   }
 
@@ -426,6 +444,38 @@ class AppStore {
           : 'Server streaming sedang sibuk. Coba lagi sebentar lagi.'
       );
     }
+  }
+
+  async refreshYtOnly(): Promise<void> {
+    if (this.ytLoading || !this.isOnline) return;
+    this.ytLoading = true;
+    this.ytPage += 1;
+    const yt = await fetchYtTrending(this.algoConfig.region, this.ytPage);
+    if (yt.length > 0) {
+      this.ytTracks = yt;
+      this.networkReachable = true;
+      saveJSON('nys_cache_yt', yt.slice(0, 12));
+      this.showToast(`Daftar YouTube Music ${this.activeRegionOption.label} disegarkan.`);
+    } else {
+      this.showToast('Gagal memuat daftar YouTube Music baru.');
+    }
+    this.ytLoading = false;
+  }
+
+  async refreshAudiusOnly(): Promise<void> {
+    if (this.audiusLoading || !this.isOnline) return;
+    this.audiusLoading = true;
+    this.audiusOffset = (this.audiusOffset + 12) % 48;
+    const audius = await fetchTrending(12, this.audiusOffset);
+    if (audius.length > 0) {
+      this.trendingTracks = audius;
+      this.networkReachable = true;
+      saveJSON('nys_cache_audius', audius.slice(0, 12));
+      this.showToast('Daftar Audius Global disegarkan.');
+    } else {
+      this.showToast('Gagal memuat daftar Audius Global baru.');
+    }
+    this.audiusLoading = false;
   }
 
   async loadMoreYt(): Promise<void> {
@@ -954,35 +1004,95 @@ class AppStore {
       this.suggesting = false;
     }
 
-    // Full multi-source search (local + public 1900-2026 catalog + Audius + YouTube)
+    // Progressive non-blocking staged search: each source streams in immediately as it finishes!
+    this.searchVisibleCount = 12;
+    this.searchArchiveLoaded = false;
+    const qLow = trimmed.toLowerCase();
+    const localMatch = this.localTracks.filter(
+      (t) =>
+        t.title?.toLowerCase().includes(qLow) ||
+        t.artist?.toLowerCase().includes(qLow) ||
+        t.album?.toLowerCase().includes(qLow)
+    );
+    this.searchResults = localMatch;
+
+    if (!this.isOnline) {
+      this.searching = false;
+      return;
+    }
+
     this.searching = true;
     const searchController = new AbortController();
     this.searchAbort = searchController;
-    const delay = immediate ? 0 : 300;
+    const delay = immediate ? 0 : 240;
+
     this.searchDebounceId = setTimeout(async () => {
-      const qLow = trimmed.toLowerCase();
-      const localMatch = this.localTracks.filter(
-        (t) =>
-          t.title?.toLowerCase().includes(qLow) ||
-          t.artist?.toLowerCase().includes(qLow) ||
-          t.album?.toLowerCase().includes(qLow)
-      );
-      if (!this.isOnline) {
-        this.searchResults = localMatch;
-        this.searching = false;
-        return;
-      }
-      const [youtube, audius, archive, catalog] = await Promise.all([
-        fetchYtSearch(trimmed),
-        fetchSearch(trimmed, 20),
-        fetchArchiveAudioSearch(trimmed, 8, searchController.signal),
-        fetchPublicCatalogSearch(trimmed, 24, searchController.signal, this.activeRegionOption.storeCode)
-      ]);
+      let ytList: Track[] = [];
+      let audiusList: Track[] = [];
+      let catalogList: Track[] = [];
+
+      const publish = (): void => {
+        if (searchController.signal.aborted) return;
+        this.searchResults = this.mergeUniqueTracks(
+          [...localMatch, ...ytList, ...audiusList],
+          catalogList
+        );
+      };
+
+      const ytTask = fetchYtSearch(trimmed).then((res) => {
+        ytList = res;
+        publish();
+        if (res.length > 0) this.searching = false;
+      });
+
+      const audiusTask = fetchSearch(trimmed, 18).then((res) => {
+        audiusList = res;
+        publish();
+        if (res.length > 0) this.searching = false;
+      });
+
+      const catalogTask = fetchPublicCatalogSearch(
+        trimmed,
+        20,
+        searchController.signal,
+        this.activeRegionOption.storeCode
+      ).then((res) => {
+        catalogList = res;
+        publish();
+      });
+
+      await Promise.all([ytTask, audiusTask, catalogTask]);
       if (searchController.signal.aborted) return;
-      this.searchResults = [...localMatch, ...youtube, ...audius, ...archive, ...catalog];
       this.searching = false;
       this.recordRecentSearch(trimmed);
     }, delay);
+  }
+
+  setSearchSourceFilter(source: 'all' | 'youtube' | 'audius' | 'local'): void {
+    this.searchSourceFilter = source;
+    this.searchVisibleCount = 12;
+  }
+
+  async loadMoreSearch(): Promise<void> {
+    if (this.searchLoadingMore) return;
+    if (this.filteredSearchResults.length > this.searchVisibleCount) {
+      this.searchVisibleCount += 12;
+      return;
+    }
+    const trimmed = this.searchQuery.trim();
+    if (!this.isOnline || !trimmed || this.searchArchiveLoaded) return;
+    this.searchLoadingMore = true;
+    this.searchArchiveLoaded = true;
+    const [archive, extraYt] = await Promise.all([
+      fetchArchiveAudioSearch(trimmed, 8),
+      fetchYtSearch(`${trimmed} official audio`)
+    ]);
+    this.searchResults = this.mergeUniqueTracks(this.searchResults, [...extraYt, ...archive]);
+    this.searchVisibleCount += 12;
+    this.searchLoadingMore = false;
+    if (archive.length === 0 && extraYt.length === 0) {
+      this.showToast('Semua hasil pencarian untuk kueri ini sudah ditampilkan.');
+    }
   }
 
   updateAlgorithmConfig(partial: Partial<AlgorithmConfig>, refreshFeed = true): void {

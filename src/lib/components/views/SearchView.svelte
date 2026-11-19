@@ -17,6 +17,13 @@
   import { appStore } from '#lib/stores/library.svelte.ts';
   import Icon from '../Icon.svelte';
   import TrackCard from '../TrackCard.svelte';
+
+  const SOURCE_TABS: Array<{ id: 'all' | 'youtube' | 'audius' | 'local'; label: string }> = [
+    { id: 'all', label: 'Semua' },
+    { id: 'youtube', label: 'YouTube Music' },
+    { id: 'audius', label: 'Audius' },
+    { id: 'local', label: 'Lokal' }
+  ];
 </script>
 
 <Block class="!mb-2">
@@ -100,15 +107,15 @@
     <BlockTitle class="flex items-center justify-between">
       <span>Pencarian Terakhir</span>
       <Button clear small inline onclick={() => appStore.clearRecentSearches()}>
-        Hapus Semua
+        Hapus
       </Button>
     </BlockTitle>
-    <Block class="flex flex-wrap gap-2">
+    <div class="xmusic-hscroll flex gap-2 px-4 py-1">
       {#each appStore.recentSearches as recent (recent)}
         <Chip
           outline
           deleteButton
-          class="cursor-pointer"
+          class="shrink-0 cursor-pointer"
           onclick={() => appStore.updateSearch(recent, true)}
           onDelete={(e: Event) => {
             e.stopPropagation();
@@ -118,17 +125,17 @@
           {recent}
         </Chip>
       {/each}
-    </Block>
+    </div>
   {/if}
 
-  <BlockTitle>Populer Dicari Publik</BlockTitle>
-  <Block class="flex flex-wrap gap-2">
+  <BlockTitle>Populer Dicari</BlockTitle>
+  <div class="xmusic-hscroll flex gap-2 px-4 py-1">
     {#each TRENDING_QUERIES as term}
-      <Chip outline class="cursor-pointer" onclick={() => appStore.updateSearch(term, true)}>
+      <Chip outline class="shrink-0 cursor-pointer" onclick={() => appStore.updateSearch(term, true)}>
         {term}
       </Chip>
     {/each}
-  </Block>
+  </div>
 
   <BlockTitle>Jelajah Lintas Era (1900–2026)</BlockTitle>
   <Block>
@@ -194,59 +201,109 @@
     </div>
   </Block>
 {:else}
-  <!-- Full-Length & Decade / Era Filter Chips (1900-2026) -->
-  <Block class="!my-2 flex flex-wrap gap-2">
+  <!-- Compact Horizontal Source Filter Rail -->
+  <div class="xmusic-hscroll flex items-center gap-2 px-4 pt-1 pb-1.5">
     <Chip
       outline={!appStore.fullOnlyFilter}
-      class="cursor-pointer {appStore.fullOnlyFilter
+      class="shrink-0 cursor-pointer {appStore.fullOnlyFilter
         ? '!bg-[#248a3d] !text-white font-semibold dark:!bg-[#30d158] dark:!text-black'
         : ''}"
       onclick={() => appStore.toggleFullOnly()}
     >
-      Hanya Lagu Penuh
+      Hanya Penuh
     </Chip>
+
+    {#each SOURCE_TABS as tab (tab.id)}
+      <Chip
+        outline={appStore.searchSourceFilter !== tab.id}
+        class="shrink-0 cursor-pointer {appStore.searchSourceFilter === tab.id
+          ? '!bg-[#007aff] !text-white font-semibold'
+          : ''}"
+        onclick={() => appStore.setSearchSourceFilter(tab.id)}
+      >
+        {tab.label}
+      </Chip>
+    {/each}
+  </div>
+
+  <!-- Compact Horizontal Era Filter Rail -->
+  <div class="xmusic-hscroll flex items-center gap-2 px-4 pb-2">
     <Chip
       outline={appStore.eraFilter !== 'all'}
-      class="cursor-pointer {appStore.eraFilter === 'all' ? '!bg-[#007aff] !text-white font-semibold' : ''}"
+      class="shrink-0 cursor-pointer {appStore.eraFilter === 'all'
+        ? '!bg-[#007aff] !text-white font-semibold'
+        : ''}"
       onclick={() => appStore.setEraFilter('all')}
     >
-      Semua Era ({appStore.searchResults.length})
+      Semua Era
     </Chip>
     {#each ERA_PRESETS as era (era.id)}
       <Chip
         outline={appStore.eraFilter !== era.id}
-        class="cursor-pointer {appStore.eraFilter === era.id ? '!bg-[#007aff] !text-white font-semibold' : ''}"
+        class="shrink-0 cursor-pointer {appStore.eraFilter === era.id
+          ? '!bg-[#007aff] !text-white font-semibold'
+          : ''}"
         onclick={() => appStore.setEraFilter(era.id)}
       >
         {era.label}
       </Chip>
     {/each}
-  </Block>
+  </div>
 
-  <BlockTitle>
-    Hasil Pencarian "{appStore.searchQuery}" ({appStore.filteredSearchResults.length})
+  <BlockTitle class="flex items-center justify-between">
+    <span class="truncate">
+      Hasil "{appStore.searchQuery}" ({appStore.filteredSearchResults.length})
+    </span>
+    {#if appStore.searching}
+      <Preloader class="w-4 h-4 shrink-0" />
+    {/if}
   </BlockTitle>
 
-  <Block>
-    {#if appStore.searching}
+  <Block class="space-y-3">
+    {#if appStore.searching && appStore.visibleSearchResults.length === 0}
       <div class="flex items-center gap-3 py-6 text-sm text-black/65 dark:text-white/65" role="status">
         <Preloader class="w-5 h-5" />
-        <span>Mencari lagu di katalog {appStore.activeRegionOption.label} (1900–2026)...</span>
+        <span>Mencari lagu di YouTube Music, Audius & Katalog 1900–2026...</span>
       </div>
-    {:else if appStore.filteredSearchResults.length > 0}
+    {:else if appStore.visibleSearchResults.length > 0}
       <div class="xmusic-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        {#each appStore.filteredSearchResults as track (track.id)}
+        {#each appStore.visibleSearchResults as track (track.id)}
           <TrackCard {track} />
         {/each}
       </div>
+
+      {#if appStore.hasMoreSearchResults}
+        <div class="flex justify-center pt-1">
+          <Button
+            tonal
+            rounded
+            small
+            inline
+            disabled={appStore.searchLoadingMore}
+            onclick={() => appStore.loadMoreSearch()}
+          >
+            {appStore.searchLoadingMore ? 'Memuat hasil lainnya...' : 'Muat Lebih Banyak'}
+          </Button>
+        </div>
+      {/if}
     {:else}
-      <Block strong inset class="!mx-0 space-y-2">
+      <Block strong inset class="!mx-0 space-y-2.5">
         <p class="text-sm text-black/65 dark:text-white/65">
-          Tidak ditemukan lagu yang cocok pada filter era ini untuk "{appStore.searchQuery}".
+          Tidak ditemukan lagu yang cocok pada filter ini untuk "{appStore.searchQuery}".
         </p>
-        {#if appStore.eraFilter !== 'all'}
-          <Button tonal rounded small inline onclick={() => appStore.setEraFilter('all')}>
-            Tampilkan Semua Era
+        {#if appStore.eraFilter !== 'all' || appStore.searchSourceFilter !== 'all' || appStore.fullOnlyFilter}
+          <Button
+            tonal
+            rounded
+            small
+            inline
+            onclick={() => {
+              appStore.setEraFilter('all');
+              appStore.setSearchSourceFilter('all');
+              appStore.fullOnlyFilter = false;
+            }}
+          >
+            Reset Semua Filter
           </Button>
         {/if}
       </Block>

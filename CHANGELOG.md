@@ -2,6 +2,21 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [5.8.0] - 2026-11-19
+
+### UI/UX & 60/120fps Performance Upgrades
+- **Progressive Staged Search & Load More (`SearchView`)**: Replaced blocking `Promise.all` search with non-blocking staged search — local results appear at 0ms, followed immediately by YouTube Music, Audius, and Katalog 1900–2026 as each source resolves. Added compact horizontal source (`Semua`, `Hanya Penuh`, `YouTube Music`, `Audius`, `Lokal`) & era filter rails plus working **Muat Lebih Banyak** pagination.
+- **Premium iOS Library Redesign (`LibraryView`)**: Upgraded Library with a Konsta `<Segmented>` switcher (`Offline` | `Favorit` | `Riwayat`), horizontal Playlist rail, 1-tap **Putar Semua** & **Acak (Shuffle)** bar, **Daftar / Grid** layout toggle, and lazy pagination (`20` tracks per batch) for zero-lag browsing.
+- **60/120fps Scroll & Bottom Tabbar Optimization**: Promoted fixed bottom `<Tabbar>` and `PlayerBar` to dedicated GPU compositing layers (`.xmusic-gpu-layer`), added card-level layout containment (`contain: layout style`), hidden scrollbars on horizontal iOS chip rails (`.xmusic-hscroll`), and instant scroll-to-top tab switching (`switchTab`) with zero jank.
+- **Version Bump**: Upgraded single-source version in `package.json` and `Cargo.toml` to `5.8.0` (`Xmusic-v5.8.0-android-<abi>-release.apk`).
+
+## [5.7.0] - 2026-11-19
+
+### Major Architecture & Stability Upgrades
+- **Direct On-Device Rust YouTube Music InnerTube Engine (`ytm_search` + `ytm_resolve_audio`)**: Built native Rust `reqwest` (`rustls-tls`) commands directly into `src-tauri/src/lib.rs` to query `music.youtube.com/youtubei/v1/search` (`WEB_REMIX` Songs-only filter) and `youtubei/v1/player` (`IOS 20.10.4` → `ANDROID_VR 1.62.27` → `ANDROID 20.10.38`) straight from the user's own Android device IP — eliminating rate-limited public Piped/Invidious proxy bottlenecks ("Server proxy audio sedang sibuk") and cutting load times to ~250–400ms with zero API key.
+- **Strictly Isolated Section Refresh (`refreshYtOnly` & `refreshAudiusOnly`)**: Fixed the bug where refreshing the YouTube Music section also refreshed and mutated Audius Global. Each music section now refreshes independently without affecting other feeds.
+- **Version Bump**: Upgraded single-source version in `package.json` and `Cargo.toml` to `5.7.0` (`Xmusic-v5.7.0-android-<abi>-release.apk`).
+
 ## [5.6.0] - 2026-11-19
 
 ### Performance & UX Upgrades

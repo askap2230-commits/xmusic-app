@@ -21,7 +21,7 @@
 <!-- Shown cleanly only when a track is active, docked above Konsta v5.5 Floating iOS Tabbar -->
 {#if engine.current}
   <footer
-    class="fixed right-3 left-3 bottom-[calc(86px+env(safe-area-inset-bottom,0px))] z-30 mx-auto max-w-4xl overflow-hidden rounded-[22px] border border-black/10 bg-ios-light-surface-1/95 shadow-xl dark:border-white/12 dark:bg-ios-dark-surface-1/95 dark:shadow-2xl"
+    class="xmusic-gpu-layer fixed right-3 left-3 bottom-[calc(86px+env(safe-area-inset-bottom,0px))] z-30 mx-auto max-w-4xl overflow-hidden rounded-[22px] border border-black/10 bg-ios-light-surface-1/95 shadow-xl dark:border-white/12 dark:bg-ios-dark-surface-1/95 dark:shadow-2xl"
     aria-label="Pemutar audio mini"
   >
     <Progressbar progress={progressFraction} class="!h-0.5" />

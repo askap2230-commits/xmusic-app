@@ -18,8 +18,9 @@
 html,
 body {
   height: 100%;
-  overscroll-behavior: none;
+  overscroll-behavior-y: contain;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeSpeed;
 }
 
 /* Remove harsh blue focus rectangle on touch devices; keep WCAG keyboard focus on desktop */
@@ -66,22 +67,41 @@ html.dark .skip-link {
   top: 12px;
 }
 
-/* GPU-accelerated scroll virtualization for 60/120fps Android WebView grids */
+/* Dedicated GPU compositing layer for silky 60/120fps fixed bottom Tabbar & PlayerBar */
+.xmusic-gpu-layer {
+  transform: translateZ(0);
+  will-change: transform;
+  contain: layout style;
+}
+
+/* Smooth horizontal iOS chip/pill rails with hidden scrollbars */
+.xmusic-hscroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.xmusic-hscroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Scroll virtualization & paint containment for 60/120fps Android WebView grids */
 .xmusic-grid {
   content-visibility: auto;
-  contain-intrinsic-size: auto 240px;
+  contain-intrinsic-size: auto 220px;
 }
 
 /* 3D Flip Card Utility (Android WebView compositing-safe) */
 .xmusic-flip-scene {
   perspective: 1100px;
+  contain: layout style;
 }
 
 .xmusic-flip-inner {
   position: relative;
   width: 100%;
   transform-style: preserve-3d;
-  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .xmusic-flip-inner.is-flipped {
