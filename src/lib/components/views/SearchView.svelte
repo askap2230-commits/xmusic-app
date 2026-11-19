@@ -12,7 +12,7 @@
     SegmentedButton
   } from 'konsta/svelte';
   import { engine } from '#lib/audio/engine.svelte.ts';
-  import { CATEGORIES, ERA_PRESETS, TRENDING_QUERIES } from '#lib/data/presets.ts';
+  import { CATEGORIES, ERA_PRESETS } from '#lib/data/presets.ts';
   import { i18n } from '#lib/i18n/index.svelte.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
   import type { Track } from '#lib/types/music.ts';
@@ -154,7 +154,7 @@
         </h2>
       </div>
       <div class="xmusic-hscroll -mx-4 flex items-center gap-2 px-4 py-0.5">
-        {#each TRENDING_QUERIES as term}
+        {#each appStore.dynamicTrendingQueries as term (term)}
           <Chip
             outline
             class="shrink-0 cursor-pointer whitespace-nowrap"
@@ -276,6 +276,26 @@
         </Chip>
 
         <Chip
+          outline={appStore.searchSourceFilter !== 'catalog'}
+          class="shrink-0 cursor-pointer whitespace-nowrap {appStore.searchSourceFilter === 'catalog'
+            ? '!bg-[#007aff] !text-white font-semibold'
+            : ''}"
+          onclick={() => appStore.setSearchSourceFilter('catalog')}
+        >
+          {i18n.t('search.sourceCatalog')}
+        </Chip>
+
+        <Chip
+          outline={appStore.searchSourceFilter !== 'archive'}
+          class="shrink-0 cursor-pointer whitespace-nowrap {appStore.searchSourceFilter === 'archive'
+            ? '!bg-[#007aff] !text-white font-semibold'
+            : ''}"
+          onclick={() => appStore.setSearchSourceFilter('archive')}
+        >
+          {i18n.t('search.sourceArchive')}
+        </Chip>
+
+        <Chip
           outline={appStore.searchSourceFilter !== 'local'}
           class="shrink-0 cursor-pointer whitespace-nowrap {appStore.searchSourceFilter === 'local'
             ? '!bg-[#007aff] !text-white font-semibold'
@@ -334,10 +354,17 @@
         </SegmentedButton>
         <SegmentedButton
           active={appStore.searchSort === 'longest'}
-          class="min-w-0 px-1.5 text-xs whitespace-nowrap"
+          class="min-w-0 px-1.5 text-[11px] whitespace-nowrap"
           onclick={() => appStore.setSearchSort('longest')}
         >
           {i18n.t('search.sortLongest')}
+        </SegmentedButton>
+        <SegmentedButton
+          active={appStore.searchSort === 'alpha'}
+          class="min-w-0 px-1.5 text-[11px] whitespace-nowrap"
+          onclick={() => appStore.setSearchSort('alpha')}
+        >
+          {i18n.t('search.sortAlpha')}
         </SegmentedButton>
       </Segmented>
     </section>

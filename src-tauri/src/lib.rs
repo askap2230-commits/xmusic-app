@@ -433,20 +433,23 @@ async fn ytm_search(query: String, region: String) -> Result<Vec<YtmSong>, Strin
     Ok(Vec::new())
 }
 
-fn pick_best_audio_url(data: &Value) -> Option<String> {
+fn collect_audio_candidates(data: &Value) -> Vec<String> {
     let status = data
         .pointer("/playabilityStatus/status")
         .and_then(Value::as_str)
         .unwrap_or("");
     if status != "OK" {
-        return None;
+        return Vec::new();
     }
+
+    let mut out: Vec<String> = Vec::new();
 
     if let Some(adaptive) = data
         .pointer("/streamingData/adaptiveFormats")
         .and_then(Value::as_array)
     {
-        let mut candidates: Vec<(bool, u64, String)> = Vec::new();
+        let mut mp4s: Vec<(u64, String)> = Vec::new();
+        let mut webms: Vec<(u64, String)> = Vec::new();
         for fmt in adaptive {
             let mime = fmt.get("mimeType").and_then(Value::as_str).unwrap_or("");
             if !mime.starts_with("audio/") {
@@ -454,15 +457,31 @@ fn pick_best_audio_url(data: &Value) -> Option<String> {
             }
             if let Some(url) = fmt.get("url").and_then(Value::as_str) {
                 if url.starts_with("https://") {
-                    let is_mp4 = mime.contains("mp4");
                     let bitrate = fmt.get("bitrate").and_then(Value::as_u64).unwrap_or(0);
-                    candidates.push((is_mp4, bitrate, url.to_string()));
+                    if mime.contains("mp4") {
+                        mp4s.push((bitrate, url.to_string()));
+                    } else {
+                        webms.push((bitrate, url.to_string()));
+                    }
                 }
             }
         }
-        candidates.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
-        if let Some((_, _, best)) = candidates.into_iter().next() {
-            return Some(best);
+        mp4s.sort_by(|a, b| b.0.cmp(&a.0));
+        webms.sort_by(|a, b| b.0.cmp(&a.0));
+        if let Some((_, best_mp4)) = mp4s.into_iter().next() {
+            out.push(best_mp4);
+        }
+        if let Some((_, best_webm)) = webms.into_iter().next() {
+            out.push(best_webm);
+        }
+    }
+
+    if let Some(hls) = data
+        .pointer("/streamingData/hlsManifestUrl")
+        .and_then(Value::as_str)
+    {
+        if hls.starts_with("https://") && !out.iter().any(|u| u == hls) {
+            out.push(hls.to_string());
         }
     }
 
@@ -472,23 +491,15 @@ fn pick_best_audio_url(data: &Value) -> Option<String> {
     {
         for fmt in formats {
             if let Some(url) = fmt.get("url").and_then(Value::as_str) {
-                if url.starts_with("https://") {
-                    return Some(url.to_string());
+                if url.starts_with("https://") && !out.iter().any(|u| u == url) {
+                    out.push(url.to_string());
+                    break;
                 }
             }
         }
     }
 
-    if let Some(hls) = data
-        .pointer("/streamingData/hlsManifestUrl")
-        .and_then(Value::as_str)
-    {
-        if hls.starts_with("https://") {
-            return Some(hls.to_string());
-        }
-    }
-
-    None
+    out
 }
 
 async fn verify_stream_playable(client: &reqwest::Client, url: &str, ua: &str) -> bool {
@@ -639,7 +650,7 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>,
         if let Ok(res) = attempt {
             if res.status().is_success() {
                 if let Ok(data) = res.json::<Value>().await {
-                    if let Some(url) = pick_best_audio_url(&data) {
+                    for url in collect_audio_candidates(&data) {
                         if verify_stream_playable(&client, &url, ua).await {
                             return Ok(Some(YtmResolvedAudio {
                                 url,

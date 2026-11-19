@@ -2,6 +2,14 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.19.0] - 2026-11-19
+
+### Major Upgrade (R8-Safe Media3 ExoPlayer Background Engine + Typo-Tolerant Multi-Source Smart Search & Personalization)
+- **Hardening Penuh Background Playback YouTube Music (`XmusicMediaService.kt`, `src-tauri/src/lib.rs`, `services.ts`)**: Mengganti `DefaultMediaSourceFactory` berbasis refleksi dengan `HlsMediaSource.Factory` dan `ProgressiveMediaSource.Factory` eksplisit + aturan ProGuard/R8 Media3 agar `android.enableR8.fullMode=true` tidak pernah memangkas factory stream; `ytm_resolve_audio` di Rust kini menguji semua kandidat audio (`audio/mp4` → `audio/webm` → `hlsManifestUrl` → progresif) lewat `collect_audio_candidates()`, dan `fetchJsonWithTimeout()` kini melewati Rust `http_get_json` bebas CORS untuk fallback Piped/Invidious.
+- **Mesin Pencarian Cerdas Anti-Typo & Multi-Sumber (`src/lib/search/smartSearch.ts`, `SearchView.svelte`, `library.svelte.ts`)**: Menambahkan normalisasi teks + jarak edit Damerau-Levenshtein terbatas (`tuluuus` → `tulus`, `tlusu` → `tulus`) sehingga hasil pencarian tetap akurat walau ada salah ketik; tab **Semua** kini selalu menempatkan hasil paling akurat di posisi #1 sekaligus menggabungkan hasil relevan dari YouTube Music, Audius, Katalog/Deezer, Archive, dan Lokal secara seimbang.
+- **Populer Dicari Dinamis & Varian Filter Penuh (`SearchView.svelte`, `library.svelte.ts`)**: Chip **Populer Dicari** kini dihasilkan dinamis dari region aktif, riwayat dengar lokal, dan genre favorit pengguna; menambahkan filter sumber **Katalog** & **Archive** (auto-fetch saat dipilih) serta opsi urutkan **A–Z** dengan paritas penuh i18n (`id` & `en`).
+- **Feed Beranda Gabungan & Algoritma Personalisasi Lokal v2 (`library.svelte.ts`, `services.ts`)**: Bagian utama Beranda kini menggabungkan lagu penuh YouTube Music + Audius secara cerdas (rasio 3:1 setelah top hits), dan `rankTracksByAlgorithm()` ditingkatkan dengan peluruhan waktu eksponensial riwayat (`0.92^idx`), ekstraksi artis dari lagu Favorit, serta anti-clustering agar artis yang sama tidak menumpuk berurutan.
+
 ## [6.18.0] - 2026-11-19
 
 ### Fixed (Forensic Root-Cause Fix: True Uninterrupted YouTube Music Background Playback on App Close & Screen Off)

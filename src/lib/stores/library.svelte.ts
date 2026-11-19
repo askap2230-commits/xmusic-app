@@ -2,6 +2,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { engine } from '#lib/audio/engine.svelte.ts';
+import {
+  blendAndRankSearchResults,
+  buildDynamicTrendingQueries,
+  filterLocalTracksFuzzy,
+  normalizeSearchText
+} from '#lib/search/smartSearch.ts';
 import { i18n } from '#lib/i18n/index.svelte.ts';
 import {
   fetchArchiveAudioSearch,
@@ -62,8 +68,8 @@ class AppStore {
   searchQuery = $state<string>('');
   eraFilter = $state<string>('all');
   fullOnlyFilter = $state<boolean>(false);
-  searchSourceFilter = $state<'all' | 'youtube' | 'audius' | 'local'>('all');
-  searchSort = $state<'relevant' | 'newest' | 'longest'>('relevant');
+  searchSourceFilter = $state<'all' | 'youtube' | 'audius' | 'catalog' | 'archive' | 'local'>('all');
+  searchSort = $state<'relevant' | 'newest' | 'longest' | 'alpha'>('relevant');
   searchVisibleCount = $state<number>(12);
   searchLoadingMore = $state<boolean>(false);
   private searchArchiveLoaded = false;
@@ -104,7 +110,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '6.18.0',
+    version: '6.19.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
@@ -165,14 +171,55 @@ class AppStore {
     return this.spotifyChartCache[this.activeSpotifyChartTitle] || [];
   }
 
+  get dynamicTrendingQueries(): string[] {
+    return buildDynamicTrendingQueries(this.algoConfig, engine.history, this.recentSearches);
+  }
+
   get rankedYtFeed(): Track[] {
-    return rankTracksByAlgorithm(
+    const ytRanked = rankTracksByAlgorithm(
       this.ytTracks,
       this.algoConfig,
       this.likedIds,
       engine.history,
       this.refreshSeed
     );
+    const audiusFull = rankTracksByAlgorithm(
+      this.trendingTracks.filter((t) => !t.isPreview && Boolean(t.url)),
+      this.algoConfig,
+      this.likedIds,
+      engine.history,
+      this.refreshSeed
+    ).slice(0, 6);
+
+    if (ytRanked.length === 0) return audiusFull;
+    if (audiusFull.length === 0) return ytRanked;
+
+    // Smartly blend full-length Audius discoveries into the primary YouTube Music Home feed (3:1 after top 2)
+    const blended: Track[] = [];
+    const seen = new Set<string>();
+    const pushUnique = (t: Track): boolean => {
+      const key = `${normalizeSearchText(t.title)}__${normalizeSearchText(t.artist)}`;
+      if (seen.has(t.id) || seen.has(key)) return false;
+      seen.add(t.id);
+      seen.add(key);
+      blended.push(t);
+      return true;
+    };
+
+    let aIdx = 0;
+    let ytCount = 0;
+    for (const yt of ytRanked) {
+      if (pushUnique(yt)) {
+        ytCount += 1;
+        if (ytCount >= 2 && ytCount % 3 === 0 && aIdx < audiusFull.length) {
+          while (aIdx < audiusFull.length && !pushUnique(audiusFull[aIdx])) {
+            aIdx += 1;
+          }
+          aIdx += 1;
+        }
+      }
+    }
+    return blended;
   }
 
   get isDark(): boolean {
@@ -219,6 +266,9 @@ class AppStore {
     }
     if (this.searchSort === 'longest') {
       return [...list].sort((a, b) => (b.dur || 0) - (a.dur || 0));
+    }
+    if (this.searchSort === 'alpha') {
+      return [...list].sort((a, b) => (a.title || '').localeCompare(b.title || ''));
     }
     return list;
   }
@@ -1034,14 +1084,9 @@ class AppStore {
     // Progressive non-blocking staged search: each source streams in immediately as it finishes!
     this.searchVisibleCount = 12;
     this.searchArchiveLoaded = false;
-    const qLow = trimmed.toLowerCase();
-    const localMatch = this.localTracks.filter(
-      (t) =>
-        t.title?.toLowerCase().includes(qLow) ||
-        t.artist?.toLowerCase().includes(qLow) ||
-        t.album?.toLowerCase().includes(qLow)
-    );
-    this.searchResults = localMatch;
+    const cleanQuery = normalizeSearchText(trimmed) || trimmed;
+    const localMatch = filterLocalTracksFuzzy(this.localTracks, trimmed);
+    this.searchResults = blendAndRankSearchResults(localMatch, trimmed, this.likedIds, engine.history);
 
     if (!this.isOnline) {
       this.searching = false;
@@ -1051,7 +1096,7 @@ class AppStore {
     this.searching = true;
     const searchController = new AbortController();
     this.searchAbort = searchController;
-    const delay = immediate ? 0 : 240;
+    const delay = immediate ? 0 : 220;
 
     this.searchDebounceId = setTimeout(async () => {
       let ytList: Track[] = [];
@@ -1060,26 +1105,28 @@ class AppStore {
 
       const publish = (): void => {
         if (searchController.signal.aborted) return;
-        this.searchResults = this.mergeUniqueTracks(
-          [...localMatch, ...ytList, ...audiusList],
-          catalogList
+        this.searchResults = blendAndRankSearchResults(
+          [...localMatch, ...ytList, ...audiusList, ...catalogList],
+          trimmed,
+          this.likedIds,
+          engine.history
         );
       };
 
-      const ytTask = fetchYtSearch(trimmed).then((res) => {
+      const ytTask = fetchYtSearch(cleanQuery).then((res) => {
         ytList = res;
         publish();
         if (res.length > 0) this.searching = false;
       });
 
-      const audiusTask = fetchSearch(trimmed, 18).then((res) => {
+      const audiusTask = fetchSearch(cleanQuery, 18).then((res) => {
         audiusList = res;
         publish();
         if (res.length > 0) this.searching = false;
       });
 
       const catalogTask = fetchPublicCatalogSearch(
-        trimmed,
+        cleanQuery,
         20,
         searchController.signal,
         this.activeRegionOption.storeCode
@@ -1095,13 +1142,18 @@ class AppStore {
     }, delay);
   }
 
-  setSearchSourceFilter(source: 'all' | 'youtube' | 'audius' | 'local'): void {
+  setSearchSourceFilter(
+    source: 'all' | 'youtube' | 'audius' | 'catalog' | 'archive' | 'local'
+  ): void {
     this.showSuggestions = false;
     this.searchSourceFilter = source;
     this.searchVisibleCount = 12;
+    if (source === 'archive' && !this.searchArchiveLoaded && this.isOnline && this.searchQuery.trim()) {
+      void this.loadMoreSearch();
+    }
   }
 
-  setSearchSort(sort: 'relevant' | 'newest' | 'longest'): void {
+  setSearchSort(sort: 'relevant' | 'newest' | 'longest' | 'alpha'): void {
     this.showSuggestions = false;
     this.searchSort = sort;
   }
@@ -1120,7 +1172,7 @@ class AppStore {
       fetchArchiveAudioSearch(trimmed, 8),
       fetchYtSearch(`${trimmed} official audio`)
     ]);
-    this.searchResults = this.mergeUniqueTracks(this.searchResults, [...extraYt, ...archive]);
+    this.searchResults = blendAndRankSearchResults([...this.searchResults, ...extraYt, ...archive], trimmed, this.likedIds, engine.history);
     this.searchVisibleCount += 12;
     this.searchLoadingMore = false;
     if (archive.length === 0 && extraYt.length === 0) {

@@ -70,6 +70,8 @@ export const en: TranslationDict = {
   'search.genreExplore': 'Browse Genres & Moods',
   'search.fullOnly': 'Full Only',
   'search.sourceAll': 'All',
+  'search.sourceCatalog': 'Catalog',
+  'search.sourceArchive': 'Archive',
   'search.sourceLocal': 'Local',
   'search.allEras': 'All Eras',
   'search.results': 'Results for "{query}" ({count})',
@@ -79,7 +81,8 @@ export const en: TranslationDict = {
   'search.topResult': 'Top Result',
   'search.sortRelevant': 'Relevant',
   'search.sortNewest': 'Newest',
-  'search.sortLongest': 'Full Length',
+  'search.sortLongest': 'Full',
+  'search.sortAlpha': 'A–Z',
   'search.hideSuggestions': 'Hide Suggestions',
   'search.playNow': 'Play',
 

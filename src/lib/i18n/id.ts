@@ -70,6 +70,8 @@ export const id: TranslationDict = {
   'search.genreExplore': 'Telusuri Genre & Suasana',
   'search.fullOnly': 'Hanya Penuh',
   'search.sourceAll': 'Semua',
+  'search.sourceCatalog': 'Katalog',
+  'search.sourceArchive': 'Archive',
   'search.sourceLocal': 'Lokal',
   'search.allEras': 'Semua Era',
   'search.results': 'Hasil "{query}" ({count})',
@@ -79,7 +81,8 @@ export const id: TranslationDict = {
   'search.topResult': 'Hasil Teratas',
   'search.sortRelevant': 'Relevan',
   'search.sortNewest': 'Terbaru',
-  'search.sortLongest': 'Durasi Penuh',
+  'search.sortLongest': 'Penuh',
+  'search.sortAlpha': 'A–Z',
   'search.hideSuggestions': 'Tutup Sugesti',
   'search.playNow': 'Putar',
 

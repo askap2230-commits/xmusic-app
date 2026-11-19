@@ -70,6 +70,8 @@ export type TranslationDict = {
   'search.genreExplore': string;
   'search.fullOnly': string;
   'search.sourceAll': string;
+  'search.sourceCatalog': string;
+  'search.sourceArchive': string;
   'search.sourceLocal': string;
   'search.allEras': string;
   'search.results': string;
@@ -80,6 +82,7 @@ export type TranslationDict = {
   'search.sortRelevant': string;
   'search.sortNewest': string;
   'search.sortLongest': string;
+  'search.sortAlpha': string;
   'search.hideSuggestions': string;
   'search.playNow': string;
 

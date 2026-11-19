@@ -64,7 +64,8 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import org.json.JSONObject
 import java.lang.ref.WeakReference
 
@@ -389,7 +390,6 @@ class XmusicMediaService : Service() {
                 .build()
 
             val player = ExoPlayer.Builder(this)
-                .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
                 .setAudioAttributes(audioAttrs, true)
                 .setHandleAudioBecomingNoisy(true)
                 .setWakeMode(C.WAKE_MODE_NETWORK)
@@ -461,7 +461,13 @@ class XmusicMediaService : Service() {
             })
 
             exoPlayer = player
-            player.setMediaItem(MediaItem.fromUri(url))
+            val mediaItem = MediaItem.fromUri(url)
+            val mediaSource = if (url.contains(".m3u8", ignoreCase = true) || url.contains("/manifest/hls", ignoreCase = true)) {
+                HlsMediaSource.Factory(httpFactory).createMediaSource(mediaItem)
+            } else {
+                ProgressiveMediaSource.Factory(httpFactory).createMediaSource(mediaItem)
+            }
+            player.setMediaSource(mediaSource)
             if (startMs > 1000L) {
                 player.seekTo(startMs)
             }
@@ -1156,6 +1162,8 @@ def patch_proguard_rules() -> None:
     @android.webkit.JavascriptInterface <methods>;
 }
 -keep class com.nys.xmusic.XmusicMediaService { *; }
+-keep class androidx.media3.exoplayer.** { *; }
+-keep class androidx.media3.datasource.** { *; }
 """
     if "AndroidMediaBridge" not in existing:
         with open(pro_path, "w", encoding="utf-8") as fh:

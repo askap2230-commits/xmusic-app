@@ -435,15 +435,7 @@ function getPipedCandidates(): string[] {
 }
 
 async function fetchJsonWithTimeout<T>(url: string, timeoutMs = 3000): Promise<T> {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return (await res.json()) as T;
-  } finally {
-    clearTimeout(id);
-  }
+  return fetchJsonSmart<T>(url, timeoutMs);
 }
 
 async function getHealthyInvidiousInstances(): Promise<string[]> {
@@ -1182,9 +1174,22 @@ export function rankTracksByAlgorithm(
   const artistAffinity = new Map<string, number>();
 
   if (config.personalizeFromHistory) {
-    for (const h of history) {
-      const key = (h.artist || '').toLowerCase().trim();
-      if (key) artistAffinity.set(key, (artistAffinity.get(key) || 0) + 1);
+    // Exponential time-decay weighting: recent plays carry stronger taste signal than older plays
+    history.forEach((h, idx) => {
+      const key = (h.artist || '').split(',')[0].toLowerCase().trim();
+      if (key && key !== 'youtube music' && key !== 'audius') {
+        const decay = Math.pow(0.92, idx);
+        artistAffinity.set(key, (artistAffinity.get(key) || 0) + decay * 1.5);
+      }
+    });
+    // Also extract artist affinity from liked tracks present in the candidate pool
+    for (const t of tracks) {
+      if (likedSet.has(t.id)) {
+        const key = (t.artist || '').split(',')[0].toLowerCase().trim();
+        if (key && key !== 'youtube music' && key !== 'audius') {
+          artistAffinity.set(key, (artistAffinity.get(key) || 0) + 1.8);
+        }
+      }
     }
   }
 
@@ -1195,7 +1200,10 @@ export function rankTracksByAlgorithm(
   const genreTokens = config.preferredGenres.map((g) => g.toLowerCase());
 
   const scored = tracks.map((track, idx) => {
-    let score = Math.max(0, 40 - idx * 0.6); // Preserve regional viral base ordering
+    let score = Math.max(0, 42 - idx * 0.55); // Preserve regional viral base ordering
+
+    // Full-length non-preview quality boost
+    if (!track.isPreview) score += 8;
 
     // Mode-based era & recency weighting
     if (config.mode === 'viral' && track.releaseYear && track.releaseYear >= 2023) {
@@ -1224,15 +1232,15 @@ export function rankTracksByAlgorithm(
 
     // On-device personalization (strictly opt-in & local)
     if (config.personalizeFromHistory) {
-      const artistKey = (track.artist || '').toLowerCase().trim();
+      const artistKey = (track.artist || '').split(',')[0].toLowerCase().trim();
       const affinity = artistAffinity.get(artistKey) || 0;
-      if (affinity > 0) score += Math.min(20, affinity * 6);
-      if (likedSet.has(track.id)) score += config.mode === 'discovery' ? -8 : 14;
+      if (affinity > 0) score += Math.min(26, affinity * 6.5);
+      if (likedSet.has(track.id)) score += config.mode === 'discovery' ? -10 : 15;
     }
 
     // Discovery mode penalizes recently played tracks to surface fresh music
     if (config.mode === 'discovery' && recentIds.has(track.id)) {
-      score -= 28;
+      score -= 30;
     }
 
     if (refreshSeed > 0) {
@@ -1243,7 +1251,22 @@ export function rankTracksByAlgorithm(
   });
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.map((item) => item.track);
+
+  // Anti-clustering pass: prevent the exact same artist from dominating consecutive slots
+  const diversified: Track[] = [];
+  const deferred: Track[] = [];
+  for (const item of scored) {
+    const prevArtist = diversified.length > 0
+      ? (diversified[diversified.length - 1].artist || '').split(',')[0].toLowerCase().trim()
+      : '';
+    const curArtist = (item.track.artist || '').split(',')[0].toLowerCase().trim();
+    if (prevArtist && curArtist && prevArtist === curArtist && scored.length > 4) {
+      deferred.push(item.track);
+    } else {
+      diversified.push(item.track);
+    }
+  }
+  return [...diversified, ...deferred];
 }
 
 interface ArchiveDoc {
