@@ -23,7 +23,8 @@ const DEFAULT_API_CONFIG: ApiConfig = {
   ytApiKey: '',
   spotifyClientId: '',
   spotifyClientSecret: '',
-  audiusHost: DEFAULT_AUDIUS_BASE
+  audiusHost: DEFAULT_AUDIUS_BASE,
+  pipedInstance: ''
 };
 
 let spotifyTokenCache: { token: string | null; expiresAt: number } = {
@@ -330,32 +331,301 @@ export function ytToTrack(video: any): Track {
   };
 }
 
-export async function fetchYtTrending(region = 'ID'): Promise<Track[]> {
-  const { ytApiKey } = getApiConfig();
-  if (!ytApiKey || (typeof navigator !== 'undefined' && !navigator.onLine)) return [];
+const DEFAULT_PIPED_INSTANCES: string[] = [
+  'https://pipedapi.kavin.rocks',
+  'https://pipedapi-libre.kavin.rocks',
+  'https://api.piped.yt',
+  'https://pipedapi.adminforge.de',
+  'https://piped-api.privacy.com.de',
+  'https://pipedapi.leptons.xyz'
+];
+
+let invidiousCache: { hosts: string[]; fetchedAt: number } = { hosts: [], fetchedAt: 0 };
+const ytAudioStreamCache = new Map<string, string>();
+
+function getPipedCandidates(): string[] {
+  const custom = (getApiConfig().pipedInstance || '').trim().replace(/\/$/, '');
+  return custom ? [custom, ...DEFAULT_PIPED_INSTANCES.filter((h) => h !== custom)] : DEFAULT_PIPED_INSTANCES;
+}
+
+async function fetchWithTimeout(url: string, timeoutMs = 4500): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(
-      `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&videoCategoryId=10&regionCode=${region}&maxResults=24&key=${ytApiKey}`
-    );
-    const data = (await res.json()) as { items?: unknown[] };
-    return (data.items || []).map(ytToTrack);
-  } catch {
-    return [];
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(id);
   }
 }
 
-export async function fetchYtSearch(query: string): Promise<Track[]> {
-  const { ytApiKey } = getApiConfig();
-  if (!ytApiKey || (typeof navigator !== 'undefined' && !navigator.onLine)) return [];
-  try {
-    const res = await fetch(
-      `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=20&q=${encodeURIComponent(query)}&key=${ytApiKey}`
-    );
-    const data = (await res.json()) as { items?: unknown[] };
-    return (data.items || []).map(ytToTrack);
-  } catch {
-    return [];
+async function getHealthyInvidiousInstances(): Promise<string[]> {
+  if (invidiousCache.hosts.length > 0 && Date.now() - invidiousCache.fetchedAt < 900_000) {
+    return invidiousCache.hosts;
   }
+  try {
+    const res = await fetchWithTimeout('https://api.invidious.io/instances.json?sort_by=health', 4000);
+    if (res.ok) {
+      const list = (await res.json()) as Array<[string, { type?: string; api?: boolean; uri?: string }]>;
+      const hosts = list
+        .filter((entry) => entry?.[1]?.type === 'https' && entry?.[1]?.api && entry?.[1]?.uri)
+        .map((entry) => String(entry[1].uri).replace(/\/$/, ''))
+        .slice(0, 5);
+      if (hosts.length > 0) {
+        invidiousCache = { hosts, fetchedAt: Date.now() };
+        return hosts;
+      }
+    }
+  } catch {
+    // Ignore directory fetch failure
+  }
+  return invidiousCache.hosts;
+}
+
+interface PipedItem {
+  url?: string;
+  title?: string;
+  uploaderName?: string;
+  thumbnail?: string;
+  duration?: number;
+}
+
+function pipedItemToTrack(item: PipedItem): Track | null {
+  const rawUrl = String(item.url || '');
+  const match = rawUrl.match(/v=([A-Za-z0-9_-]{11})/);
+  const videoId = match ? match[1] : '';
+  if (!videoId) return null;
+  const dur = Number(item.duration) || 0;
+  return {
+    id: `yt_${videoId}`,
+    title: item.title || 'YouTube Music',
+    artist: String(item.uploaderName || 'YouTube Music').replace(/ - Topic$/, ''),
+    album: 'YouTube Music (FOSS)',
+    dur: dur > 0 ? dur : 0,
+    isPreview: false,
+    c1: '#dc2626',
+    c2: '#2b1014',
+    imageUrl: item.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+    videoId,
+    source: 'youtube',
+    artistPhoto: null
+  };
+}
+
+interface InvidiousItem {
+  videoId?: string;
+  title?: string;
+  author?: string;
+  lengthSeconds?: number;
+  videoThumbnails?: Array<{ url?: string; quality?: string }>;
+}
+
+function invidiousItemToTrack(item: InvidiousItem): Track | null {
+  if (!item.videoId) return null;
+  const thumb =
+    item.videoThumbnails?.find((t) => t.quality === 'high' || t.quality === 'medium')?.url ||
+    `https://img.youtube.com/vi/${item.videoId}/hqdefault.jpg`;
+  return {
+    id: `yt_${item.videoId}`,
+    title: item.title || 'YouTube Music',
+    artist: String(item.author || 'YouTube Music').replace(/ - Topic$/, ''),
+    album: 'YouTube Music (FOSS)',
+    dur: Number(item.lengthSeconds) || 0,
+    isPreview: false,
+    c1: '#dc2626',
+    c2: '#2b1014',
+    imageUrl: thumb,
+    videoId: item.videoId,
+    source: 'youtube',
+    artistPhoto: null
+  };
+}
+
+/**
+ * Resolves a direct high-bitrate audio stream URL for a YouTube videoId via FOSS Piped/Invidious APIs
+ * (enables native Web Audio 5-Band EQ + Android Lockscreen Media Notification with zero API key).
+ */
+export async function resolveYoutubeAudioStream(videoId: string): Promise<string | null> {
+  if (!videoId || (typeof navigator !== 'undefined' && !navigator.onLine)) return null;
+  const cached = ytAudioStreamCache.get(videoId);
+  if (cached) return cached;
+
+  for (const host of getPipedCandidates().slice(0, 4)) {
+    try {
+      const res = await fetchWithTimeout(`${host}/streams/${encodeURIComponent(videoId)}`, 4200);
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        audioStreams?: Array<{ url?: string; mimeType?: string; bitrate?: number }>;
+      };
+      const streams = (data.audioStreams || []).filter((s) => Boolean(s.url));
+      if (streams.length === 0) continue;
+      // Prefer M4A/MP4 audio for universal Android WebView compatibility, highest bitrate first
+      streams.sort((a, b) => {
+        const aM4a = String(a.mimeType || '').includes('mp4') ? 1 : 0;
+        const bM4a = String(b.mimeType || '').includes('mp4') ? 1 : 0;
+        if (aM4a !== bM4a) return bM4a - aM4a;
+        return (Number(b.bitrate) || 0) - (Number(a.bitrate) || 0);
+      });
+      const bestUrl = streams[0].url;
+      if (bestUrl) {
+        ytAudioStreamCache.set(videoId, bestUrl);
+        return bestUrl;
+      }
+    } catch {
+      // Failover to next Piped instance
+    }
+  }
+
+  const invHosts = await getHealthyInvidiousInstances();
+  for (const host of invHosts.slice(0, 3)) {
+    try {
+      const res = await fetchWithTimeout(`${host}/api/v1/videos/${encodeURIComponent(videoId)}`, 4200);
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        adaptiveFormats?: Array<{ url?: string; type?: string; bitrate?: string | number }>;
+      };
+      const audioOnly = (data.adaptiveFormats || []).filter(
+        (f) => f.url && String(f.type || '').startsWith('audio/')
+      );
+      if (audioOnly.length === 0) continue;
+      audioOnly.sort((a, b) => (Number(b.bitrate) || 0) - (Number(a.bitrate) || 0));
+      const bestUrl = audioOnly[0].url;
+      if (bestUrl) {
+        ytAudioStreamCache.set(videoId, bestUrl);
+        return bestUrl;
+      }
+    } catch {
+      // Failover to next Invidious instance
+    }
+  }
+  return null;
+}
+
+/**
+ * Fetches regional trending YouTube Music (uses optional YouTube API key if set, otherwise FOSS Piped/Invidious zero-API-key).
+ */
+export async function fetchYtTrending(region = 'ID'): Promise<Track[]> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
+  const { ytApiKey } = getApiConfig();
+  const safeRegion = /^[A-Z]{2}$/.test(region) ? region : 'ID';
+
+  if (ytApiKey) {
+    try {
+      const res = await fetchWithTimeout(
+        `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&videoCategoryId=10&regionCode=${safeRegion}&maxResults=24&key=${ytApiKey}`,
+        5000
+      );
+      if (res.ok) {
+        const data = (await res.json()) as { items?: unknown[] };
+        const items = (data.items || []).map(ytToTrack);
+        if (items.length > 0) return items;
+      }
+    } catch {
+      // Fall through to FOSS Piped/Invidious
+    }
+  }
+
+  for (const host of getPipedCandidates().slice(0, 4)) {
+    try {
+      const res = await fetchWithTimeout(`${host}/trending?region=${safeRegion}`, 4200);
+      if (!res.ok) continue;
+      const data = (await res.json()) as PipedItem[];
+      if (Array.isArray(data) && data.length > 0) {
+        const tracks = data
+          .map(pipedItemToTrack)
+          .filter((t): t is Track => Boolean(t && t.dur >= 60 && t.dur <= 900))
+          .slice(0, 20);
+        if (tracks.length > 0) return tracks;
+      }
+    } catch {
+      // Failover to next Piped instance
+    }
+  }
+
+  const invHosts = await getHealthyInvidiousInstances();
+  for (const host of invHosts.slice(0, 3)) {
+    try {
+      const res = await fetchWithTimeout(
+        `${host}/api/v1/trending?type=Music&region=${safeRegion}`,
+        4200
+      );
+      if (!res.ok) continue;
+      const data = (await res.json()) as InvidiousItem[];
+      if (Array.isArray(data) && data.length > 0) {
+        const tracks = data
+          .map(invidiousItemToTrack)
+          .filter((t): t is Track => Boolean(t))
+          .slice(0, 20);
+        if (tracks.length > 0) return tracks;
+      }
+    } catch {
+      // Failover to next Invidious instance
+    }
+  }
+  return [];
+}
+
+/**
+ * Searches full-length YouTube Music tracks (uses optional YouTube API key if set, otherwise FOSS Piped/Invidious zero-API-key).
+ */
+export async function fetchYtSearch(query: string): Promise<Track[]> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
+  const clean = query.trim();
+  if (!clean) return [];
+  const { ytApiKey } = getApiConfig();
+
+  if (ytApiKey) {
+    try {
+      const res = await fetchWithTimeout(
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=20&q=${encodeURIComponent(clean)}&key=${ytApiKey}`,
+        5000
+      );
+      if (res.ok) {
+        const data = (await res.json()) as { items?: unknown[] };
+        const items = (data.items || []).map(ytToTrack);
+        if (items.length > 0) return items;
+      }
+    } catch {
+      // Fall through to FOSS Piped/Invidious
+    }
+  }
+
+  for (const host of getPipedCandidates().slice(0, 4)) {
+    try {
+      const res = await fetchWithTimeout(
+        `${host}/search?q=${encodeURIComponent(clean)}&filter=music_songs`,
+        4200
+      );
+      if (!res.ok) continue;
+      const data = (await res.json()) as { items?: PipedItem[] };
+      const tracks = (data.items || [])
+        .map(pipedItemToTrack)
+        .filter((t): t is Track => Boolean(t))
+        .slice(0, 20);
+      if (tracks.length > 0) return tracks;
+    } catch {
+      // Failover to next Piped instance
+    }
+  }
+
+  const invHosts = await getHealthyInvidiousInstances();
+  for (const host of invHosts.slice(0, 3)) {
+    try {
+      const res = await fetchWithTimeout(
+        `${host}/api/v1/search?q=${encodeURIComponent(clean + ' audio')}&type=video`,
+        4200
+      );
+      if (!res.ok) continue;
+      const data = (await res.json()) as InvidiousItem[];
+      const tracks = (data || [])
+        .map(invidiousItemToTrack)
+        .filter((t): t is Track => Boolean(t))
+        .slice(0, 18);
+      if (tracks.length > 0) return tracks;
+    } catch {
+      // Failover to next Invidious instance
+    }
+  }
+  return [];
 }
 
 export function extractYouTubeId(url: string): string {
@@ -717,4 +987,85 @@ export function rankTracksByAlgorithm(
 
   scored.sort((a, b) => b.score - a.score);
   return scored.map((item) => item.track);
+}
+
+interface ArchiveDoc {
+  identifier?: string;
+  title?: string;
+  creator?: string | string[];
+  year?: string | number;
+  date?: string;
+}
+
+/**
+ * Searches Internet Archive Audio (100% legal, free, full-length public domain & classic recordings).
+ */
+export async function fetchArchiveAudioSearch(
+  query: string,
+  limit = 10,
+  signal?: AbortSignal
+): Promise<Track[]> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
+  const clean = query.trim();
+  if (!clean) return [];
+  try {
+    const q = `(${clean}) AND mediatype:(audio) AND format:(VBR MP3)`;
+    const url =
+      `https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}` +
+      `&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=year&fl[]=date` +
+      `&sort[]=downloads+desc&rows=${limit}&page=1&output=json`;
+    const res = await fetch(url, { signal });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { response?: { docs?: ArchiveDoc[] } };
+    const docs = data.response?.docs || [];
+    const tracks: Track[] = [];
+
+    for (const doc of docs.slice(0, 6)) {
+      if (!doc.identifier || signal?.aborted) continue;
+      try {
+        const metaRes = await fetch(`https://archive.org/metadata/${encodeURIComponent(doc.identifier)}/files`, {
+          signal
+        });
+        if (!metaRes.ok) continue;
+        const metaData = (await metaRes.json()) as {
+          result?: Array<{ name?: string; format?: string; length?: string }>;
+        };
+        const mp3 = (metaData.result || []).find(
+          (f) => f.name && /\.mp3$/i.test(f.name) && !f.name.includes('_64kb')
+        );
+        if (!mp3?.name) continue;
+
+        const rawYear = doc.year ?? (doc.date ? String(doc.date).slice(0, 4) : undefined);
+        const parsedYear = rawYear ? Number(rawYear) : undefined;
+        const releaseYear =
+          parsedYear && Number.isFinite(parsedYear) && parsedYear >= 1900 && parsedYear <= 2026
+            ? parsedYear
+            : undefined;
+        const creator = Array.isArray(doc.creator)
+          ? doc.creator.join(', ')
+          : doc.creator || 'Internet Archive';
+        const durSec = mp3.length ? Math.round(Number(mp3.length) || 0) : 0;
+
+        tracks.push({
+          id: `archive_${doc.identifier}`,
+          title: doc.title || doc.identifier,
+          artist: creator,
+          album: 'Internet Archive (Full)',
+          dur: durSec,
+          releaseYear,
+          isPreview: false,
+          c1: '#248a3d',
+          c2: '#0b2919',
+          imageUrl: `https://archive.org/services/img/${encodeURIComponent(doc.identifier)}`,
+          url: `https://archive.org/download/${encodeURIComponent(doc.identifier)}/${encodeURIComponent(mp3.name)}`,
+          source: 'archive'
+        });
+      } catch {
+        // Skip unreachable archive item
+      }
+    }
+    return tracks;
+  } catch {
+    return [];
+  }
 }

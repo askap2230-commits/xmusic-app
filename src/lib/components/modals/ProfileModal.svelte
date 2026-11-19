@@ -13,6 +13,7 @@
   let spotifyClientSecret = $state<string>('');
   let rapidApiKey = $state<string>('');
   let ytApiKey = $state<string>('');
+  let pipedInstance = $state<string>('');
 
   $effect(() => {
     if (appStore.editProfileOpen) {
@@ -24,6 +25,7 @@
       spotifyClientSecret = appStore.apiConfig.spotifyClientSecret || '';
       rapidApiKey = appStore.apiConfig.rapidApiKey || '';
       ytApiKey = appStore.apiConfig.ytApiKey || '';
+      pipedInstance = appStore.apiConfig.pipedInstance || '';
     }
   });
 
@@ -41,7 +43,7 @@
     event.preventDefault();
     appStore.saveProfileSettings(
       { name, handle, bio, image: imagePreview },
-      { spotifyClientId, spotifyClientSecret, rapidApiKey, ytApiKey }
+      { spotifyClientId, spotifyClientSecret, rapidApiKey, ytApiKey, pipedInstance }
     );
   }
 </script>
@@ -122,6 +124,13 @@
           placeholder="AIzaSy..."
           value={ytApiKey}
           onInput={(e: Event) => (ytApiKey = (e.target as HTMLInputElement).value)}
+        />
+        <ListInput
+          label="Custom Piped Instance URL (Opsional)"
+          type="url"
+          placeholder="https://pipedapi.kavin.rocks (otomatis jika kosong)"
+          value={pipedInstance}
+          onInput={(e: Event) => (pipedInstance = (e.target as HTMLInputElement).value)}
         />
       </List>
 

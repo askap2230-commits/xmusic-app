@@ -1,7 +1,7 @@
 // Copyright 2026 Azka Putra
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-export type TrackSource = 'local' | 'audius' | 'catalog' | 'youtube' | 'spotify';
+export type TrackSource = 'local' | 'audius' | 'archive' | 'catalog' | 'youtube' | 'spotify';
 export type RepeatMode = 'off' | 'all' | 'one';
 export type ThemeMode = 'system' | 'light' | 'dark';
 export type AppView = 'home' | 'search' | 'library' | 'eq' | 'profile';
@@ -92,6 +92,7 @@ export interface ApiConfig {
   spotifyClientId: string;
   spotifyClientSecret: string;
   audiusHost: string;
+  pipedInstance: string;
 }
 
 export interface RuntimeInfo {

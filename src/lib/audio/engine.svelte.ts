@@ -17,6 +17,7 @@
  *   Synchronizes track metadata, playback state, and position to both W3C MediaSession API
  *   and the native Android Foreground MediaStyle Service bridge (window.XmusicAndroidMedia).
  */
+import { resolveYoutubeAudioStream } from '#lib/api/services.ts';
 import { EQ_BANDS, EQ_PRESETS } from '#lib/data/presets.ts';
 import { loadJSON, saveJSON } from '#lib/db/storage.ts';
 import type { RepeatMode, Track } from '#lib/types/music.ts';
@@ -457,7 +458,7 @@ class AudioEngine {
       this.queue = [track, ...this.queue];
     }
 
-    if (track.videoId || track.spotifyId) {
+    if (track.spotifyId) {
       this.pause();
       this.current = track;
       this.position = 0;
@@ -465,6 +466,18 @@ class AudioEngine {
       this.recordHistory(track);
       this.updateMediaSessionMeta();
       this.syncNativeAndroidNotification();
+      return;
+    }
+
+    if (track.videoId && !track.url) {
+      this.pause();
+      this.current = track;
+      this.position = 0;
+      this.duration = track.dur || 0;
+      this.recordHistory(track);
+      this.updateMediaSessionMeta();
+      this.syncNativeAndroidNotification();
+      void this.resolveAndPlayYoutubeAudio(track);
       return;
     }
 
@@ -503,12 +516,36 @@ class AudioEngine {
     this.syncNativeAndroidNotification();
   }
 
+  private async resolveAndPlayYoutubeAudio(track: Track): Promise<void> {
+    if (!track.videoId) return;
+    const streamUrl = await resolveYoutubeAudioStream(track.videoId);
+    if (!streamUrl || this.current?.id !== track.id) return;
+    const upgraded: Track = { ...track, url: streamUrl };
+    this.current = upgraded;
+    this.ensureWebAudio();
+    if (this.audioCtx?.state === 'suspended') {
+      this.audioCtx.resume().catch(() => {});
+    }
+    if (this.audioEl) {
+      this.audioEl.crossOrigin = 'anonymous';
+      this.audioEl.src = streamUrl;
+      this.audioEl.load();
+      this.applyPlaybackRate();
+      this.audioEl.play().catch(() => {
+        // If direct stream fails, TrackModal still provides the YouTube embed fallback
+        if (this.current?.id === track.id) {
+          this.current = { ...track, url: undefined };
+        }
+      });
+    }
+  }
+
   togglePlay(): void {
     if (!this.current) {
       if (this.queue.length > 0) this.playTrack(this.queue[0]);
       return;
     }
-    if (this.current.videoId || this.current.spotifyId) return;
+    if ((this.current.videoId && !this.current.url) || this.current.spotifyId) return;
     if (this.playing) {
       this.pause();
     } else if (this.audioEl) {

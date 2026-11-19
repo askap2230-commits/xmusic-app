@@ -3,6 +3,7 @@
 
 import { engine } from '#lib/audio/engine.svelte.ts';
 import {
+  fetchArchiveAudioSearch,
   fetchPublicCatalogSearch,
   fetchRegionalViralFeed,
   rankTracksByAlgorithm,
@@ -58,6 +59,7 @@ class AppStore {
   libFilter = $state<string>('local');
   searchQuery = $state<string>('');
   eraFilter = $state<string>('all');
+  fullOnlyFilter = $state<boolean>(false);
   searching = $state<boolean>(false);
   suggesting = $state<boolean>(false);
   showSuggestions = $state<boolean>(false);
@@ -77,7 +79,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '5.2.0',
+    version: '5.4.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
@@ -154,10 +156,14 @@ class AppStore {
   }
 
   get filteredSearchResults(): Track[] {
-    if (this.eraFilter === 'all') return this.searchResults;
+    let list = this.searchResults;
+    if (this.fullOnlyFilter) {
+      list = list.filter((t) => !t.isPreview);
+    }
+    if (this.eraFilter === 'all') return list;
     const era = ERA_PRESETS.find((e) => e.id === this.eraFilter);
-    if (!era) return this.searchResults;
-    return this.searchResults.filter(
+    if (!era) return list;
+    return list.filter(
       (t) =>
         typeof t.releaseYear === 'number' &&
         t.releaseYear >= era.minYear &&
@@ -662,6 +668,37 @@ class AppStore {
     return out;
   }
 
+  toggleFullOnly(): void {
+    this.fullOnlyFilter = !this.fullOnlyFilter;
+  }
+
+  async findFullVersion(track: Track): Promise<void> {
+    if (!this.isOnline) {
+      this.showToast('Mode Offline: tidak dapat mencari versi penuh.');
+      return;
+    }
+    const query = `${track.title} ${track.artist}`.trim();
+    this.showToast(`Mencari versi penuh "${track.title}"...`);
+    const [yt, audius, archive] = await Promise.all([
+      fetchYtSearch(query),
+      fetchSearch(query, 8),
+      fetchArchiveAudioSearch(query, 5)
+    ]);
+    const fullCandidates = [...yt, ...audius, ...archive];
+    if (fullCandidates.length > 0) {
+      const best = fullCandidates[0];
+      engine.playTrack(best, [...fullCandidates, ...this.allTracks]);
+      this.openTrackModal(best, false);
+      this.showToast(`Memutar versi penuh: ${best.title}`);
+      return;
+    }
+    // Fallback: open Search view filtered to full-length results
+    this.closeTrackModal();
+    this.fullOnlyFilter = true;
+    this.updateSearch(query, true);
+    this.showToast('Menampilkan hasil pencarian lagu durasi penuh (YouTube FOSS / Audius / Archive).');
+  }
+
   setEraFilter(eraId: string): void {
     this.eraFilter = eraId;
   }
@@ -751,13 +788,14 @@ class AppStore {
         this.searching = false;
         return;
       }
-      const [catalog, audius, youtube] = await Promise.all([
-        fetchPublicCatalogSearch(trimmed, 30, searchController.signal, this.activeRegionOption.storeCode),
-        fetchSearch(trimmed, 18),
-        fetchYtSearch(trimmed)
+      const [youtube, audius, archive, catalog] = await Promise.all([
+        fetchYtSearch(trimmed),
+        fetchSearch(trimmed, 20),
+        fetchArchiveAudioSearch(trimmed, 8, searchController.signal),
+        fetchPublicCatalogSearch(trimmed, 24, searchController.signal, this.activeRegionOption.storeCode)
       ]);
       if (searchController.signal.aborted) return;
-      this.searchResults = [...localMatch, ...catalog, ...youtube, ...audius];
+      this.searchResults = [...localMatch, ...youtube, ...audius, ...archive, ...catalog];
       this.searching = false;
       this.recordRecentSearch(trimmed);
     }, delay);

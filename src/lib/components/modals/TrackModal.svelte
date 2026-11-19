@@ -121,7 +121,7 @@
                 class="!m-0 rounded-3xl border border-black/10 shadow-xl dark:border-white/10"
               >
                 <div class="flex flex-col">
-                  {#if track.videoId}
+                  {#if track.videoId && !track.url}
                     {#if appStore.isOnline && appStore.networkReachable}
                       <div class="mb-4 aspect-video w-full overflow-hidden rounded-2xl bg-black">
                         <iframe
@@ -208,7 +208,7 @@
                     </button>
                   </div>
 
-                  {#if !track.videoId && !track.spotifyId}
+                  {#if (!track.videoId || Boolean(track.url)) && !track.spotifyId}
                     <div class="mt-4 space-y-1">
                       <Range
                         min={0}
@@ -333,6 +333,19 @@
                       Hentikan Lagu
                     </Button>
                   </div>
+
+                  {#if track.isPreview}
+                    <div class="mt-2">
+                      <Button
+                        rounded
+                        small
+                        class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
+                        onclick={() => appStore.findFullVersion(track)}
+                      >
+                        Cari Versi Penuh (YouTube / Audius)
+                      </Button>
+                    </div>
+                  {/if}
 
                   {#if track.videoId}
                     <div class="mt-2">

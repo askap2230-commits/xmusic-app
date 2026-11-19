@@ -245,6 +245,14 @@
     {/snippet}
   </ListItem>
 
+  <ListItem title="YouTube Music FOSS (Piped / Invidious)" subtitle="Streaming penuh & pencarian tanpa API Key">
+    {#snippet after()}
+      <Badge class="bg-[#248a3d] text-white font-bold dark:bg-[#30d158] dark:!text-black">
+        Aktif
+      </Badge>
+    {/snippet}
+  </ListItem>
+
   <ListItem title="Spotify Web API v1" subtitle="Deteksi sampul HD, judul, artis & durasi">
     {#snippet after()}
       <Badge

@@ -194,8 +194,17 @@
     </div>
   </Block>
 {:else}
-  <!-- Decade / Era Filter Chips (1900-2026) -->
+  <!-- Full-Length & Decade / Era Filter Chips (1900-2026) -->
   <Block class="!my-2 flex flex-wrap gap-2">
+    <Chip
+      outline={!appStore.fullOnlyFilter}
+      class="cursor-pointer {appStore.fullOnlyFilter
+        ? '!bg-[#248a3d] !text-white font-semibold dark:!bg-[#30d158] dark:!text-black'
+        : ''}"
+      onclick={() => appStore.toggleFullOnly()}
+    >
+      Hanya Lagu Penuh
+    </Chip>
     <Chip
       outline={appStore.eraFilter !== 'all'}
       class="cursor-pointer {appStore.eraFilter === 'all' ? '!bg-[#007aff] !text-white font-semibold' : ''}"

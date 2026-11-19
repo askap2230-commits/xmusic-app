@@ -83,6 +83,13 @@
                   {getTrackInitial(track.title)}
                 </span>
               {/if}
+              <span
+                class="absolute top-2 left-2 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide {track.isPreview
+                  ? 'bg-[#ff9f0a]/90 text-black'
+                  : 'bg-[#248a3d]/90 text-white'}"
+              >
+                {track.isPreview ? '30d' : 'Full'}
+              </span>
               <span class="absolute bottom-2 left-2 rounded-full bg-black/75 px-2 py-0.5 text-[11px] font-semibold text-white">
                 {track.releaseYear ? `${track.releaseYear} • ` : ''}{track.dur ? formatTime(track.dur) : track.album || 'Stream'}
               </span>

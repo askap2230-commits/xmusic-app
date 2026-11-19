@@ -2,6 +2,22 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [5.4.0] - 2026-11-19
+
+### Added
+- **Zero-API-Key FOSS YouTube Music Engine (Piped + Invidious)**: Integrated multi-instance FOSS YouTube Music search (`filter=music_songs`), regional trending (`/trending?region=...`), and direct high-bitrate audio stream resolution (`/streams/{videoId}` + dynamic Invidious failover via `api.invidious.io`) — works out of the box with **zero Google/YouTube API key**, just like LibreTube and FreeTube.
+- **Native Web Audio EQ & Lockscreen Controls for YouTube Music**: Resolved direct audio streams play natively inside `<audio>` with full 5-Band EQ, mastering limiter, and Android foreground media notification, with automatic fallback to official YouTube Embed if proxy streams are busy.
+- **Custom Piped Instance Setting**: Added optional custom Piped API instance URL in `ProfileModal` and live FOSS status badge in `ProfileView`.
+- **Version Bump**: Upgraded single-source version in `package.json` to `5.4.0` (`Xmusic-v5.4.0-android-<abi>-release.apk`).
+
+## [5.3.0] - 2026-11-19
+
+### Added
+- **Full-Length Audio Prioritization & Internet Archive Source**: Prioritized full-length audio sources (`Local Offline`, `YouTube Music`, `Audius Global`, and newly integrated `Internet Archive Audio` for full-length classic/public-domain tracks) ahead of 30-second public catalog previews.
+- **Transparent `Full` vs `30d` Badges**: Added crisp `Full` (green) and `30d` (amber) duration indicators on every `TrackCard` so users immediately distinguish full-length tracks from 30-second previews.
+- **Filter "Hanya Lagu Penuh" & One-Tap "Cari Versi Penuh"**: Added a `Hanya Lagu Penuh` filter chip in `SearchView` and a one-tap `Cari Versi Penuh (YouTube / Audius)` action button inside `TrackModal` whenever a 30-second preview is opened.
+- **Version Bump**: Upgraded single-source version in `package.json` to `5.3.0` (`Xmusic-v5.3.0-android-<abi>-release.apk`).
+
 ## [5.2.0] - 2026-11-19
 
 ### Added
