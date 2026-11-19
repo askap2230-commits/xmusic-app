@@ -254,6 +254,20 @@ fn pick_best_audio_url(data: &Value) -> Option<String> {
         }
     }
 
+    // Fallback to progressive formats (HTML5 <audio> plays audio track natively with zero video rendering)
+    if let Some(formats) = data
+        .pointer("/streamingData/formats")
+        .and_then(Value::as_array)
+    {
+        for fmt in formats {
+            if let Some(url) = fmt.get("url").and_then(Value::as_str) {
+                if url.starts_with("https://") {
+                    return Some(url.to_string());
+                }
+            }
+        }
+    }
+
     if let Some(hls) = data
         .pointer("/streamingData/hlsManifestUrl")
         .and_then(Value::as_str)
@@ -264,6 +278,30 @@ fn pick_best_audio_url(data: &Value) -> Option<String> {
     }
 
     None
+}
+
+async fn fetch_visitor_data(client: &reqwest::Client) -> Option<String> {
+    let payload = json!({
+        "context": {
+            "client": {
+                "clientName": "WEB_REMIX",
+                "clientVersion": "1.20260501.01.00",
+                "hl": "en",
+                "gl": "US"
+            }
+        }
+    });
+    let res = client
+        .post("https://music.youtube.com/youtubei/v1/visitor_id?prettyPrint=false")
+        .header("Origin", "https://music.youtube.com")
+        .json(&payload)
+        .send()
+        .await
+        .ok()?;
+    let data: Value = res.json().await.ok()?;
+    data.pointer("/responseContext/visitorData")
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 /// Resolves a direct HTTPS audio stream directly from the user's own device IP using mobile InnerTube clients
@@ -280,7 +318,28 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<String>, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
+    let visitor_data = fetch_visitor_data(&client).await;
+
     let clients = [
+        (
+            "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+            json!({
+                "context": {
+                    "client": {
+                        "clientName": "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
+                        "clientVersion": "2.0",
+                        "hl": "en",
+                        "gl": "US"
+                    },
+                    "thirdParty": {
+                        "embedUrl": "https://www.youtube.com"
+                    }
+                },
+                "videoId": vid,
+                "contentCheckOk": true,
+                "racyCheckOk": true
+            }),
+        ),
         (
             "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
             json!({
@@ -342,13 +401,14 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<String>, String> {
     ];
 
     for (ua, body) in clients {
-        let attempt = client
+        let mut req = client
             .post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
             .header("User-Agent", ua)
-            .header("Origin", "https://www.youtube.com")
-            .json(&body)
-            .send()
-            .await;
+            .header("Origin", "https://www.youtube.com");
+        if let Some(ref vd) = visitor_data {
+            req = req.header("X-Goog-Visitor-Id", vd);
+        }
+        let attempt = req.json(&body).send().await;
 
         if let Ok(res) = attempt {
             if res.status().is_success() {

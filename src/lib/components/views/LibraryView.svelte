@@ -12,6 +12,7 @@
     SegmentedButton
   } from 'konsta/svelte';
   import { engine } from '#lib/audio/engine.svelte.ts';
+  import { i18n } from '#lib/i18n/index.svelte.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
   import { formatTime, getTrackInitial } from '#lib/utils/format.ts';
   import Icon from '../Icon.svelte';
@@ -30,54 +31,61 @@
     appStore.playlists.find((p) => p.id === appStore.libFilter) || null
   );
 
+  const sectionLabel = $derived(
+    activePlaylist
+      ? i18n.t('library.sectionPlaylist', { name: activePlaylist.name })
+      : appStore.libFilter === 'liked'
+        ? i18n.t('library.sectionLiked')
+        : appStore.libFilter === 'history'
+          ? i18n.t('library.sectionHistory')
+          : i18n.t('library.sectionOffline')
+  );
+
   function playAll(shuffled = false): void {
     const list = appStore.filteredLibrary;
     if (list.length === 0) return;
     const queue = shuffled ? [...list].sort(() => Math.random() - 0.5) : [...list];
     engine.playTrack(queue[0], queue);
-    appStore.showToast(
-      shuffled ? `Memutar acak ${queue.length} lagu.` : `Memutar ${queue.length} lagu.`
-    );
   }
 </script>
 
-<!-- Premium iOS Library Header: Main Category Switcher + Quick Actions -->
+<!-- Clean, Zero-Overlap iOS Library Header: Short Single-Line Segmented Labels -->
 <Block strong inset class="space-y-3">
   <Segmented strong rounded>
     <SegmentedButton
       active={appStore.libFilter === 'local'}
       onclick={() => (appStore.libFilter = 'local')}
     >
-      Offline ({appStore.localTracks.length})
+      {i18n.t('library.tabOffline')}
     </SegmentedButton>
     <SegmentedButton
       active={appStore.libFilter === 'liked'}
       onclick={() => (appStore.libFilter = 'liked')}
     >
-      Favorit ({appStore.likedIds.length})
+      {i18n.t('library.tabLiked')}
     </SegmentedButton>
     <SegmentedButton
       active={appStore.libFilter === 'history'}
       onclick={() => (appStore.libFilter = 'history')}
     >
-      Riwayat ({engine.history.length})
+      {i18n.t('library.tabHistory')}
     </SegmentedButton>
   </Segmented>
 
-  <div class="grid grid-cols-2 gap-2">
+  <div class="grid grid-cols-2 gap-2.5">
     <Button rounded small onclick={() => (appStore.uploadModalOpen = true)}>
-      + Upload Audio
+      {i18n.t('library.uploadAudio')}
     </Button>
     <Button tonal rounded small onclick={() => (appStore.playlistModalOpen = true)}>
-      + Buat Playlist
+      {i18n.t('library.createPlaylist')}
     </Button>
   </div>
 </Block>
 
-<!-- Playlists Rail -->
+<!-- Playlists Horizontal Rail (Zero Wrapping Collisions) -->
 {#if appStore.playlists.length > 0}
-  <BlockTitle>Playlist Kamu ({appStore.playlists.length})</BlockTitle>
-  <div class="xmusic-hscroll flex gap-2 px-4 py-1">
+  <BlockTitle>{i18n.t('library.yourPlaylists')} ({appStore.playlists.length})</BlockTitle>
+  <div class="xmusic-hscroll flex items-center gap-2 px-4 py-1">
     {#each appStore.playlists as pl (pl.id)}
       <Chip
         outline={appStore.libFilter !== pl.id}
@@ -92,46 +100,42 @@
   </div>
 {/if}
 
-<!-- Collection Header with Play All, Shuffle, and List/Grid Switcher -->
+<!-- Section Header with Guaranteed Truncation & Non-Colliding Layout Toggle -->
 <BlockTitle class="flex items-center justify-between gap-2">
-  <span class="truncate">
-    {activePlaylist
-      ? `Playlist: ${activePlaylist.name}`
-      : appStore.libFilter === 'liked'
-        ? 'Lagu Favorit'
-        : appStore.libFilter === 'history'
-          ? 'Baru Diputar'
-          : 'Koleksi Offline'} ({appStore.filteredLibrary.length})
+  <span class="min-w-0 flex-1 truncate">
+    {sectionLabel} ({appStore.filteredLibrary.length})
   </span>
   {#if appStore.filteredLibrary.length > 0}
     <Button
       clear
       small
       inline
+      class="shrink-0"
       onclick={() => (layoutMode = layoutMode === 'list' ? 'grid' : 'list')}
     >
-      {layoutMode === 'list' ? 'Grid' : 'Daftar'}
+      {layoutMode === 'list' ? i18n.t('library.viewGrid') : i18n.t('library.viewList')}
     </Button>
   {/if}
 </BlockTitle>
 
 {#if appStore.filteredLibrary.length > 0}
-  <Block class="!my-2 grid grid-cols-2 gap-2">
+  <Block class="!my-2 grid grid-cols-2 gap-2.5">
     <Button rounded small onclick={() => playAll(false)}>
       <span class="inline-flex items-center gap-1.5">
         <Icon name="play" size={14} />
-        <span>Putar Semua</span>
+        <span>{i18n.t('library.playAll')}</span>
       </span>
     </Button>
     <Button tonal rounded small onclick={() => playAll(true)}>
       <span class="inline-flex items-center gap-1.5">
         <Icon name="shuffle" size={14} />
-        <span>Acak</span>
+        <span>{i18n.t('library.shuffle')}</span>
       </span>
     </Button>
   </Block>
 
   {#if layoutMode === 'list'}
+    <!-- Clean Non-Overlapping Konsta iOS List Rows (Zero Nested Buttons!) -->
     <List strong inset class="!my-2">
       {#each visibleTracks as track (track.id)}
         {@const isCurrent = engine.current?.id === track.id}
@@ -139,6 +143,8 @@
           link
           title={track.title}
           subtitle={track.artist}
+          titleWrapClass="min-w-0"
+          class="overflow-hidden"
           onclick={() => {
             engine.playTrack(track, appStore.filteredLibrary);
             appStore.openTrackModal(track, false);
@@ -166,28 +172,15 @@
           {/snippet}
 
           {#snippet after()}
-            <div class="flex items-center gap-1.5">
-              {#if isCurrent && engine.playing}
-                <Badge class="bg-[#007aff] text-white text-[10px]">Diputar</Badge>
-              {:else if track.dur > 0}
-                <span class="text-xs tabular-nums text-black/50 dark:text-white/50">
-                  {formatTime(track.dur)}
-                </span>
-              {/if}
-              {#if track.source === 'local'}
-                <button
-                  type="button"
-                  class="grid h-8 w-8 place-items-center rounded-full bg-black/5 text-black/70 active:scale-95 dark:bg-white/10 dark:text-white/75"
-                  aria-label="Edit {track.title}"
-                  onclick={(e: MouseEvent) => {
-                    e.stopPropagation();
-                    appStore.openEditTrack(track);
-                  }}
-                >
-                  <Icon name="edit" size={14} />
-                </button>
-              {/if}
-            </div>
+            {#if isCurrent && engine.playing}
+              <Badge class="shrink-0 bg-[#007aff] text-white text-[10px]">
+                {i18n.t('library.playing')}
+              </Badge>
+            {:else if track.dur > 0}
+              <span class="shrink-0 text-xs tabular-nums text-black/50 dark:text-white/50">
+                {formatTime(track.dur)}
+              </span>
+            {/if}
           {/snippet}
         </ListItem>
       {/each}
@@ -203,21 +196,21 @@
   {/if}
 
   {#if appStore.filteredLibrary.length > visibleCount}
-    <Block class="flex justify-center !mt-2">
+    <Block class="!mt-2 flex justify-center">
       <Button tonal rounded small inline onclick={() => (visibleCount += 20)}>
-        Muat Lebih Banyak ({appStore.filteredLibrary.length - visibleCount} lagi)
+        {i18n.t('library.moreCount', { count: appStore.filteredLibrary.length - visibleCount })}
       </Button>
     </Block>
   {/if}
 {:else}
   <Block strong inset class="space-y-3 text-center">
-    <h3 class="text-base font-bold text-black dark:text-white">Belum ada lagu di kategori ini</h3>
+    <h3 class="text-base font-bold text-black dark:text-white">{i18n.t('library.emptyTitle')}</h3>
     <p class="text-sm text-black/60 dark:text-white/60">
-      Unggah file MP3/M4A/WAV/FLAC dari perangkatmu atau buat lagu demo synthwave secara instan.
+      {i18n.t('library.emptyDesc')}
     </p>
     <div class="flex flex-wrap justify-center gap-2 pt-1">
       <Button rounded small inline onclick={() => (appStore.uploadModalOpen = true)}>
-        Upload File Audio
+        {i18n.t('home.upload')}
       </Button>
       <Button
         rounded
@@ -226,7 +219,7 @@
         class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
         onclick={() => appStore.createBuiltInSynthDemo()}
       >
-        Buat Lagu Demo Offline
+        {i18n.t('library.createDemo')}
       </Button>
     </div>
   </Block>

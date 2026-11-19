@@ -10,6 +10,7 @@
     SegmentedButton
   } from 'konsta/svelte';
   import { CATEGORIES, ERA_PRESETS, SPOTIFY_CHARTS } from '#lib/data/presets.ts';
+  import { i18n } from '#lib/i18n/index.svelte.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
   import { getTimeGreeting } from '#lib/utils/format.ts';
   import Icon from '../Icon.svelte';
@@ -37,7 +38,7 @@
         {getTimeGreeting()}, {appStore.userProfile.name}
       </div>
       <h2 class="truncate text-xl font-bold tracking-tight text-black dark:text-white">
-        Dengarkan Tanpa Batas
+        {i18n.t('home.headline')}
       </h2>
     </div>
     <Button
@@ -53,7 +54,7 @@
       {:else}
         <span class="inline-flex items-center gap-1.5">
           <Icon name="refresh" size={14} />
-          <span>Segarkan</span>
+          <span>{i18n.t('home.refresh')}</span>
         </span>
       {/if}
     </Button>
@@ -61,7 +62,7 @@
 
   <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
     <Button rounded small onclick={() => (appStore.uploadModalOpen = true)}>
-      Upload Lagu
+      {i18n.t('home.upload')}
     </Button>
     <Button
       rounded
@@ -69,13 +70,13 @@
       class="!bg-[#248a3d] !text-white font-semibold dark:!bg-[#30d158] dark:!text-black"
       onclick={() => appStore.createBuiltInSynthDemo()}
     >
-      Lagu Demo
+      {i18n.t('home.demo')}
     </Button>
     <Button tonal rounded small onclick={() => (appStore.hubModalOpen = true)}>
-      Hub Link
+      {i18n.t('home.hubLink')}
     </Button>
     <Button tonal rounded small onclick={() => (appStore.view = 'profile')}>
-      Algoritma
+      {i18n.t('home.algorithm')}
     </Button>
   </div>
 </Block>
@@ -83,7 +84,7 @@
 <!-- 1. User's Local Offline Collection (0ms Instant) -->
 {#if appStore.localTracks.length > 0}
   <BlockTitle class="flex items-center justify-between">
-    <span>Koleksi Offline ({appStore.localTracks.length})</span>
+    <span>{i18n.t('home.offlineCollection')} ({appStore.localTracks.length})</span>
     <Button
       clear
       small
@@ -93,7 +94,7 @@
         appStore.libFilter = 'local';
       }}
     >
-      Semua
+      {i18n.t('home.all')}
     </Button>
   </BlockTitle>
   <Block>
@@ -117,7 +118,7 @@
     disabled={appStore.ytLoading}
     onclick={() => appStore.refreshYtOnly()}
   >
-    {appStore.ytLoading ? 'Memuat...' : 'Segarkan'}
+    {appStore.ytLoading ? i18n.t('home.loading') : i18n.t('home.refresh')}
   </Button>
 </BlockTitle>
 
@@ -128,18 +129,18 @@
         <Icon name="wifi-off" size={20} />
       </span>
       <div class="min-w-0 flex-1">
-        <div class="text-sm font-bold text-black dark:text-white">Mode Offline Aktif</div>
+        <div class="text-sm font-bold text-black dark:text-white">{i18n.t('home.offlineTitle')}</div>
         <p class="text-xs text-black/65 dark:text-white/65">
-          Hubungkan internet untuk streaming penuh. Koleksi lokal & lagu demo tetap siap diputar offline.
+          {i18n.t('home.offlineDesc')}
         </p>
       </div>
     </div>
     <div class="flex flex-wrap gap-2">
       <Button tonal rounded small inline onclick={() => appStore.refreshOnlineFeeds(true)}>
-        Coba Lagi
+        {i18n.t('home.retry')}
       </Button>
       <Button rounded small inline onclick={() => (appStore.view = 'library')}>
-        Koleksi Offline
+        {i18n.t('home.offlineBtn')}
       </Button>
     </div>
   </Block>
@@ -147,7 +148,7 @@
   <Block>
     <div class="flex items-center gap-3 py-3 text-sm text-black/65 dark:text-white/65" role="status">
       <Preloader class="w-5 h-5" />
-      <span>Memuat YouTube Music {appStore.activeRegionOption.label}...</span>
+      <span>{i18n.t('home.loadingYt', { region: appStore.activeRegionOption.label })}</span>
     </div>
   </Block>
 {:else if appStore.rankedYtFeed.length > 0}
@@ -166,17 +167,17 @@
         disabled={appStore.ytLoadingMore}
         onclick={() => appStore.loadMoreYt()}
       >
-        {appStore.ytLoadingMore ? 'Memuat lagu baru...' : 'Muat Lebih Banyak'}
+        {appStore.ytLoadingMore ? i18n.t('home.loadingMore') : i18n.t('home.loadMore')}
       </Button>
     </div>
   </Block>
 {:else}
   <Block strong inset class="flex items-center justify-between gap-3">
     <span class="text-xs text-black/65 dark:text-white/65">
-      Server YouTube Music publik sedang sibuk.
+      {i18n.t('home.ytBusy')}
     </span>
     <Button tonal rounded small inline onclick={() => appStore.refreshOnlineFeeds(true)}>
-      Coba Lagi
+      {i18n.t('home.retry')}
     </Button>
   </Block>
 {/if}
@@ -184,7 +185,7 @@
 <!-- 3. Full-Length Free Streaming: Audius Global (Independent Progressive Load + Load More) -->
 {#if appStore.isOnline}
   <BlockTitle class="flex items-center justify-between">
-    <span>Streaming Penuh (Audius Global)</span>
+    <span>{i18n.t('home.audiusTitle')}</span>
     <Button
       clear
       small
@@ -192,14 +193,14 @@
       disabled={appStore.audiusLoading}
       onclick={() => appStore.refreshAudiusOnly()}
     >
-      {appStore.audiusLoading ? 'Memuat...' : 'Segarkan'}
+      {appStore.audiusLoading ? i18n.t('home.loading') : i18n.t('home.refresh')}
     </Button>
   </BlockTitle>
   {#if appStore.audiusLoading && appStore.trendingTracks.length === 0}
     <Block>
       <div class="flex items-center gap-3 py-3 text-sm text-black/65 dark:text-white/65" role="status">
         <Preloader class="w-5 h-5" />
-        <span>Memuat Audius Global...</span>
+        <span>{i18n.t('home.loadingAudius')}</span>
       </div>
     </Block>
   {:else if appStore.trendingTracks.length > 0}
@@ -218,7 +219,7 @@
           disabled={appStore.audiusLoadingMore}
           onclick={() => appStore.loadMoreAudius()}
         >
-          {appStore.audiusLoadingMore ? 'Memuat lagu baru...' : 'Muat Lebih Banyak'}
+          {appStore.audiusLoadingMore ? i18n.t('home.loadingMore') : i18n.t('home.loadMore')}
         </Button>
       </div>
     </Block>
@@ -226,7 +227,7 @@
 {/if}
 
 <!-- 4. Clean Compact Quick-Browse Chips (Era 1900-2026 & Genre) -->
-<BlockTitle>Jelajah Era (1900–2026)</BlockTitle>
+<BlockTitle>{i18n.t('home.eraTitle')}</BlockTitle>
 <Block class="flex flex-wrap gap-2">
   {#each ERA_PRESETS as era (era.id)}
     <Chip outline class="cursor-pointer" onclick={() => appStore.exploreEra(era.id)}>
@@ -235,7 +236,7 @@
   {/each}
 </Block>
 
-<BlockTitle>Genre & Suasana</BlockTitle>
+<BlockTitle>{i18n.t('home.genreTitle')}</BlockTitle>
 <Block class="flex flex-wrap gap-2">
   {#each CATEGORIES as cat}
     <Chip outline class="cursor-pointer" onclick={() => appStore.updateSearch(cat.q, true)}>
@@ -245,7 +246,7 @@
 </Block>
 
 <!-- 5. Spotify Popular Charts — Native iOS Segmented Tabs + Instant Cache + Load More (Zero Open/Close Clash!) -->
-<BlockTitle>Chart Populer Spotify</BlockTitle>
+<BlockTitle>{i18n.t('home.spotifyTitle')}</BlockTitle>
 {#if appStore.isOnline}
   <Block class="space-y-3">
     <Segmented strong rounded>
@@ -262,7 +263,7 @@
     {#if appStore.loadingSpotifyChart && appStore.spotifyChartTracks.length === 0}
       <div class="flex items-center gap-3 py-4 text-sm text-black/65 dark:text-white/65" role="status">
         <Preloader class="w-5 h-5" />
-        <span>Memuat {appStore.activeSpotifyChartTitle}...</span>
+        <span>{i18n.t('home.loadingChart', { title: appStore.activeSpotifyChartTitle })}</span>
       </div>
     {:else if appStore.spotifyChartTracks.length > 0}
       <div class="xmusic-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
@@ -279,13 +280,13 @@
           disabled={appStore.spotifyChartLoadingMore}
           onclick={() => appStore.loadMoreSpotifyChart()}
         >
-          {appStore.spotifyChartLoadingMore ? 'Memuat lagu chart...' : 'Muat Lebih Banyak'}
+          {appStore.spotifyChartLoadingMore ? i18n.t('home.loadingMore') : i18n.t('home.loadMore')}
         </Button>
       </div>
     {:else}
       <div class="flex items-center justify-between rounded-2xl border border-black/8 bg-ios-light-surface-1 p-3.5 dark:border-white/10 dark:bg-ios-dark-surface-1">
         <span class="text-xs text-black/65 dark:text-white/65">
-          Gagal memuat {appStore.activeSpotifyChartTitle}.
+          {i18n.t('home.chartFailed', { title: appStore.activeSpotifyChartTitle })}
         </span>
         <Button
           tonal
@@ -294,7 +295,7 @@
           inline
           onclick={() => appStore.selectSpotifyChart(appStore.activeSpotifyChartTitle)}
         >
-          Muat Ulang
+          {i18n.t('home.reload')}
         </Button>
       </div>
     {/if}
@@ -306,9 +307,9 @@
         <Icon name="wifi-off" size={20} />
       </span>
       <div class="min-w-0 flex-1">
-        <div class="text-sm font-bold text-black dark:text-white">Chart Spotify Tidak Tersedia Offline</div>
+        <div class="text-sm font-bold text-black dark:text-white">{i18n.t('home.spotifyOfflineTitle')}</div>
         <p class="text-xs text-black/65 dark:text-white/65">
-          Hubungkan internet untuk memutar Chart Top 50 Indonesia & Global secara langsung.
+          {i18n.t('home.spotifyOfflineDesc')}
         </p>
       </div>
     </div>
@@ -317,12 +318,12 @@
 
 <!-- 6. Bottom Section: 30-Second Public Catalog Previews (with Load More) -->
 {#if appStore.isOnline}
-  <BlockTitle>Pratinjau Katalog 1900–2026 (30d)</BlockTitle>
+  <BlockTitle>{i18n.t('home.catalogTitle')}</BlockTitle>
   {#if appStore.catalogLoading && appStore.recommendedFeed.length === 0}
     <Block>
       <div class="flex items-center gap-3 py-3 text-sm text-black/65 dark:text-white/65" role="status">
         <Preloader class="w-5 h-5" />
-        <span>Memuat katalog 1900–2026...</span>
+        <span>{i18n.t('home.loadingCatalog')}</span>
       </div>
     </Block>
   {:else if appStore.recommendedFeed.length > 0}
@@ -341,7 +342,7 @@
           disabled={appStore.catalogLoadingMore}
           onclick={() => appStore.loadMoreCatalog()}
         >
-          {appStore.catalogLoadingMore ? 'Memuat katalog baru...' : 'Muat Lebih Banyak'}
+          {appStore.catalogLoadingMore ? i18n.t('home.loadingMore') : i18n.t('home.loadMore')}
         </Button>
       </div>
     </Block>

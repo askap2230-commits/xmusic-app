@@ -1,6 +1,6 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import {
     Link,
     Navbar,
@@ -13,6 +13,8 @@
 
   import { engine } from '#lib/audio/engine.svelte.ts';
   import { revokeAllTrackUrls } from '#lib/db/storage.ts';
+  import { i18n } from '#lib/i18n/index.svelte.ts';
+  import type { TranslationKey } from '#lib/i18n/index.svelte.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
   import type { AppView } from '#lib/types/music.ts';
   import { formatTime } from '#lib/utils/format.ts';
@@ -35,28 +37,87 @@
   import TrackModal from '#lib/components/modals/TrackModal.svelte';
   import UploadModal from '#lib/components/modals/UploadModal.svelte';
 
-  const VIEW_TITLES: Record<AppView, string> = {
-    home: 'nys Xmusic',
-    search: 'Cari Musik',
-    library: 'Perpustakaan',
-    eq: 'EQ Studio',
-    profile: 'Profil'
+  const VIEW_TITLE_KEYS: Record<AppView, TranslationKey> = {
+    home: 'nav.title.home',
+    search: 'nav.title.search',
+    library: 'nav.title.library',
+    eq: 'nav.title.eq',
+    profile: 'nav.title.profile'
   };
 
-  const navTitle = $derived(VIEW_TITLES[appStore.view]);
+  const TAB_ORDER: Record<AppView, number> = {
+    home: 0,
+    search: 1,
+    library: 2,
+    eq: 3,
+    profile: 4
+  };
+
+  // Lazy keep-alive tab registry: only Home mounts at startup; visited tabs stay cached for 0.5ms instant switching
+  let mountedViews = $state<Record<AppView, boolean>>({
+    home: true,
+    search: false,
+    library: false,
+    eq: false,
+    profile: false
+  });
+  let navDirection = $state<'left' | 'right'>('right');
+  let lastView: AppView = 'home';
+  const scrollMemory: Record<AppView, number> = {
+    home: 0,
+    search: 0,
+    library: 0,
+    eq: 0,
+    profile: 0
+  };
+
+  const navTitle = $derived(i18n.t(VIEW_TITLE_KEYS[appStore.view]));
   const navSubtitle = $derived(
     engine.sleepMinutes !== 0
-      ? `Sleep Timer: ${engine.sleepMinutes === -1 ? 'Akhir Lagu' : formatTime(engine.sleepRemainingSec)}`
+      ? `${i18n.t('nav.sleepTimerPrefix')}: ${
+          engine.sleepMinutes === -1
+            ? i18n.t('nav.sleepEndOfTrack')
+            : formatTime(engine.sleepRemainingSec)
+        }`
       : undefined
   );
 
+  // Track directional transition & scroll memory whenever appStore.view changes (from Tabbar OR in-app links)
+  $effect(() => {
+    const current = appStore.view;
+    if (!mountedViews[current]) {
+      mountedViews = { ...mountedViews, [current]: true };
+    }
+    if (current !== lastView) {
+      if (typeof window !== 'undefined') {
+        scrollMemory[lastView] = window.scrollY;
+      }
+      navDirection = TAB_ORDER[current] >= TAB_ORDER[lastView] ? 'right' : 'left';
+      lastView = current;
+      void tick().then(() => {
+        if (typeof window !== 'undefined') {
+          window.scrollTo({ top: scrollMemory[current] || 0, behavior: 'instant' });
+        }
+      });
+    }
+  });
+
   function switchTab(next: AppView): void {
     if (appStore.view === next) {
-      if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (typeof window !== 'undefined') {
+        scrollMemory[next] = 0;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
       return;
     }
     appStore.view = next;
-    if (typeof window !== 'undefined') window.scrollTo(0, 0);
+  }
+
+  function paneClass(viewName: AppView): string {
+    if (appStore.view !== viewName) return 'hidden';
+    return navDirection === 'right'
+      ? 'xmusic-tab-pane xmusic-tab-active-right'
+      : 'xmusic-tab-pane xmusic-tab-active-left';
   }
 
   function handlePopState(): void {
@@ -89,10 +150,9 @@
   });
 </script>
 
-<a href="#main-content" class="skip-link">Lewati ke konten utama</a>
+<a href="#main-content" class="skip-link">{i18n.t('nav.skip')}</a>
 
 <Page class={engine.current ? 'pb-48' : 'pb-28'}>
-  <!-- One dedicated single-action iOS glass button per side: zero cramped multi-icon pills -->
   <Navbar
     title={navTitle}
     subtitle={navSubtitle}
@@ -103,7 +163,7 @@
       <Link
         iconOnly
         onclick={() => appStore.toggleTheme()}
-        aria-label={appStore.isDark ? 'Ubah ke Mode Terang' : 'Ubah ke Mode Gelap'}
+        aria-label={appStore.isDark ? i18n.t('nav.themeToLight') : i18n.t('nav.themeToDark')}
       >
         <Icon name={appStore.isDark ? 'sun' : 'moon'} size={20} />
       </Link>
@@ -113,24 +173,42 @@
       <Link
         iconOnly
         onclick={() => (appStore.npDrawerOpen = !appStore.npDrawerOpen)}
-        aria-label="Buka antrean putar dan lirik"
+        aria-label={i18n.t('nav.openQueue')}
       >
         <Icon name="queue" size={20} />
       </Link>
     {/snippet}
   </Navbar>
 
-  <main id="main-content" tabindex="-1" class="mx-auto w-full max-w-6xl">
-    {#if appStore.view === 'home'}
-      <HomeView />
-    {:else if appStore.view === 'search'}
-      <SearchView />
-    {:else if appStore.view === 'library'}
-      <LibraryView />
-    {:else if appStore.view === 'eq'}
-      <EqualizerView />
-    {:else if appStore.view === 'profile'}
-      <ProfileView />
+  <main id="main-content" tabindex="-1" class="mx-auto w-full max-w-6xl overflow-x-clip">
+    {#if mountedViews.home}
+      <section class={paneClass('home')} aria-hidden={appStore.view !== 'home'}>
+        <HomeView />
+      </section>
+    {/if}
+
+    {#if mountedViews.search}
+      <section class={paneClass('search')} aria-hidden={appStore.view !== 'search'}>
+        <SearchView />
+      </section>
+    {/if}
+
+    {#if mountedViews.library}
+      <section class={paneClass('library')} aria-hidden={appStore.view !== 'library'}>
+        <LibraryView />
+      </section>
+    {/if}
+
+    {#if mountedViews.eq}
+      <section class={paneClass('eq')} aria-hidden={appStore.view !== 'eq'}>
+        <EqualizerView />
+      </section>
+    {/if}
+
+    {#if mountedViews.profile}
+      <section class={paneClass('profile')} aria-hidden={appStore.view !== 'profile'}>
+        <ProfileView />
+      </section>
     {/if}
   </main>
 
@@ -140,7 +218,7 @@
     <ToolbarPane>
       <TabbarLink
         active={appStore.view === 'home'}
-        label="Beranda"
+        label={i18n.t('nav.home')}
         onclick={() => switchTab('home')}
       >
         {#snippet icon()}
@@ -150,7 +228,7 @@
 
       <TabbarLink
         active={appStore.view === 'search'}
-        label="Cari"
+        label={i18n.t('nav.search')}
         onclick={() => switchTab('search')}
       >
         {#snippet icon()}
@@ -160,7 +238,7 @@
 
       <TabbarLink
         active={appStore.view === 'library'}
-        label="Pustaka"
+        label={i18n.t('nav.library')}
         onclick={() => switchTab('library')}
       >
         {#snippet icon()}
@@ -170,7 +248,7 @@
 
       <TabbarLink
         active={appStore.view === 'eq'}
-        label="EQ Studio"
+        label={i18n.t('nav.eq')}
         onclick={() => switchTab('eq')}
       >
         {#snippet icon()}
@@ -180,7 +258,7 @@
 
       <TabbarLink
         active={appStore.view === 'profile'}
-        label="Profil"
+        label={i18n.t('nav.profile')}
         onclick={() => switchTab('profile')}
       >
         {#snippet icon()}

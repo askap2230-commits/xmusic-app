@@ -1,6 +1,7 @@
 // Copyright 2026 Azka Putra
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { i18n } from '#lib/i18n/index.svelte.ts';
 import type { ParsedLyricLine } from '#lib/types/music.ts';
 
 /**
@@ -19,10 +20,10 @@ export function formatTime(seconds: number): string {
  */
 export function getTimeGreeting(now: Date = new Date()): string {
   const hour = now.getHours();
-  if (hour < 11) return 'Selamat pagi';
-  if (hour < 15) return 'Selamat siang';
-  if (hour < 19) return 'Selamat sore';
-  return 'Selamat malam';
+  if (hour < 11) return i18n.t('greeting.morning');
+  if (hour < 15) return i18n.t('greeting.afternoon');
+  if (hour < 19) return i18n.t('greeting.evening');
+  return i18n.t('greeting.night');
 }
 
 /**

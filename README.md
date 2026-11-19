@@ -15,7 +15,7 @@
 | Layer | Technology | Standard / Version |
 | :--- | :--- | :--- |
 | Package Manager | `pnpm` | `pnpm@10.12.1` (Node `24` LTS) |
-| UI Library | [Konsta UI Svelte](https://konstaui.com/svelte) | `konsta ^5.8.0` (**iOS Theme absolute**) + `tailwindcss ^4.1.0` |
+| UI Library | [Konsta UI Svelte](https://konstaui.com/svelte) | `konsta ^6.1.0` (**iOS Theme absolute**) + `tailwindcss ^4.1.0` |
 | Frontend | SvelteKit 3 + Svelte 5 Runes + Vite 8 | `@sveltejs/kit ^3.2.0`, `svelte ^5.57.3`, `vite ^8.0.12` |
 | Native Runtime | [Tauri v2](https://v2.tauri.app/blog/tauri-2.12/) | `2.12.x` (Rust `2024`, MSRV `1.90`, `"version": "../package.json"`) |
 | License & Headers | GNU AGPL-3.0-or-later + [Google addlicense](https://github.com/google/addlicense) | `Copyright 2026 Azka Putra` |
@@ -54,5 +54,5 @@ Automatic push builds are **disabled**. Run manually via:
 - **[CI_CD_GUIDE.md](./CI_CD_GUIDE.md)** — Manual GitHub Web UI / CLI build guide, reproducible build verification, and 2026 action versions.
 - **[WCAG_ACCESSIBILITY.md](./WCAG_ACCESSIBILITY.md)** — Strict WCAG 2.2 AA & WebQual 4.0 compliance matrix.
 - **[CONTRIBUTING.md](./CONTRIBUTING.md)** — Code style, `addlicense` workflow, and security policy.
-- **[CHANGELOG.md](./CHANGELOG.md)** — Version history (`v5.8.0`).
+- **[CHANGELOG.md](./CHANGELOG.md)** — Version history (`v6.1.0`).
 - **[LICENSE](./LICENSE)** — GNU AGPL v3.0-or-later (`Copyright 2026 Azka Putra`).

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { engine } from '#lib/audio/engine.svelte.ts';
+import { i18n } from '#lib/i18n/index.svelte.ts';
 import {
   fetchArchiveAudioSearch,
   fetchPublicCatalogSearch,
@@ -102,7 +103,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '5.8.0',
+    version: '6.1.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
@@ -544,6 +545,7 @@ class AppStore {
   }
 
   async bootstrap(): Promise<void> {
+    i18n.init();
     this.initTheme();
     this.initConnectivity();
     engine.init(this.showToast);

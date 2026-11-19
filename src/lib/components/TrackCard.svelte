@@ -3,6 +3,7 @@
   import { Button, Card } from 'konsta/svelte';
   import { engine } from '#lib/audio/engine.svelte.ts';
   import { parseLrcLyrics } from '#lib/api/services.ts';
+  import { i18n } from '#lib/i18n/index.svelte.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
   import type { Track } from '#lib/types/music.ts';
   import { findActiveLyricIndex, formatTime, getTrackInitial } from '#lib/utils/format.ts';
@@ -88,7 +89,7 @@
                   ? 'bg-[#ff9f0a]/90 text-black'
                   : 'bg-[#248a3d]/90 text-white'}"
               >
-                {track.isPreview ? '30d' : 'Full'}
+                {track.isPreview ? i18n.t('common.preview30s') : i18n.t('common.full')}
               </span>
               <span class="absolute bottom-2 left-2 rounded-full bg-black/75 px-2 py-0.5 text-[11px] font-semibold text-white">
                 {track.releaseYear ? `${track.releaseYear} • ` : ''}{track.dur ? formatTime(track.dur) : track.album || 'Stream'}
@@ -190,14 +191,14 @@
             <p class="mt-6 text-center text-xs text-black/60 dark:text-white/65">
               {appStore.fetchingLyrics
                 ? 'Mencari lirik...'
-                : 'Ketuk "Buka Penuh" untuk mencari atau menulis lirik.'}
+                : 'Ketuk "{i18n.t('player.openFull')}" untuk mencari atau menulis lirik.'}
             </p>
           {/if}
         </div>
 
         <div class="mt-2">
           <Button tonal rounded small onclick={() => appStore.openTrackModal(track, true)}>
-            Buka Penuh
+            {i18n.t('player.openFull')}
           </Button>
         </div>
       </Card>

@@ -13,6 +13,7 @@
     Toggle
   } from 'konsta/svelte';
   import { ALGORITHM_GENRES, ERA_PRESETS, REGION_OPTIONS } from '#lib/data/presets.ts';
+  import { i18n } from '#lib/i18n/index.svelte.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
   import { getTrackInitial } from '#lib/utils/format.ts';
 
@@ -38,25 +39,58 @@
     <p class="text-sm text-black/65 dark:text-white/65">{appStore.userProfile.bio}</p>
     <div class="flex flex-wrap gap-2 pt-2">
       <Button rounded small inline onclick={() => (appStore.editProfileOpen = true)}>
-        Edit Profil & API Key
+        {i18n.t('profile.editApi')}
       </Button>
       <Button tonal rounded small inline onclick={() => (appStore.view = 'eq')}>
-        EQ Studio
+        {i18n.t('nav.eq')}
       </Button>
     </div>
   </div>
 </Block>
 
-<BlockTitle>Tampilan & Tema (iOS)</BlockTitle>
+<!-- Multi-Language Selector (i18n: Indonesia / English) -->
+<BlockTitle>{i18n.t('profile.languageSection')}</BlockTitle>
+<List strong inset>
+  <ListItem>
+    {#snippet inner()}
+      <div class="w-full py-1">
+        <div class="mb-1 text-sm font-medium text-black dark:text-white">
+          {i18n.t('profile.languageTitle')}
+        </div>
+        <div class="mb-2.5 text-xs text-black/55 dark:text-white/55">
+          {i18n.t('profile.languageSub')}
+        </div>
+        <Segmented strong rounded>
+          <SegmentedButton
+            active={i18n.locale === 'id'}
+            onclick={() => i18n.setLocale('id')}
+          >
+            Indonesia
+          </SegmentedButton>
+          <SegmentedButton
+            active={i18n.locale === 'en'}
+            onclick={() => i18n.setLocale('en')}
+          >
+            English
+          </SegmentedButton>
+        </Segmented>
+      </div>
+    {/snippet}
+  </ListItem>
+</List>
+
+<BlockTitle>{i18n.t('profile.appearanceSection')}</BlockTitle>
 <List strong inset>
   <ListItem
     label
-    title="Mode Gelap (Dark Mode)"
+    title={i18n.t('profile.darkMode')}
     subtitle={appStore.themeMode === 'system'
-      ? `Mengikuti sistem (${appStore.isDark ? 'Gelap' : 'Terang'})`
+      ? i18n.t('profile.themeAutoStatus', {
+          mode: appStore.isDark ? i18n.t('profile.themeDark') : i18n.t('profile.themeLight')
+        })
       : appStore.isDark
-        ? 'Aktif (Mode Gelap iOS)'
-        : 'Nonaktif (Mode Terang iOS)'}
+        ? i18n.t('profile.themeDarkActive')
+        : i18n.t('profile.themeLightActive')}
   >
     {#snippet after()}
       <Toggle
@@ -75,19 +109,19 @@
             active={appStore.themeMode === 'system'}
             onclick={() => appStore.setThemeMode('system')}
           >
-            Otomatis
+            {i18n.t('profile.themeAuto')}
           </SegmentedButton>
           <SegmentedButton
             active={appStore.themeMode === 'light'}
             onclick={() => appStore.setThemeMode('light')}
           >
-            Terang
+            {i18n.t('profile.themeLight')}
           </SegmentedButton>
           <SegmentedButton
             active={appStore.themeMode === 'dark'}
             onclick={() => appStore.setThemeMode('dark')}
           >
-            Gelap
+            {i18n.t('profile.themeDark')}
           </SegmentedButton>
         </Segmented>
       </div>
@@ -95,14 +129,14 @@
   </ListItem>
 </List>
 
-<BlockTitle>Algoritma Musik & Privasi (100% Lokal)</BlockTitle>
+<BlockTitle>{i18n.t('profile.algoSection')}</BlockTitle>
 <List strong inset>
   <ListItem
     label
-    title="Personalisasi Lokal (On-Device)"
+    title={i18n.t('profile.personalizeTitle')}
     subtitle={appStore.algoConfig.personalizeFromHistory
-      ? 'Diproses lokal dari riwayat & favorit tanpa pelacakan server'
-      : 'Mode Privasi Penuh: hanya tampilkan chart viral regional'}
+      ? i18n.t('profile.personalizeOn')
+      : i18n.t('profile.personalizeOff')}
   >
     {#snippet after()}
       <Toggle
@@ -120,31 +154,33 @@
   <ListItem>
     {#snippet inner()}
       <div class="w-full py-1">
-        <div class="mb-2 text-sm font-medium text-black dark:text-white">Mode Rekomendasi</div>
+        <div class="mb-2 text-sm font-medium text-black dark:text-white">
+          {i18n.t('profile.algoMode')}
+        </div>
         <Segmented strong rounded>
           <SegmentedButton
             active={appStore.algoConfig.mode === 'viral'}
             onclick={() => appStore.updateAlgorithmConfig({ mode: 'viral' }, true)}
           >
-            Viral
+            {i18n.t('profile.modeViral')}
           </SegmentedButton>
           <SegmentedButton
             active={appStore.algoConfig.mode === 'balanced'}
             onclick={() => appStore.updateAlgorithmConfig({ mode: 'balanced' }, true)}
           >
-            Seimbang
+            {i18n.t('profile.modeBalanced')}
           </SegmentedButton>
           <SegmentedButton
             active={appStore.algoConfig.mode === 'discovery'}
             onclick={() => appStore.updateAlgorithmConfig({ mode: 'discovery' }, true)}
           >
-            Baru
+            {i18n.t('profile.modeDiscovery')}
           </SegmentedButton>
           <SegmentedButton
             active={appStore.algoConfig.mode === 'nostalgia'}
             onclick={() => appStore.updateAlgorithmConfig({ mode: 'nostalgia' }, true)}
           >
-            Nostalgia
+            {i18n.t('profile.modeNostalgia')}
           </SegmentedButton>
         </Segmented>
       </div>
@@ -154,19 +190,21 @@
   <ListItem>
     {#snippet inner()}
       <div class="w-full py-1">
-        <div class="mb-2 text-sm font-medium text-black dark:text-white">Region Katalog & Viral</div>
+        <div class="mb-2 text-sm font-medium text-black dark:text-white">
+          {i18n.t('profile.regionLabel')}
+        </div>
         <div class="flex flex-wrap gap-1.5">
-        {#each REGION_OPTIONS as reg (reg.code)}
-          <Chip
-            outline={appStore.algoConfig.region !== reg.code}
-            class="cursor-pointer {appStore.algoConfig.region === reg.code
-              ? '!bg-[#007aff] !text-white font-semibold'
-              : ''}"
-            onclick={() => appStore.updateAlgorithmConfig({ region: reg.code }, true)}
-          >
-            {reg.label}
-          </Chip>
-        {/each}
+          {#each REGION_OPTIONS as reg (reg.code)}
+            <Chip
+              outline={appStore.algoConfig.region !== reg.code}
+              class="cursor-pointer {appStore.algoConfig.region === reg.code
+                ? '!bg-[#007aff] !text-white font-semibold'
+                : ''}"
+              onclick={() => appStore.updateAlgorithmConfig({ region: reg.code }, true)}
+            >
+              {reg.label}
+            </Chip>
+          {/each}
         </div>
       </div>
     {/snippet}
@@ -175,28 +213,30 @@
   <ListItem>
     {#snippet inner()}
       <div class="w-full py-1">
-        <div class="mb-2 text-sm font-medium text-black dark:text-white">Prioritas Era Musik</div>
+        <div class="mb-2 text-sm font-medium text-black dark:text-white">
+          {i18n.t('profile.eraPriority')}
+        </div>
         <div class="flex flex-wrap gap-1.5">
-        <Chip
-          outline={appStore.algoConfig.preferredEra !== 'all'}
-          class="cursor-pointer {appStore.algoConfig.preferredEra === 'all'
-            ? '!bg-[#007aff] !text-white font-semibold'
-            : ''}"
-          onclick={() => appStore.updateAlgorithmConfig({ preferredEra: 'all' }, true)}
-        >
-          Semua Era
-        </Chip>
-        {#each ERA_PRESETS as era (era.id)}
           <Chip
-            outline={appStore.algoConfig.preferredEra !== era.id}
-            class="cursor-pointer {appStore.algoConfig.preferredEra === era.id
+            outline={appStore.algoConfig.preferredEra !== 'all'}
+            class="cursor-pointer {appStore.algoConfig.preferredEra === 'all'
               ? '!bg-[#007aff] !text-white font-semibold'
               : ''}"
-            onclick={() => appStore.updateAlgorithmConfig({ preferredEra: era.id }, true)}
+            onclick={() => appStore.updateAlgorithmConfig({ preferredEra: 'all' }, true)}
           >
-            {era.label}
+            {i18n.t('search.allEras')}
           </Chip>
-        {/each}
+          {#each ERA_PRESETS as era (era.id)}
+            <Chip
+              outline={appStore.algoConfig.preferredEra !== era.id}
+              class="cursor-pointer {appStore.algoConfig.preferredEra === era.id
+                ? '!bg-[#007aff] !text-white font-semibold'
+                : ''}"
+              onclick={() => appStore.updateAlgorithmConfig({ preferredEra: era.id }, true)}
+            >
+              {era.label}
+            </Chip>
+          {/each}
         </div>
       </div>
     {/snippet}
@@ -205,85 +245,87 @@
   <ListItem>
     {#snippet inner()}
       <div class="w-full py-1">
-        <div class="mb-2 text-sm font-medium text-black dark:text-white">Minat Genre (Maks. 4)</div>
+        <div class="mb-2 text-sm font-medium text-black dark:text-white">
+          {i18n.t('profile.genreInterest')}
+        </div>
         <div class="flex flex-wrap gap-1.5">
-        {#each ALGORITHM_GENRES as genre}
-          {@const selected = appStore.algoConfig.preferredGenres.includes(genre)}
-          <Chip
-            outline={!selected}
-            class="cursor-pointer {selected ? '!bg-[#007aff] !text-white font-semibold' : ''}"
-            onclick={() => appStore.toggleAlgorithmGenre(genre)}
-          >
-            {genre}
-          </Chip>
-        {/each}
+          {#each ALGORITHM_GENRES as genre}
+            {@const selected = appStore.algoConfig.preferredGenres.includes(genre)}
+            <Chip
+              outline={!selected}
+              class="cursor-pointer {selected ? '!bg-[#007aff] !text-white font-semibold' : ''}"
+              onclick={() => appStore.toggleAlgorithmGenre(genre)}
+            >
+              {genre}
+            </Chip>
+          {/each}
         </div>
       </div>
     {/snippet}
   </ListItem>
 
-  <ListItem title="Privasi & Data Algoritma" subtitle="Zero telemetri • tersimpan hanya di perangkat">
+  <ListItem title={i18n.t('profile.privacyTitle')} subtitle={i18n.t('profile.privacySub')}>
     {#snippet after()}
       <Button tonal rounded small inline onclick={() => appStore.resetAlgorithmConfig()}>
-        Reset
+        {i18n.t('profile.resetBtn')}
       </Button>
     {/snippet}
   </ListItem>
 </List>
 
-<BlockTitle>Status Integrasi & Informasi Aplikasi</BlockTitle>
+<BlockTitle>{i18n.t('profile.statusSection')}</BlockTitle>
 <List strong inset>
-  <ListItem title="Koneksi Jaringan" subtitle="Status deteksi real-time aplikasi">
+  <ListItem title={i18n.t('profile.networkStatus')} subtitle={i18n.t('profile.networkSub')}>
     {#snippet after()}
       <Badge
         class={appStore.isOnline
           ? 'bg-[#248a3d] text-white font-bold dark:bg-[#30d158] dark:!text-black'
           : 'bg-zinc-600 text-white font-bold'}
       >
-        {appStore.isOnline ? 'Online' : 'Offline'}
+        {appStore.isOnline ? i18n.t('profile.online') : i18n.t('profile.offline')}
       </Badge>
     {/snippet}
   </ListItem>
 
-  <ListItem title="YouTube Music FOSS (Piped / Invidious)" subtitle="Streaming penuh & pencarian tanpa API Key">
+  <ListItem title={i18n.t('profile.ytFossTitle')} subtitle={i18n.t('profile.ytFossSub')}>
     {#snippet after()}
       <Badge class="bg-[#248a3d] text-white font-bold dark:bg-[#30d158] dark:!text-black">
-        Aktif
+        {i18n.t('profile.active')}
       </Badge>
     {/snippet}
   </ListItem>
 
-  <ListItem title="Spotify Web API v1" subtitle="Deteksi sampul HD, judul, artis & durasi">
+  <ListItem title="Spotify Web API v1" subtitle="HD cover, title, artist & metadata">
     {#snippet after()}
       <Badge
         class={hasSpotifyApi
           ? 'bg-[#248a3d] text-white font-bold dark:bg-[#30d158] dark:!text-black'
           : 'bg-[#b25000] text-white font-bold dark:bg-[#ff9f0a] dark:!text-black'}
       >
-        {hasSpotifyApi ? 'Aktif' : 'oEmbed'}
+        {hasSpotifyApi ? i18n.t('profile.active') : 'oEmbed'}
       </Badge>
     {/snippet}
   </ListItem>
 
   <ListItem
-    title="Koleksi & Favorit"
-    subtitle="{appStore.playlists.length} playlist tersimpan lokal"
-    after="{appStore.localTracks.length} Lagu • {appStore.likedIds.length} ♥"
+    title={i18n.t('profile.collectionFav')}
+    subtitle="{appStore.playlists.length} playlists"
+    after="{appStore.localTracks.length} • {appStore.likedIds.length} ♥"
   />
 
   <ListItem
-    title="Mesin Aplikasi"
+    title={i18n.t('profile.appEngine')}
     subtitle={appStore.runtimeInfo.engine}
     after="v{appStore.runtimeInfo.version}"
   />
 
   <ListItem
-    title="Platform & Arsitektur"
+    title={i18n.t('profile.platformArch')}
     after="{appStore.runtimeInfo.platform} / {appStore.runtimeInfo.arch}"
   />
 
   <ListItem
-    title="Lisensi & Hak Cipta"
+    title={i18n.t('profile.licenseTitle')}
     subtitle="Copyright 2026 Azka Putra"
     after="AGPL-3.0"
   />

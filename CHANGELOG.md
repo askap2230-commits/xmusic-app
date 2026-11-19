@@ -2,6 +2,22 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.1.0] - 2026-11-19
+
+### Smooth Page Transitions & Keep-Alive Tab Engine
+- **Lazy Keep-Alive Tab Views (`mountedViews`)**: Tabs mount lazily on first visit and stay cached in the DOM (`hidden` when inactive) instead of destroying and rebuilding components on every switch — making rapid tab switching ~0.5ms instant with zero image re-decode stutter.
+- **GPU-Only Directional Slide-Fade Transitions (180ms)**: Added compositor-only (`transform: translate3d` + `opacity`) directional iOS slide-fade animations (`xmusic-slide-in-right` / `xmusic-slide-in-left`) that respect `prefers-reduced-motion: reduce`.
+- **Per-Tab Scroll Memory**: Automatically preserves and restores each tab's exact scroll position when switching tabs, while tapping the active tab smoothly scrolls back to top.
+- **Version Bump**: Upgraded single-source version in `package.json` and `Cargo.toml` to `6.1.0` (`Xmusic-v6.1.0-android-<abi>-release.apk`).
+
+## [6.0.0] - 2026-11-19
+
+### Major Release: Modular i18n (EN/ID), Dual-Path Zero-CORS YouTube Music Audio & Library UI Fix
+- **Dual-Path Zero-CORS AudioEngine (`audioEl` + `directAudioEl`) & Upgraded Rust InnerTube**: Fixed the root cause of YouTube Music "Server proxy audio sedang sibuk" playback errors. Direct `googlevideo.com` streams now play through a dedicated native HTML5 `<audio>` path (`directAudioEl` without `crossorigin` CORS lock), paired with Rust `visitorData` fetching and `TVHTML5_SIMPLY_EMBEDDED_PLAYER` + `IOS` + `ANDROID_VR` + `ANDROID` client failover for fast, reliable full-length audio playback.
+- **Modular Strict-TypeScript Multi-Language i18n (`src/lib/i18n/`)**: Added complete **Indonesian (`id`)** and **English (`en`)** internationalization (`types.ts`, `id.ts`, `en.ts`, `index.svelte.ts`) with compile-time `TranslationKey` verification, `{param}` interpolation, automatic browser locale detection, `document.documentElement.lang` syncing, and an instant **Indonesia / English** switcher in `ProfileView`.
+- **Library Page Layout & Collision Fixes (`LibraryView`)**: Fixed overlapping text and clipped buttons across Offline, Favorites, History, and Playlists by using single-line Konsta `<Segmented>` labels, removing nested clickable elements inside `<ListItem>`, and enforcing `min-w-0 truncate` + `shrink-0` alignment.
+- **Version Bump**: Upgraded single-source version in `package.json` and `Cargo.toml` to `6.0.0` (`Xmusic-v6.0.0-android-<abi>-release.apk`).
+
 ## [5.8.0] - 2026-11-19
 
 ### UI/UX & 60/120fps Performance Upgrades

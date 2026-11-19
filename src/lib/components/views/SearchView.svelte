@@ -14,6 +14,7 @@
   } from 'konsta/svelte';
   import { engine } from '#lib/audio/engine.svelte.ts';
   import { CATEGORIES, ERA_PRESETS, TRENDING_QUERIES } from '#lib/data/presets.ts';
+  import { i18n } from '#lib/i18n/index.svelte.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
   import Icon from '../Icon.svelte';
   import TrackCard from '../TrackCard.svelte';
@@ -28,7 +29,7 @@
 
 <Block class="!mb-2">
   <Searchbar
-    placeholder="Cari lagu, artis, atau tahun (1900–2026)..."
+    placeholder={i18n.t('search.placeholder')}
     value={appStore.searchQuery}
     onInput={(e: Event) => appStore.updateSearch((e.target as HTMLInputElement).value)}
     onClear={() => appStore.updateSearch('')}
@@ -40,7 +41,7 @@
   <div class="mb-2">
     <List strong inset class="!my-1">
       {#if appStore.suggesting && appStore.searchSuggestions.length === 0}
-        <ListItem title="Mencari sugesti real-time...">
+        <ListItem title={i18n.t('search.suggesting')}>
           {#snippet media()}
             <Preloader class="w-4 h-4" />
           {/snippet}
@@ -97,7 +98,7 @@
       <Icon name="wifi-off" size={18} />
     </span>
     <p class="text-xs text-black/65 dark:text-white/65">
-      Sedang offline: pencarian hanya menampilkan lagu dari koleksi lokal perangkatmu.
+      {i18n.t('search.offlineNotice')}
     </p>
   </Block>
 {/if}
@@ -105,9 +106,9 @@
 {#if !appStore.searchQuery.trim()}
   {#if appStore.recentSearches.length > 0}
     <BlockTitle class="flex items-center justify-between">
-      <span>Pencarian Terakhir</span>
+      <span>{i18n.t('search.recent')}</span>
       <Button clear small inline onclick={() => appStore.clearRecentSearches()}>
-        Hapus
+        {i18n.t('search.clear')}
       </Button>
     </BlockTitle>
     <div class="xmusic-hscroll flex gap-2 px-4 py-1">
@@ -128,7 +129,7 @@
     </div>
   {/if}
 
-  <BlockTitle>Populer Dicari</BlockTitle>
+  <BlockTitle>{i18n.t('search.trending')}</BlockTitle>
   <div class="xmusic-hscroll flex gap-2 px-4 py-1">
     {#each TRENDING_QUERIES as term}
       <Chip outline class="shrink-0 cursor-pointer" onclick={() => appStore.updateSearch(term, true)}>
@@ -137,7 +138,7 @@
     {/each}
   </div>
 
-  <BlockTitle>Jelajah Lintas Era (1900–2026)</BlockTitle>
+  <BlockTitle>{i18n.t('search.eraExplore')}</BlockTitle>
   <Block>
     <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
       {#each ERA_PRESETS as era (era.id)}
@@ -169,7 +170,7 @@
     </div>
   </Block>
 
-  <BlockTitle>Telusuri Genre & Suasana</BlockTitle>
+  <BlockTitle>{i18n.t('search.genreExplore')}</BlockTitle>
   <Block>
     <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
       {#each CATEGORIES as cat}
@@ -210,7 +211,7 @@
         : ''}"
       onclick={() => appStore.toggleFullOnly()}
     >
-      Hanya Penuh
+      {i18n.t('search.fullOnly')}
     </Chip>
 
     {#each SOURCE_TABS as tab (tab.id)}
@@ -235,7 +236,7 @@
         : ''}"
       onclick={() => appStore.setEraFilter('all')}
     >
-      Semua Era
+      {i18n.t('search.allEras')}
     </Chip>
     {#each ERA_PRESETS as era (era.id)}
       <Chip
@@ -252,7 +253,7 @@
 
   <BlockTitle class="flex items-center justify-between">
     <span class="truncate">
-      Hasil "{appStore.searchQuery}" ({appStore.filteredSearchResults.length})
+      {i18n.t('search.results', { query: appStore.searchQuery, count: appStore.filteredSearchResults.length })}
     </span>
     {#if appStore.searching}
       <Preloader class="w-4 h-4 shrink-0" />
@@ -263,7 +264,7 @@
     {#if appStore.searching && appStore.visibleSearchResults.length === 0}
       <div class="flex items-center gap-3 py-6 text-sm text-black/65 dark:text-white/65" role="status">
         <Preloader class="w-5 h-5" />
-        <span>Mencari lagu di YouTube Music, Audius & Katalog 1900–2026...</span>
+        <span>{i18n.t('search.searching')}</span>
       </div>
     {:else if appStore.visibleSearchResults.length > 0}
       <div class="xmusic-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
@@ -282,14 +283,14 @@
             disabled={appStore.searchLoadingMore}
             onclick={() => appStore.loadMoreSearch()}
           >
-            {appStore.searchLoadingMore ? 'Memuat hasil lainnya...' : 'Muat Lebih Banyak'}
+            {appStore.searchLoadingMore ? i18n.t('home.loadingMore') : i18n.t('home.loadMore')}
           </Button>
         </div>
       {/if}
     {:else}
       <Block strong inset class="!mx-0 space-y-2.5">
         <p class="text-sm text-black/65 dark:text-white/65">
-          Tidak ditemukan lagu yang cocok pada filter ini untuk "{appStore.searchQuery}".
+          {i18n.t('search.noResults', { query: appStore.searchQuery })}
         </p>
         {#if appStore.eraFilter !== 'all' || appStore.searchSourceFilter !== 'all' || appStore.fullOnlyFilter}
           <Button
@@ -303,7 +304,7 @@
               appStore.fullOnlyFilter = false;
             }}
           >
-            Reset Semua Filter
+            {i18n.t('search.resetFilters')}
           </Button>
         {/if}
       </Block>

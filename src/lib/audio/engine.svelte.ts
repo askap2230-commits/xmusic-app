@@ -72,6 +72,8 @@ class AudioEngine {
 
   // Non-reactive DSP nodes for zero overhead
   private audioEl: HTMLAudioElement | null = null;
+  private directAudioEl: HTMLAudioElement | null = null;
+  private usingDirectAudio = false;
   private audioCtx: AudioContext | null = null;
   private sourceNode: MediaElementAudioSourceNode | null = null;
   private preampNode: GainNode | null = null;
@@ -85,6 +87,80 @@ class AudioEngine {
   private syncIntervalId: ReturnType<typeof setInterval> | null = null;
   private sleepIntervalId: ReturnType<typeof setInterval> | null = null;
   private onToast: ((message: string) => void) | null = null;
+
+  private get activeEl(): HTMLAudioElement | null {
+    return this.usingDirectAudio ? this.directAudioEl : this.audioEl;
+  }
+
+  private bindAudioEvents(el: HTMLAudioElement, isDirect: boolean): void {
+    el.addEventListener('play', () => {
+      if (this.usingDirectAudio !== isDirect) return;
+      this.playing = true;
+      if (!isDirect && this.audioCtx?.state === 'suspended') {
+        this.audioCtx.resume().catch(() => {});
+      }
+      this.startPositionSync();
+      this.updateMediaSessionState();
+      this.syncNativeAndroidNotification();
+    });
+
+    el.addEventListener('pause', () => {
+      if (this.usingDirectAudio !== isDirect) return;
+      this.playing = false;
+      this.stopPositionSync();
+      this.updateMediaSessionState();
+      this.syncNativeAndroidNotification();
+    });
+
+    el.addEventListener('loadedmetadata', () => {
+      if (this.usingDirectAudio !== isDirect) return;
+      if (Number.isFinite(el.duration) && el.duration > 0) {
+        this.duration = el.duration;
+        if (this.current) this.current.dur = el.duration;
+      }
+      this.applyPlaybackRate();
+      this.updateMediaSessionPosition();
+      this.syncNativeAndroidNotification();
+    });
+
+    el.addEventListener('ended', () => {
+      if (this.usingDirectAudio !== isDirect) return;
+      this.stopPositionSync();
+      if (this.sleepMinutes === -1) {
+        this.setSleepTimer(0);
+        this.playing = false;
+        this.syncNativeAndroidNotification();
+        this.toast('Sleep Timer: Pemutaran dihentikan di akhir lagu.');
+        return;
+      }
+      if (this.repeat === 'one') {
+        el.currentTime = 0;
+        el.play().catch(() => {});
+      } else {
+        this.next(true);
+      }
+    });
+
+    if (!isDirect) {
+      el.addEventListener('error', () => {
+        if (this.usingDirectAudio) return;
+        if (this.current?.url && !this.current.url.startsWith('blob:') && this.directAudioEl) {
+          // Automatic seamless switch to CORS-free directAudioEl if server lacks CORS headers
+          this.corsBypassMode = true;
+          const resumePos = this.position || 0;
+          this.usingDirectAudio = true;
+          this.directAudioEl.volume = this.volume;
+          this.directAudioEl.muted = this.muted;
+          this.directAudioEl.src = this.current.url;
+          this.directAudioEl.currentTime = resumePos;
+          this.applyPlaybackRate();
+          this.directAudioEl.play().catch((err: Error) =>
+            this.toast(`Gagal memutar stream: ${err.message}`)
+          );
+        }
+      });
+    }
+  }
 
   init(onToastCallback: (message: string) => void): void {
     this.onToast = onToastCallback;
@@ -122,66 +198,14 @@ class AudioEngine {
     this.audioEl.preload = 'metadata';
     this.audioEl.crossOrigin = 'anonymous';
     this.audioEl.volume = this.volume;
+    this.bindAudioEvents(this.audioEl, false);
 
-    this.audioEl.addEventListener('play', () => {
-      this.playing = true;
-      if (this.audioCtx?.state === 'suspended') {
-        this.audioCtx.resume().catch(() => {});
-      }
-      this.startPositionSync();
-      this.updateMediaSessionState();
-      this.syncNativeAndroidNotification();
-    });
-
-    this.audioEl.addEventListener('pause', () => {
-      this.playing = false;
-      this.stopPositionSync();
-      this.updateMediaSessionState();
-      this.syncNativeAndroidNotification();
-    });
-
-    this.audioEl.addEventListener('loadedmetadata', () => {
-      if (this.audioEl && Number.isFinite(this.audioEl.duration) && this.audioEl.duration > 0) {
-        this.duration = this.audioEl.duration;
-        if (this.current) this.current.dur = this.audioEl.duration;
-      }
-      this.applyPlaybackRate();
-      this.updateMediaSessionPosition();
-      this.syncNativeAndroidNotification();
-    });
-
-    this.audioEl.addEventListener('ended', () => {
-      this.stopPositionSync();
-      if (this.sleepMinutes === -1) {
-        this.setSleepTimer(0);
-        this.playing = false;
-        this.syncNativeAndroidNotification();
-        this.toast('Sleep Timer: Pemutaran dihentikan di akhir lagu.');
-        return;
-      }
-      if (this.repeat === 'one' && this.audioEl) {
-        this.audioEl.currentTime = 0;
-        this.audioEl.play().catch(() => {});
-      } else {
-        this.next(true);
-      }
-    });
-
-    this.audioEl.addEventListener('error', () => {
-      if (
-        this.audioEl &&
-        this.audioEl.crossOrigin === 'anonymous' &&
-        this.current?.url &&
-        !this.current.url.startsWith('blob:')
-      ) {
-        this.corsBypassMode = true;
-        const resumePos = this.position || 0;
-        this.audioEl.removeAttribute('crossorigin');
-        this.audioEl.src = this.current.url;
-        this.audioEl.currentTime = resumePos;
-        this.audioEl.play().catch((err: Error) => this.toast(`Gagal memutar stream: ${err.message}`));
-      }
-    });
+    // Pure native HTML5 audio element (no crossorigin, never attached to Web Audio CORS lock)
+    // Guarantees loud, glitch-free playback for direct googlevideo.com YouTube Music audio streams
+    this.directAudioEl = new Audio();
+    this.directAudioEl.preload = 'metadata';
+    this.directAudioEl.volume = this.volume;
+    this.bindAudioEvents(this.directAudioEl, true);
 
     this.setupMediaSession();
     this.registerAndroidNotificationBridge();
@@ -373,17 +397,19 @@ class AudioEngine {
     const clamped = Math.max(0, Math.min(1, Number(value) || 0));
     this.volume = clamped;
     this.muted = clamped === 0;
-    if (this.audioEl) {
-      this.audioEl.volume = clamped;
-      this.audioEl.muted = this.muted;
+    for (const el of [this.audioEl, this.directAudioEl]) {
+      if (el) {
+        el.volume = clamped;
+        el.muted = this.muted;
+      }
     }
     this.savePrefs();
   }
 
   toggleMute(): void {
-    if (!this.audioEl) return;
     this.muted = !this.muted;
-    this.audioEl.muted = this.muted;
+    if (this.audioEl) this.audioEl.muted = this.muted;
+    if (this.directAudioEl) this.directAudioEl.muted = this.muted;
   }
 
   setSpeed(rate: number): void {
@@ -400,9 +426,12 @@ class AudioEngine {
   }
 
   private applyPlaybackRate(): void {
-    if (!this.audioEl) return;
-    this.audioEl.playbackRate = this.playbackRate;
-    this.audioEl.preservesPitch = this.preservesPitch;
+    for (const el of [this.audioEl, this.directAudioEl]) {
+      if (el) {
+        el.playbackRate = this.playbackRate;
+        el.preservesPitch = this.preservesPitch;
+      }
+    }
   }
 
   toggleShuffle(): void {
@@ -505,6 +534,8 @@ class AudioEngine {
     this.duration = track.dur || 0;
     this.corsBypassMode = false;
 
+    if (this.directAudioEl) this.directAudioEl.pause();
+    this.usingDirectAudio = false;
     if (this.audioEl) {
       this.audioEl.crossOrigin = 'anonymous';
       this.audioEl.src = track.url;
@@ -542,16 +573,16 @@ class AudioEngine {
 
     const upgraded: Track = { ...track, url: streamUrl };
     this.current = upgraded;
-    this.ensureWebAudio();
-    if (this.audioCtx?.state === 'suspended') {
-      this.audioCtx.resume().catch(() => {});
-    }
-    if (this.audioEl) {
-      this.audioEl.crossOrigin = 'anonymous';
-      this.audioEl.src = streamUrl;
-      this.audioEl.load();
+    if (this.audioEl) this.audioEl.pause();
+    this.usingDirectAudio = true;
+    this.corsBypassMode = true;
+    if (this.directAudioEl) {
+      this.directAudioEl.volume = this.volume;
+      this.directAudioEl.muted = this.muted;
+      this.directAudioEl.src = streamUrl;
+      this.directAudioEl.load();
       this.applyPlaybackRate();
-      this.audioEl.play().catch(() => {
+      this.directAudioEl.play().catch(() => {
         if (this.current?.id === track.id) {
           this.current = { ...track, url: undefined };
           this.audioResolveFailed = true;
@@ -568,27 +599,33 @@ class AudioEngine {
     if ((this.current.videoId && !this.current.url) || this.current.spotifyId) return;
     if (this.playing) {
       this.pause();
-    } else if (this.audioEl) {
-      this.ensureWebAudio();
-      if (this.audioCtx?.state === 'suspended') {
-        this.audioCtx.resume().catch(() => {});
+    } else if (this.activeEl) {
+      if (!this.usingDirectAudio) {
+        this.ensureWebAudio();
+        if (this.audioCtx?.state === 'suspended') {
+          this.audioCtx.resume().catch(() => {});
+        }
       }
-      this.audioEl.play().catch((err: Error) => this.toast(`Gagal memutar: ${err.message}`));
+      this.activeEl.play().catch((err: Error) => this.toast(`Gagal memutar: ${err.message}`));
     }
   }
 
   pause(): void {
     if (this.audioEl) this.audioEl.pause();
+    if (this.directAudioEl) this.directAudioEl.pause();
   }
 
   stopTrack(): void {
     this.stopPositionSync();
-    if (this.audioEl) {
-      this.audioEl.pause();
-      this.audioEl.currentTime = 0;
-      this.audioEl.removeAttribute('src');
-      this.audioEl.load();
+    for (const el of [this.audioEl, this.directAudioEl]) {
+      if (el) {
+        el.pause();
+        el.currentTime = 0;
+        el.removeAttribute('src');
+        el.load();
+      }
     }
+    this.usingDirectAudio = false;
     this.playing = false;
     this.resolvingAudio = false;
     this.audioResolveFailed = false;
@@ -603,12 +640,13 @@ class AudioEngine {
   }
 
   seekTo(fraction: number): void {
-    if (!this.audioEl || !this.current) return;
-    const total = this.duration || this.audioEl.duration || 0;
+    const el = this.activeEl;
+    if (!el || !this.current) return;
+    const total = this.duration || el.duration || 0;
     if (!total) return;
     const clamped = Math.max(0, Math.min(1, fraction));
-    this.audioEl.currentTime = clamped * total;
-    this.position = this.audioEl.currentTime;
+    el.currentTime = clamped * total;
+    this.position = el.currentTime;
     this.updateMediaSessionPosition();
     this.syncNativeAndroidNotification();
   }
@@ -641,8 +679,8 @@ class AudioEngine {
   }
 
   prev(): void {
-    if (this.audioEl && this.position > 3) {
-      this.audioEl.currentTime = 0;
+    if (this.activeEl && this.position > 3) {
+      this.activeEl.currentTime = 0;
       this.position = 0;
       this.updateMediaSessionPosition();
       return;
@@ -674,10 +712,11 @@ class AudioEngine {
   private startPositionSync(): void {
     this.stopPositionSync();
     this.syncIntervalId = setInterval(() => {
-      if (!this.playing || !this.audioEl) return;
-      this.position = this.audioEl.currentTime || 0;
-      if (Number.isFinite(this.audioEl.duration) && this.audioEl.duration > 0) {
-        this.duration = this.audioEl.duration;
+      const el = this.activeEl;
+      if (!this.playing || !el) return;
+      this.position = el.currentTime || 0;
+      if (Number.isFinite(el.duration) && el.duration > 0) {
+        this.duration = el.duration;
       }
     }, 150);
   }

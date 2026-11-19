@@ -4,6 +4,7 @@
   import { engine } from '#lib/audio/engine.svelte.ts';
   import { parseLrcLyrics } from '#lib/api/services.ts';
   import { EQ_PRESETS } from '#lib/data/presets.ts';
+  import { i18n } from '#lib/i18n/index.svelte.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
   import { findActiveLyricIndex, formatTime, getTrackInitial } from '#lib/utils/format.ts';
   import Icon from '../Icon.svelte';
@@ -94,7 +95,7 @@
 >
   {#if track}
     <Page>
-      <Navbar title={appStore.modalFlipped ? 'Lirik Sinkron' : 'Sedang Diputar'}>
+      <Navbar title={appStore.modalFlipped ? i18n.t('player.syncedLyrics') : i18n.t('player.nowPlaying')}>
         {#snippet left()}
           <Link iconOnly onclick={() => appStore.toggleModalFlip()} aria-label="Balik kartu lirik">
             <Icon name="flip" size={20} />
@@ -143,7 +144,7 @@
                         />
                       {/if}
                       <p class="text-xs text-black/65 dark:text-white/65">
-                        Putar audio penuh lagu Spotify ini langsung di pemutar Xmusic.
+                        {i18n.t('player.spotifyNativeDesc')}
                       </p>
                       <Button
                         rounded
@@ -152,7 +153,7 @@
                         class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
                         onclick={() => appStore.findFullVersion(track)}
                       >
-                        Putar Penuh di Xmusic
+                        {i18n.t('player.playFullInApp')}
                       </Button>
                     </div>
                   {:else}
@@ -190,19 +191,19 @@
                   {#if engine.resolvingAudio && engine.current?.id === track.id}
                     <div class="mb-3 flex items-center justify-center gap-2 rounded-xl bg-[#007aff]/10 px-3 py-2 text-xs font-medium text-[#007aff] dark:bg-[#0a84ff]/15 dark:text-[#64d2ff]" role="status">
                       <Preloader class="w-4 h-4" />
-                      <span>Menghubungkan stream audio YouTube Music...</span>
+                      <span>{i18n.t('player.resolvingAudio')}</span>
                     </div>
                   {:else if engine.audioResolveFailed && track.videoId && !showVideoFallback && engine.current?.id === track.id}
                     <div class="mb-3 flex flex-col items-center gap-2 rounded-xl bg-[#ff9f0a]/15 px-3 py-2.5 text-center">
                       <span class="text-xs font-medium text-black/80 dark:text-white/85">
-                        Server proxy audio sedang sibuk untuk lagu ini.
+                        {i18n.t('player.audioFailed')}
                       </span>
                       <div class="flex flex-wrap justify-center gap-2">
                         <Button tonal rounded small inline onclick={() => engine.retryYoutubeAudio()}>
-                          Coba Audio Lagi
+                          {i18n.t('player.retryAudio')}
                         </Button>
                         <Button tonal rounded small inline onclick={() => (showVideoFallback = true)}>
-                          Mode Video Cadangan
+                          {i18n.t('player.videoFallback')}
                         </Button>
                       </div>
                     </div>
@@ -316,7 +317,7 @@
 
                   <div class="mt-5 grid grid-cols-2 gap-2">
                     <Button tonal rounded small onclick={() => appStore.toggleModalFlip()}>
-                      Lirik Sinkron
+                      {i18n.t('player.lyricsBtn')}
                     </Button>
                     <Button
                       tonal
@@ -327,7 +328,7 @@
                         appStore.playlistModalOpen = true;
                       }}
                     >
-                      + Playlist
+                      {i18n.t('player.playlistBtn')}
                     </Button>
                     <Button
                       tonal
@@ -347,7 +348,7 @@
                       class="!bg-[#ff3b30]/15 !text-[#d70015] dark:!bg-[#ff453a]/20 dark:!text-[#ff6961]"
                       onclick={handleStopAndClose}
                     >
-                      Hentikan Lagu
+                      {i18n.t('player.stopBtn')}
                     </Button>
                   </div>
 
@@ -359,7 +360,7 @@
                         class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
                         onclick={() => appStore.findFullVersion(track)}
                       >
-                        Cari Versi Penuh (YouTube Music)
+                        {i18n.t('player.findFullBtn')}
                       </Button>
                     </div>
                   {/if}
@@ -375,7 +376,7 @@
                           appStore.openDownloaderWithUrl(`https://youtu.be/${track.videoId}`);
                         }}
                       >
-                        Unduh MP3 (API Downloader)
+                        {i18n.t('player.downloadMp3Btn')}
                       </Button>
                     </div>
                   {/if}
@@ -407,7 +408,7 @@
                 <div class="flex-1 space-y-1.5 overflow-y-auto py-1" bind:this={lyricsScrollEl}>
                   {#if appStore.fetchingLyrics}
                     <p class="py-12 text-center text-sm text-[#007aff] dark:text-[#64d2ff]" role="status">
-                      Mencari lirik sinkron dari LRCLIB...
+                      {i18n.t('player.fetchingLyrics')}
                     </p>
                   {:else if parsedLyrics.length > 0}
                     {#each parsedLyrics as line, idx}
@@ -433,7 +434,7 @@
                     {/each}
                   {:else}
                     <div class="flex flex-col items-center gap-3 py-12 text-center">
-                      <p class="text-sm text-black/65 dark:text-white/65">Belum ada lirik untuk lagu ini.</p>
+                      <p class="text-sm text-black/65 dark:text-white/65">{i18n.t('player.noLyrics')}</p>
                       <Button
                         rounded
                         small
@@ -441,7 +442,7 @@
                         class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
                         onclick={() => appStore.autoFetchLyricsForTrack(track)}
                       >
-                        Cari Lirik Otomatis (LRCLIB)
+                        {i18n.t('player.autoFindLyrics')}
                       </Button>
                     </div>
                   {/if}
@@ -452,7 +453,7 @@
                     {formatTime(engine.position)} / {formatTime(engine.duration)}
                   </span>
                   <Button tonal rounded small inline onclick={() => appStore.toggleModalFlip()}>
-                    Kembali ke Sampul
+                    {i18n.t('player.backToCover')}
                   </Button>
                 </div>
               </Card>
