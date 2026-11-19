@@ -524,6 +524,25 @@ class AudioEngine {
     if (this.audioEl) this.audioEl.pause();
   }
 
+  stopTrack(): void {
+    this.stopPositionSync();
+    if (this.audioEl) {
+      this.audioEl.pause();
+      this.audioEl.currentTime = 0;
+      this.audioEl.removeAttribute('src');
+      this.audioEl.load();
+    }
+    this.playing = false;
+    this.current = null;
+    this.position = 0;
+    this.duration = 0;
+    if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+      navigator.mediaSession.metadata = null;
+      navigator.mediaSession.playbackState = 'none';
+    }
+    window.XmusicAndroidMedia?.clearNotification();
+  }
+
   seekTo(fraction: number): void {
     if (!this.audioEl || !this.current) return;
     const total = this.duration || this.audioEl.duration || 0;
@@ -653,8 +672,7 @@ class AudioEngine {
       else if (action === 'next') this.next(false);
       else if (action === 'prev') this.prev();
       else if (action === 'stop') {
-        this.pause();
-        window.XmusicAndroidMedia?.clearNotification();
+        this.stopTrack();
       }
     };
   }

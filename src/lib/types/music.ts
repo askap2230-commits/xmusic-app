@@ -130,6 +130,7 @@ export interface AndroidMediaBridge {
     positionMs: number
   ): void;
   clearNotification(): void;
+  setSystemBarTheme(isDark: boolean): void;
 }
 
 declare global {

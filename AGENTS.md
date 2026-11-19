@@ -87,3 +87,10 @@ This document defines **non-negotiable architectural and design rules** for all 
 3. **Audiophile DSP & Native Android Media Notification**:
    - Keep the mastering `DynamicsCompressorNode` anti-clipping limiter and `latencyHint: 'playback'` intact in `src/lib/audio/engine.svelte.ts`.
    - Keep `XmusicMediaService.kt`, `MainActivity.kt` (`XmusicAndroidMedia` bridge), and ProGuard `@JavascriptInterface` keep rules in `scripts/optimize-android-gradle.py`.
+
+- **Konsta UI v5.5 iOS Polish & Zero-Overlap Rules**:
+  - NEVER put more than 1 icon button inside `<Navbar>` `{#snippet left()}` or `{#snippet right()}` (Konsta v5.5 iOS 26 wraps each side in a single Liquid Glass capsule; multiple icons get cramped).
+  - NEVER add a floating top DynamicBar over `<Navbar>`. `PlayerBar` docks cleanly above the floating `<Tabbar>` only when `engine.current` is active, and MUST include a Stop/Close (`X`) button (`engine.stopTrack()`).
+  - NEVER apply global `:focus-visible` blue outlines on touch screens — scope keyboard focus rings to `@media (hover: hover) and (pointer: fine)` and keep `-webkit-tap-highlight-color: transparent`.
+  - ALWAYS attach `onerror` artwork fallback on every track cover `<img>` and NEVER auto-mount external Spotify `<iframe>`s on `HomeView` (use on-demand Konsta `<List>` items gated by `appStore.isOnline && appStore.networkReachable`).
+  - ALWAYS sync native Android status/navigation bars via `window.XmusicAndroidMedia?.setSystemBarTheme(isDark)` and `themes.xml` (`#F2F2F7` light / `#000000` dark — never default Material purple).

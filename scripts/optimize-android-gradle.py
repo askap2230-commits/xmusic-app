@@ -232,10 +232,13 @@ package com.nys.xmusic
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import androidx.core.view.WindowInsetsControllerCompat
 import java.lang.ref.WeakReference
 
 class MainActivity : TauriActivity() {
@@ -255,11 +258,24 @@ class MainActivity : TauriActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val isNight = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        applySystemBarTheme(isNight)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
             }
         }
+    }
+
+    private fun applySystemBarTheme(isDark: Boolean) {
+        val barColor = if (isDark) Color.BLACK else Color.parseColor("#F2F2F7")
+        @Suppress("DEPRECATION")
+        window.statusBarColor = barColor
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = barColor
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.isAppearanceLightStatusBars = !isDark
+        controller.isAppearanceLightNavigationBars = !isDark
     }
 
     override fun onWebViewCreate(webView: WebView) {
@@ -300,6 +316,13 @@ class MainActivity : TauriActivity() {
                 action = XmusicMediaService.ACTION_CLEAR
             }
             startService(intent)
+        }
+
+        @JavascriptInterface
+        fun setSystemBarTheme(isDark: Boolean) {
+            runOnUiThread {
+                applySystemBarTheme(isDark)
+            }
         }
     }
 }
@@ -448,8 +471,66 @@ def patch_proguard_rules() -> None:
             fh.write(existing.rstrip() + "\n" + rules)
     print("[Android Optimize] Added R8 keep rules for XmusicMediaService & AndroidMediaBridge.")
 
+
+def patch_android_themes() -> None:
+    """Replace default Material purple status bar colors with Konsta UI iOS Light/Dark surfaces."""
+    if not os.path.exists(ANDROID_DIR):
+        return
+    res_dir = os.path.join(ANDROID_DIR, "app", "src", "main", "res")
+    light_themes = os.path.join(res_dir, "values", "themes.xml")
+    dark_dir = os.path.join(res_dir, "values-night")
+    dark_themes = os.path.join(dark_dir, "themes.xml")
+
+    style_name = "Theme.xmusic"
+    style_parent = "Theme.MaterialComponents.DayNight.NoActionBar"
+    if os.path.exists(light_themes):
+        existing = open(light_themes, "r", encoding="utf-8").read()
+        m_name = re.search(r'<style\s+name="([^"]+)"', existing)
+        m_parent = re.search(r'parent="([^"]+)"', existing)
+        if m_name:
+            style_name = m_name.group(1)
+        if m_parent:
+            style_parent = m_parent.group(1)
+
+    light_xml = f"""<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="{style_name}" parent="{style_parent}">
+        <item name="colorPrimary">#007AFF</item>
+        <item name="colorPrimaryDark">#F2F2F7</item>
+        <item name="colorAccent">#007AFF</item>
+        <item name="android:statusBarColor">#F2F2F7</item>
+        <item name="android:navigationBarColor">#F2F2F7</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
+        <item name="android:windowBackground">#F2F2F7</item>
+    </style>
+</resources>
+"""
+    dark_xml = f"""<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="{style_name}" parent="{style_parent}">
+        <item name="colorPrimary">#0A84FF</item>
+        <item name="colorPrimaryDark">#000000</item>
+        <item name="colorAccent">#0A84FF</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+        <item name="android:windowBackground">#000000</item>
+    </style>
+</resources>
+"""
+    os.makedirs(os.path.dirname(light_themes), exist_ok=True)
+    with open(light_themes, "w", encoding="utf-8") as fh:
+        fh.write(light_xml)
+    os.makedirs(dark_dir, exist_ok=True)
+    with open(dark_themes, "w", encoding="utf-8") as fh:
+        fh.write(dark_xml)
+    print(f"[Android Optimize] Patched light/dark themes.xml ({style_name}) to Konsta iOS surfaces.")
+
 if __name__ == "__main__":
     patch_manifest()
+    patch_android_themes()
     inject_native_media_kotlin()
     patch_proguard_rules()
     patch_build_gradle()

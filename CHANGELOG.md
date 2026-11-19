@@ -9,6 +9,12 @@ All notable changes to **nys Xmusic** are documented in this file.
   - Upgraded `typescript` to `^6.0.0` in `package.json` to satisfy `@sveltejs/kit@3.4.x` peer dependency with zero warnings.
   - Added standard `src/app.d.ts` ambient type declarations, appended explicit `.ts` file extensions to all `#lib/*` subpath imports across 24 files, and moved `export type IconName` in `Icon.svelte` into `<script module lang="ts">`.
 
+- **Native Android Status Bar & Pure Konsta UI v5.5 iOS Polish**:
+  - Eliminated Android Material's purple status bar via dynamic `themes.xml` / `values-night/themes.xml` patching and real-time `MainActivity.setSystemBarTheme(isDark)` bridge (`#F2F2F7` Light / `#000000` Dark).
+  - Removed touch blue-box focus outline (`-webkit-tap-highlight-color: transparent`, desktop keyboard-only `:focus-visible`).
+  - Removed overlapping top `DynamicBar` and separated `<Navbar>` slots to 1 dedicated iOS 26 glass button per side (Theme toggle on left, Queue on right; Flip on left, Close on right in `TrackModal`).
+  - Added dedicated Stop/Close (`engine.stopTrack()`) button on both `PlayerBar` and `TrackModal`, moved `TrackModal` spectrum to a non-overlapping 30fps throttled strip, added `onerror` artwork fallbacks, and converted Spotify Charts to on-demand Konsta `<List>` items to eliminate offline `net::ERR_NAME_NOT_RESOLVED` WebView errors.
+
 ### UI/UX & Konsta UI v5.5 iOS Fixes
 - Eliminated all layout overlaps observed on Android devices: removed colliding bottom-right `<Fab>`, elevated floating `PlayerBar` cleanly above Konsta v5.5's floating Liquid Glass `Tabbar` (`bottom: 86px + safe-area`), and increased `<Page>` bottom clearance to `pb-52`.
 - Restored native Konsta UI `<BlockTitle>` spacing (removed conflicting `!my-2` overrides) so section headings never clip into cards below.

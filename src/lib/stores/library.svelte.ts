@@ -42,6 +42,7 @@ class AppStore {
 
   // Live network connectivity state (prevents broken Android WebView error iframes when offline)
   isOnline = $state<boolean>(true);
+  networkReachable = $state<boolean>(true);
   private onlineHandler: (() => void) | null = null;
   private offlineHandler: (() => void) | null = null;
 
@@ -96,7 +97,6 @@ class AppStore {
   editingTrack = $state<Track | null>(null);
   playlistModalOpen = $state<boolean>(false);
   targetTrackForPlaylist = $state<Track | null>(null);
-  dynamicBarDismissed = $state<boolean>(false);
 
   // Accessible live-region toast
   toastMsg = $state<string>('');
@@ -166,6 +166,7 @@ class AppStore {
     };
     this.offlineHandler = () => {
       this.isOnline = false;
+      this.networkReachable = false;
       this.showToast('Mode Offline aktif — koleksi lokal tetap siap diputar.');
     };
     window.addEventListener('online', this.onlineHandler);
@@ -188,6 +189,13 @@ class AppStore {
     document.documentElement.classList.toggle('dark', dark);
     const meta = document.getElementById('theme-color-meta');
     if (meta) meta.setAttribute('content', dark ? '#000000' : '#f2f2f7');
+    if (typeof window !== 'undefined') {
+      try {
+        window.XmusicAndroidMedia?.setSystemBarTheme(dark);
+      } catch {
+        // Running outside Android WebView
+      }
+    }
   }
 
   setThemeMode(mode: ThemeMode): void {
@@ -242,7 +250,9 @@ class AppStore {
   }
 
   async refreshOnlineFeeds(): Promise<void> {
-    if (!this.isOnline) {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      this.isOnline = false;
+      this.networkReachable = false;
       this.loadingHome = false;
       return;
     }
@@ -250,6 +260,7 @@ class AppStore {
     const [trending, yt] = await Promise.all([fetchTrending(32), fetchYtTrending('ID')]);
     this.trendingTracks = trending;
     this.ytTracks = yt;
+    this.networkReachable = trending.length > 0 || yt.length > 0;
     this.loadingHome = false;
     if (engine.queue.length === 0) {
       engine.queue = [...this.localTracks, ...trending];
@@ -347,7 +358,6 @@ class AppStore {
       await this.refreshLocalTracks();
       const hydrated = this.localTracks.find((x) => x.id === demoTrack.id);
       if (hydrated) {
-        this.dynamicBarDismissed = false;
         engine.playTrack(hydrated, [...this.localTracks, ...this.trendingTracks]);
         this.openTrackModal(hydrated, false);
       }
@@ -362,7 +372,6 @@ class AppStore {
     this.modalTrack = track;
     this.modalFlipped = startFlipped;
     this.trackModalOpen = true;
-    this.dynamicBarDismissed = false;
     if (startFlipped && !track.lyrics) {
       void this.autoFetchLyricsForTrack(track);
     }

@@ -2,7 +2,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import {
-    Badge,
     Link,
     Navbar,
     Page,
@@ -18,7 +17,6 @@
   import type { AppView } from '#lib/types/music.ts';
   import { formatTime } from '#lib/utils/format.ts';
 
-  import DynamicBar from '#lib/components/DynamicBar.svelte';
   import Icon from '#lib/components/Icon.svelte';
   import PlayerBar from '#lib/components/PlayerBar.svelte';
   import QueueDrawer from '#lib/components/QueueDrawer.svelte';
@@ -46,6 +44,11 @@
   };
 
   const navTitle = $derived(VIEW_TITLES[appStore.view]);
+  const navSubtitle = $derived(
+    engine.sleepMinutes !== 0
+      ? `Sleep Timer: ${engine.sleepMinutes === -1 ? 'Akhir Lagu' : formatTime(engine.sleepRemainingSec)}`
+      : undefined
+  );
 
   function handlePopState(): void {
     if (appStore.closeTopOverlay()) {
@@ -79,45 +82,32 @@
 
 <a href="#main-content" class="skip-link">Lewati ke konten utama</a>
 
-<DynamicBar />
+<Page class={engine.current ? 'pb-48' : 'pb-28'}>
+  <!-- One dedicated single-action iOS glass button per side: zero cramped multi-icon pills -->
+  <Navbar
+    title={navTitle}
+    subtitle={navSubtitle}
+    large={appStore.view === 'home'}
+    class="top-0 sticky z-30"
+  >
+    {#snippet left()}
+      <Link
+        iconOnly
+        onclick={() => appStore.toggleTheme()}
+        aria-label={appStore.isDark ? 'Ubah ke Mode Terang' : 'Ubah ke Mode Gelap'}
+      >
+        <Icon name={appStore.isDark ? 'sun' : 'moon'} size={20} />
+      </Link>
+    {/snippet}
 
-<!-- Generous pb-52 clears both floating iOS Mini-Player and Konsta v5.5 Floating Tabbar -->
-<Page class="pb-52">
-  <Navbar title={navTitle} large={appStore.view === 'home'} class="top-0 sticky z-30">
     {#snippet right()}
-      <div class="flex items-center gap-1.5 px-1">
-        {#if engine.sleepMinutes !== 0}
-          <Link onclick={() => (appStore.view = 'eq')} aria-label="Sleep Timer aktif">
-            <Badge class="bg-[#007aff] text-white text-xs dark:bg-[#0a84ff]">
-              {engine.sleepMinutes === -1 ? 'Akhir' : formatTime(engine.sleepRemainingSec)}
-            </Badge>
-          </Link>
-        {/if}
-
-        <Link
-          iconOnly
-          onclick={() => (appStore.uploadModalOpen = true)}
-          aria-label="Unggah lagu baru"
-        >
-          <Icon name="plus" size={19} />
-        </Link>
-
-        <Link
-          iconOnly
-          onclick={() => appStore.toggleTheme()}
-          aria-label={appStore.isDark ? 'Ubah ke Mode Terang' : 'Ubah ke Mode Gelap'}
-        >
-          <Icon name={appStore.isDark ? 'sun' : 'moon'} size={19} />
-        </Link>
-
-        <Link
-          iconOnly
-          onclick={() => (appStore.npDrawerOpen = !appStore.npDrawerOpen)}
-          aria-label="Buka antrean putar dan lirik"
-        >
-          <Icon name="queue" size={19} />
-        </Link>
-      </div>
+      <Link
+        iconOnly
+        onclick={() => (appStore.npDrawerOpen = !appStore.npDrawerOpen)}
+        aria-label="Buka antrean putar dan lirik"
+      >
+        <Icon name="queue" size={20} />
+      </Link>
     {/snippet}
   </Navbar>
 

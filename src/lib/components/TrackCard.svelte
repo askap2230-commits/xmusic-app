@@ -10,6 +10,12 @@
 
   let { track }: { track: Track } = $props();
   let lastTapAt = 0;
+  let imgFailed = $state<boolean>(false);
+
+  $effect(() => {
+    void track.imageUrl;
+    imgFailed = false;
+  });
 
   const isPlaying = $derived(engine.current?.id === track.id && engine.playing);
   const isFlipped = $derived(appStore.flippedGridIds.has(track.id));
@@ -59,33 +65,34 @@
           >
             <span
               class="relative grid aspect-square w-full place-items-center overflow-hidden rounded-xl"
-              style={track.imageUrl
+              style={track.imageUrl && !imgFailed
                 ? ''
                 : `background: linear-gradient(135deg, ${track.c1 || '#007aff'}, ${track.c2 || '#1c1c1e'})`}
             >
-              {#if track.imageUrl}
+              {#if track.imageUrl && !imgFailed}
                 <img
                   src={track.imageUrl}
-                  alt="Sampul {track.title}"
+                  alt=""
                   loading="lazy"
                   decoding="async"
                   class="h-full w-full object-cover"
+                  onerror={() => (imgFailed = true)}
                 />
               {:else}
                 <span class="text-4xl font-extrabold text-white/95">
                   {getTrackInitial(track.title)}
                 </span>
               {/if}
-              <span class="absolute bottom-2 left-2 rounded-full bg-black/80 px-2 py-0.5 text-[11px] font-semibold text-white">
+              <span class="absolute bottom-2 left-2 rounded-full bg-black/75 px-2 py-0.5 text-[11px] font-semibold text-white">
                 {track.dur ? formatTime(track.dur) : track.album || 'Stream'}
               </span>
             </span>
           </button>
 
-          <div class="absolute top-2 right-2 flex gap-1">
+          <div class="absolute top-2 right-2 flex gap-1.5">
             <button
               type="button"
-              class="grid h-8 w-8 place-items-center rounded-full bg-black/75 text-white hover:bg-black"
+              class="grid h-8 w-8 place-items-center rounded-full bg-black/70 text-white active:scale-95"
               aria-label="Balik kartu lirik {track.title}"
               onclick={() => appStore.toggleGridFlip(track)}
             >
@@ -93,7 +100,7 @@
             </button>
             <button
               type="button"
-              class="grid h-8 w-8 place-items-center rounded-full bg-black/75 hover:bg-black {isLiked
+              class="grid h-8 w-8 place-items-center rounded-full bg-black/70 active:scale-95 {isLiked
                 ? 'text-[#ff375f]'
                 : 'text-white'}"
               aria-label={isLiked ? `Hapus ${track.title} dari favorit` : `Tambahkan ${track.title} ke favorit`}
@@ -105,7 +112,7 @@
             {#if track.source === 'local'}
               <button
                 type="button"
-                class="grid h-8 w-8 place-items-center rounded-full bg-black/75 text-white hover:bg-black"
+                class="grid h-8 w-8 place-items-center rounded-full bg-black/70 text-white active:scale-95"
                 aria-label="Edit detail {track.title}"
                 onclick={() => appStore.openEditTrack(track)}
               >
@@ -113,7 +120,7 @@
               </button>
               <button
                 type="button"
-                class="grid h-8 w-8 place-items-center rounded-full bg-black/75 text-white hover:bg-black"
+                class="grid h-8 w-8 place-items-center rounded-full bg-black/70 text-white active:scale-95"
                 aria-label="Hapus {track.title}"
                 onclick={() => appStore.removeTrack(track)}
               >
@@ -125,12 +132,12 @@
 
         <div class="mt-2.5 flex items-center justify-between gap-2">
           <div class="min-w-0 flex-1">
-            <h3 class="truncate text-sm font-semibold text-zinc-950 dark:text-white">{track.title}</h3>
-            <p class="truncate text-xs text-zinc-600 dark:text-zinc-300">{track.artist}</p>
+            <h3 class="truncate text-sm font-semibold text-black dark:text-white">{track.title}</h3>
+            <p class="truncate text-xs text-black/60 dark:text-white/60">{track.artist}</p>
           </div>
           <button
             type="button"
-            class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-zinc-950 text-white active:scale-95 dark:bg-white dark:text-black"
+            class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-black text-white active:scale-95 dark:bg-white dark:text-black"
             aria-label={isPlaying ? `Jeda ${track.title}` : `Putar ${track.title}`}
             onclick={() => engine.playTrack(track, appStore.allTracks)}
           >
@@ -148,12 +155,12 @@
       >
         <div class="mb-2 flex items-center justify-between gap-1">
           <div class="min-w-0">
-            <div class="truncate text-xs font-bold text-zinc-950 dark:text-white">{track.title}</div>
+            <div class="truncate text-xs font-bold text-black dark:text-white">{track.title}</div>
             <div class="truncate text-[11px] text-[#007aff] dark:text-[#64d2ff]">{track.artist}</div>
           </div>
           <button
             type="button"
-            class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-black/10 text-zinc-900 dark:bg-white/10 dark:text-white"
+            class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-black/10 text-black dark:bg-white/10 dark:text-white"
             aria-label="Kembalikan kartu {track.title}"
             onclick={() => appStore.toggleGridFlip(track)}
           >
@@ -166,14 +173,14 @@
             {#each parsedLyrics as line, idx}
               <div
                 class="rounded-md px-1.5 py-0.5 {idx === activeLyricIdx
-                  ? 'bg-[#007aff]/15 font-bold text-zinc-950 dark:bg-[#0a84ff]/25 dark:text-white'
-                  : 'text-zinc-600 dark:text-zinc-300'}"
+                  ? 'bg-[#007aff]/15 font-bold text-black dark:bg-[#0a84ff]/25 dark:text-white'
+                  : 'text-black/60 dark:text-white/65'}"
               >
                 {line.text}
               </div>
             {/each}
           {:else}
-            <p class="mt-6 text-center text-xs text-zinc-600 dark:text-zinc-300">
+            <p class="mt-6 text-center text-xs text-black/60 dark:text-white/65">
               {appStore.fetchingLyrics
                 ? 'Mencari lirik...'
                 : 'Ketuk "Buka Penuh" untuk mencari atau menulis lirik.'}

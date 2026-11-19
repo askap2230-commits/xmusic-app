@@ -3,36 +3,44 @@
 @import "konsta/svelte/theme.css";
 
 /*
- * Konsta UI v5.5 iOS Theme Brand Token & Non-Conflicting Dual-Mode Utilities
- * - Konsta v5 defines class-based dark mode via @custom-variant dark (&:where(.dark, .dark *)).
- * - Brand color uses --color-brand-primary inside @theme per Konsta v5 specification.
+ * Pure Konsta UI v5.5 iOS Theme Configuration
+ * - Class-based dark mode managed natively by Konsta v5 (@custom-variant dark).
+ * - Brand accent token configured per official Konsta UI v5 Tailwind CSS v4 guide.
  */
 @theme {
   --color-brand-primary: #007aff;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
 body {
   height: 100%;
   overscroll-behavior: none;
-  background-color: #f2f2f7;
-  color: #09090b;
+  -webkit-font-smoothing: antialiased;
 }
 
-html.dark,
-html.dark body {
-  background-color: #000000;
-  color: #ffffff;
+/* Remove harsh blue focus rectangle on touch devices; keep WCAG keyboard focus on desktop */
+:focus {
+  outline: none;
 }
 
-/* WCAG 2.2 AA High-Contrast Keyboard Focus Ring (Light & Dark) */
-:focus-visible {
-  outline: 2px solid #007aff;
-  outline-offset: 2px;
-}
+@media (hover: hover) and (pointer: fine) {
+  button:focus-visible,
+  a:focus-visible,
+  [role="button"]:focus-visible {
+    outline: 2px solid #007aff;
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
 
-html.dark :focus-visible {
-  outline-color: #64d2ff;
+  html.dark button:focus-visible,
+  html.dark a:focus-visible,
+  html.dark [role="button"]:focus-visible {
+    outline-color: #64d2ff;
+  }
 }
 
 .skip-link {
@@ -41,8 +49,8 @@ html.dark :focus-visible {
   left: 12px;
   z-index: 9999;
   padding: 10px 16px;
-  border-radius: 10px;
-  background: #09090b;
+  border-radius: 12px;
+  background: #000000;
   color: #ffffff;
   font-weight: 700;
   text-decoration: none;
@@ -58,13 +66,13 @@ html.dark .skip-link {
   top: 12px;
 }
 
-/* Scroll virtualization for smooth 60/120fps track grids on Android WebView */
+/* GPU-accelerated scroll virtualization for 60/120fps Android WebView grids */
 .xmusic-grid {
   content-visibility: auto;
   contain-intrinsic-size: auto 240px;
 }
 
-/* 3D Flip Card System (with Android WebView compositing fix) */
+/* 3D Flip Card Utility (Android WebView compositing-safe) */
 .xmusic-flip-scene {
   perspective: 1100px;
 }
@@ -73,7 +81,7 @@ html.dark .skip-link {
   position: relative;
   width: 100%;
   transform-style: preserve-3d;
-  transition: transform 0.52s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .xmusic-flip-inner.is-flipped {
@@ -106,7 +114,7 @@ html.dark .skip-link {
   writing-mode: vertical-lr;
   direction: rtl;
   height: 124px;
-  width: 30px;
+  width: 32px;
   accent-color: #007aff;
   cursor: pointer;
 }
@@ -115,7 +123,7 @@ html.dark .xmusic-eq-slider {
   accent-color: #0a84ff;
 }
 
-/* WCAG 2.3.3 Reduced Motion Compliance */
+/* WCAG 2.3.3 Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
