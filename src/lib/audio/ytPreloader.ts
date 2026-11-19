@@ -19,10 +19,11 @@
  *    downloading any audio bytes, cutting playback start latency by 150-400ms.
  */
 import { invalidateYoutubeAudioCache, resolveYoutubeAudioStream } from '#lib/api/services.ts';
-import type { Track } from '#lib/types/music.ts';
+import type { ResolvedAudioStream, Track } from '#lib/types/music.ts';
 
 interface CacheEntry {
   url: string;
+  userAgent?: string;
   expiresAt: number;
 }
 
@@ -41,7 +42,7 @@ const SESSION_STORAGE_KEY = 'nys_yt_stream_cache_v1';
 class SmartYtPreloader {
   private cache = new Map<string, CacheEntry>();
   private failedUntil = new Map<string, number>();
-  private inFlight = new Map<string, Promise<string | null>>();
+  private inFlight = new Map<string, Promise<ResolvedAudioStream | null>>();
   private queue: Array<{ videoId: string; urgent: boolean }> = [];
   private preconnectedOrigins = new Set<string>();
   private activeCount = 0;
@@ -132,14 +133,18 @@ class SmartYtPreloader {
     return true;
   }
 
-  getCachedUrl(videoId: string): string | null {
+  getCachedStream(videoId: string): ResolvedAudioStream | null {
     const entry = this.cache.get(videoId);
     if (!entry) return null;
     if (Date.now() >= entry.expiresAt) {
       this.cache.delete(videoId);
       return null;
     }
-    return entry.url;
+    return { url: entry.url, userAgent: entry.userAgent };
+  }
+
+  getCachedUrl(videoId: string): string | null {
+    return this.getCachedStream(videoId)?.url ?? null;
   }
 
   invalidate(videoId: string): void {
@@ -149,14 +154,18 @@ class SmartYtPreloader {
     this.persistSessionCache();
   }
 
-  private putCache(videoId: string, url: string): void {
+  private putCache(videoId: string, stream: ResolvedAudioStream): void {
     this.failedUntil.delete(videoId);
     if (this.cache.size >= MAX_CACHE_SIZE) {
       const oldestKey = this.cache.keys().next().value;
       if (oldestKey) this.cache.delete(oldestKey);
     }
-    this.cache.set(videoId, { url, expiresAt: Date.now() + CACHE_TTL_MS });
-    this.preconnectOrigin(url);
+    this.cache.set(videoId, {
+      url: stream.url,
+      userAgent: stream.userAgent,
+      expiresAt: Date.now() + CACHE_TTL_MS
+    });
+    this.preconnectOrigin(stream.url);
     this.persistSessionCache();
   }
 
@@ -164,8 +173,8 @@ class SmartYtPreloader {
    * Immediately resolve a videoId (reusing any in-flight or cached promise).
    * Always bypasses fail cooldown when called explicitly by user playback.
    */
-  resolveNow(videoId: string, bypassCooldown = false): Promise<string | null> {
-    const cached = this.getCachedUrl(videoId);
+  resolveNow(videoId: string, bypassCooldown = false): Promise<ResolvedAudioStream | null> {
+    const cached = this.getCachedStream(videoId);
     if (cached) return Promise.resolve(cached);
 
     if (!bypassCooldown && this.isInFailCooldown(videoId)) {
@@ -176,13 +185,13 @@ class SmartYtPreloader {
     if (existing) return existing;
 
     const promise = resolveYoutubeAudioStream(videoId)
-      .then((url) => {
-        if (url) {
-          this.putCache(videoId, url);
+      .then((stream) => {
+        if (stream?.url) {
+          this.putCache(videoId, stream);
         } else {
           this.failedUntil.set(videoId, Date.now() + FAIL_COOLDOWN_MS);
         }
-        return url;
+        return stream;
       })
       .catch(() => {
         this.failedUntil.set(videoId, Date.now() + FAIL_COOLDOWN_MS);

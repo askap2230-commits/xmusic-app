@@ -45,14 +45,18 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaMetadata
+import android.media.MediaPlayer
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import java.lang.ref.WeakReference
 
 class XmusicMediaService : Service() {
     companion object {
@@ -64,18 +68,54 @@ class XmusicMediaService : Service() {
         const val ACTION_NEXT = "com.nys.xmusic.ACTION_NEXT"
         const val ACTION_PREV = "com.nys.xmusic.ACTION_PREV"
 
+        const val ACTION_PLAY_URL = "com.nys.xmusic.ACTION_PLAY_URL"
+        const val ACTION_NATIVE_PAUSE = "com.nys.xmusic.ACTION_NATIVE_PAUSE"
+        const val ACTION_NATIVE_RESUME = "com.nys.xmusic.ACTION_NATIVE_RESUME"
+        const val ACTION_NATIVE_STOP = "com.nys.xmusic.ACTION_NATIVE_STOP"
+        const val ACTION_NATIVE_SEEK = "com.nys.xmusic.ACTION_NATIVE_SEEK"
+        const val ACTION_NATIVE_VOLUME = "com.nys.xmusic.ACTION_NATIVE_VOLUME"
+
+        const val EXTRA_TRACK_ID = "track_id"
         const val EXTRA_TITLE = "title"
         const val EXTRA_ARTIST = "artist"
         const val EXTRA_ALBUM = "album"
         const val EXTRA_IS_PLAYING = "is_playing"
         const val EXTRA_DURATION_MS = "duration_ms"
         const val EXTRA_POSITION_MS = "position_ms"
+        const val EXTRA_URL = "url"
+        const val EXTRA_USER_AGENT = "user_agent"
+        const val EXTRA_VOLUME = "volume"
 
         @Volatile
         var isRunning: Boolean = false
 
         @Volatile
         var isPlayingNow: Boolean = false
+
+        @Volatile
+        var isNativeActive: Boolean = false
+
+        @Volatile
+        var isNativePlaying: Boolean = false
+
+        @Volatile
+        var nativeTrackId: String = ""
+
+        @Volatile
+        var nativePositionMs: Long = 0L
+
+        @Volatile
+        var nativeDurationMs: Long = 0L
+
+        private var instanceRef: WeakReference<XmusicMediaService>? = null
+
+        fun getNativeStateJson(): String {
+            val svc = instanceRef?.get()
+            val pos = svc?.readLivePositionMs() ?: nativePositionMs
+            val dur = svc?.readLiveDurationMs() ?: nativeDurationMs
+            val safeId = nativeTrackId.replace("\\", "\\\\").replace("\"", "\\\"")
+            return "{\"active\":$isNativeActive,\"playing\":$isNativePlaying,\"trackId\":\"$safeId\",\"positionMs\":$pos,\"durationMs\":$dur}"
+        }
     }
 
     private var mediaSession: MediaSession? = null
@@ -84,16 +124,60 @@ class XmusicMediaService : Service() {
     private var isInForeground: Boolean = false
     private var noisyReceiverRegistered: Boolean = false
 
+    // True native Android MediaPlayer inside Foreground Service (survives screen off, app switch & app close)
+    private var mediaPlayer: MediaPlayer? = null
+    private var isNativePrepared: Boolean = false
+    private var pendingSeekMs: Long = 0L
+    private var currentVolume: Float = 0.85f
+    private var currentTitle: String = "nys Xmusic"
+    private var currentArtist: String = "Xmusic"
+    private var currentAlbum: String = "nys Xmusic"
+
     private val becomingNoisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY && isPlayingNow) {
-                MainActivity.dispatchMediaAction("pause")
+                if (isNativeActive) {
+                    handleNativePause()
+                } else {
+                    MainActivity.dispatchMediaAction("pause")
+                }
             }
+        }
+    }
+
+    fun readLivePositionMs(): Long {
+        val mp = mediaPlayer ?: return nativePositionMs
+        return try {
+            if (isNativePrepared) {
+                val p = mp.currentPosition.toLong().coerceAtLeast(0L)
+                nativePositionMs = p
+                p
+            } else {
+                nativePositionMs
+            }
+        } catch (_: Throwable) {
+            nativePositionMs
+        }
+    }
+
+    fun readLiveDurationMs(): Long {
+        val mp = mediaPlayer ?: return nativeDurationMs
+        return try {
+            if (isNativePrepared) {
+                val d = mp.duration.toLong().coerceAtLeast(0L)
+                if (d > 0L) nativeDurationMs = d
+                nativeDurationMs
+            } else {
+                nativeDurationMs
+            }
+        } catch (_: Throwable) {
+            nativeDurationMs
         }
     }
 
     override fun onCreate() {
         super.onCreate()
+        instanceRef = WeakReference(this)
         isRunning = true
         ensureChannel()
 
@@ -127,11 +211,20 @@ class XmusicMediaService : Service() {
 
         mediaSession = MediaSession(this, "XmusicMediaSession").apply {
             setCallback(object : MediaSession.Callback() {
-                override fun onPlay() { MainActivity.dispatchMediaAction("play") }
-                override fun onPause() { MainActivity.dispatchMediaAction("pause") }
+                override fun onPlay() {
+                    if (isNativeActive) handleNativeResume() else MainActivity.dispatchMediaAction("play")
+                }
+                override fun onPause() {
+                    if (isNativeActive) handleNativePause() else MainActivity.dispatchMediaAction("pause")
+                }
                 override fun onSkipToNext() { MainActivity.dispatchMediaAction("next") }
                 override fun onSkipToPrevious() { MainActivity.dispatchMediaAction("prev") }
-                override fun onStop() { MainActivity.dispatchMediaAction("stop") }
+                override fun onSeekTo(pos: Long) {
+                    if (isNativeActive) handleNativeSeek(pos)
+                }
+                override fun onStop() {
+                    if (isNativeActive) handleNativeStop(true) else MainActivity.dispatchMediaAction("stop")
+                }
             })
             isActive = true
         }
@@ -139,8 +232,50 @@ class XmusicMediaService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_PLAY_URL -> {
+                val trackId = intent.getStringExtra(EXTRA_TRACK_ID) ?: ""
+                val title = intent.getStringExtra(EXTRA_TITLE) ?: "nys Xmusic"
+                val artist = intent.getStringExtra(EXTRA_ARTIST) ?: "Xmusic"
+                val album = intent.getStringExtra(EXTRA_ALBUM) ?: "nys Xmusic"
+                val url = intent.getStringExtra(EXTRA_URL) ?: return START_NOT_STICKY
+                val ua = intent.getStringExtra(EXTRA_USER_AGENT) ?: ""
+                val startMs = intent.getLongExtra(EXTRA_POSITION_MS, 0L)
+                val vol = intent.getFloatExtra(EXTRA_VOLUME, 0.85f).coerceIn(0f, 1f)
+                startNativeUrl(trackId, title, artist, album, url, ua, startMs, vol)
+                return START_STICKY
+            }
+            ACTION_NATIVE_PAUSE -> {
+                handleNativePause()
+                return START_NOT_STICKY
+            }
+            ACTION_NATIVE_RESUME -> {
+                handleNativeResume()
+                return if (isNativePlaying) START_STICKY else START_NOT_STICKY
+            }
+            ACTION_NATIVE_STOP -> {
+                handleNativeStop(false)
+                return START_NOT_STICKY
+            }
+            ACTION_NATIVE_SEEK -> {
+                val pos = intent.getLongExtra(EXTRA_POSITION_MS, 0L)
+                handleNativeSeek(pos)
+                return if (isPlayingNow) START_STICKY else START_NOT_STICKY
+            }
+            ACTION_NATIVE_VOLUME -> {
+                val vol = intent.getFloatExtra(EXTRA_VOLUME, 0.85f).coerceIn(0f, 1f)
+                currentVolume = vol
+                try {
+                    mediaPlayer?.setVolume(vol, vol)
+                } catch (_: Throwable) {
+                }
+                return if (isPlayingNow) START_STICKY else START_NOT_STICKY
+            }
             ACTION_PLAY_PAUSE -> {
-                MainActivity.dispatchMediaAction("togglePlay")
+                if (isNativeActive) {
+                    if (isNativePlaying) handleNativePause() else handleNativeResume()
+                } else {
+                    MainActivity.dispatchMediaAction("togglePlay")
+                }
                 return if (isPlayingNow) START_STICKY else START_NOT_STICKY
             }
             ACTION_NEXT -> {
@@ -152,14 +287,7 @@ class XmusicMediaService : Service() {
                 return if (isPlayingNow) START_STICKY else START_NOT_STICKY
             }
             ACTION_CLEAR -> {
-                isPlayingNow = false
-                releaseLocks()
-                isInForeground = false
-                try {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                } catch (_: Throwable) {
-                }
-                stopSelf()
+                handleNativeStop(true)
                 return START_NOT_STICKY
             }
             ACTION_UPDATE -> {
@@ -169,6 +297,9 @@ class XmusicMediaService : Service() {
                 val isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, false)
                 val durationMs = intent.getLongExtra(EXTRA_DURATION_MS, 0L)
                 val positionMs = intent.getLongExtra(EXTRA_POSITION_MS, 0L)
+                currentTitle = title
+                currentArtist = artist
+                currentAlbum = album
                 isPlayingNow = isPlaying
                 if (isPlaying) {
                     acquireLocks()
@@ -180,6 +311,176 @@ class XmusicMediaService : Service() {
             }
         }
         return if (isPlayingNow) START_STICKY else START_NOT_STICKY
+    }
+
+    private fun releaseMediaPlayer() {
+        isNativePrepared = false
+        try {
+            mediaPlayer?.reset()
+            mediaPlayer?.release()
+        } catch (_: Throwable) {
+        }
+        mediaPlayer = null
+    }
+
+    private fun startNativeUrl(
+        trackId: String,
+        title: String,
+        artist: String,
+        album: String,
+        url: String,
+        userAgent: String,
+        startMs: Long,
+        volume: Float
+    ) {
+        releaseMediaPlayer()
+        currentTitle = title
+        currentArtist = artist
+        currentAlbum = album
+        currentVolume = volume
+        pendingSeekMs = startMs.coerceAtLeast(0L)
+        nativeTrackId = trackId
+        nativePositionMs = pendingSeekMs
+        nativeDurationMs = 0L
+        isNativeActive = true
+        isNativePlaying = true
+        isPlayingNow = true
+
+        acquireLocks()
+        updateNotification(title, artist, album, true, 0L, pendingSeekMs)
+
+        try {
+            val mp = MediaPlayer()
+            mp.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            mp.setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
+
+            val headers = HashMap<String, String>()
+            if (userAgent.isNotBlank()) {
+                headers["User-Agent"] = userAgent
+            }
+            mp.setDataSource(applicationContext, Uri.parse(url), headers)
+
+            mp.setOnPreparedListener { player ->
+                isNativePrepared = true
+                val dur = player.duration.toLong().coerceAtLeast(0L)
+                nativeDurationMs = dur
+                if (pendingSeekMs > 1000L && (dur == 0L || pendingSeekMs < dur - 1500L)) {
+                    try {
+                        player.seekTo(pendingSeekMs.toInt())
+                    } catch (_: Throwable) {
+                    }
+                }
+                player.setVolume(currentVolume, currentVolume)
+                player.start()
+                isNativePlaying = true
+                isPlayingNow = true
+                acquireLocks()
+                updateNotification(currentTitle, currentArtist, currentAlbum, true, dur, readLivePositionMs())
+                MainActivity.dispatchMediaAction("nativePlaying")
+            }
+
+            mp.setOnCompletionListener {
+                isNativePlaying = false
+                isPlayingNow = false
+                nativePositionMs = nativeDurationMs
+                releaseLocks()
+                updateNotification(currentTitle, currentArtist, currentAlbum, false, nativeDurationMs, nativeDurationMs)
+                MainActivity.dispatchMediaAction("nativeEnded")
+            }
+
+            mp.setOnErrorListener { _, _, _ ->
+                releaseMediaPlayer()
+                isNativeActive = false
+                isNativePlaying = false
+                isPlayingNow = false
+                releaseLocks()
+                updateNotification(currentTitle, currentArtist, currentAlbum, false, nativeDurationMs, nativePositionMs)
+                MainActivity.dispatchMediaAction("nativeError")
+                true
+            }
+
+            mediaPlayer = mp
+            mp.prepareAsync()
+        } catch (_: Throwable) {
+            releaseMediaPlayer()
+            isNativeActive = false
+            isNativePlaying = false
+            isPlayingNow = false
+            releaseLocks()
+            MainActivity.dispatchMediaAction("nativeError")
+        }
+    }
+
+    private fun handleNativePause() {
+        try {
+            val mp = mediaPlayer
+            if (mp != null && isNativePrepared && mp.isPlaying) {
+                nativePositionMs = mp.currentPosition.toLong().coerceAtLeast(0L)
+                mp.pause()
+            }
+        } catch (_: Throwable) {
+        }
+        isNativePlaying = false
+        isPlayingNow = false
+        releaseLocks()
+        updateNotification(currentTitle, currentArtist, currentAlbum, false, readLiveDurationMs(), readLivePositionMs())
+        MainActivity.dispatchMediaAction("nativePaused")
+    }
+
+    private fun handleNativeResume() {
+        val mp = mediaPlayer
+        if (mp != null && isNativePrepared) {
+            try {
+                mp.setVolume(currentVolume, currentVolume)
+                mp.start()
+                isNativePlaying = true
+                isPlayingNow = true
+                acquireLocks()
+                updateNotification(currentTitle, currentArtist, currentAlbum, true, readLiveDurationMs(), readLivePositionMs())
+                MainActivity.dispatchMediaAction("nativePlaying")
+                return
+            } catch (_: Throwable) {
+            }
+        }
+        MainActivity.dispatchMediaAction("nativeError")
+    }
+
+    private fun handleNativeSeek(positionMs: Long) {
+        val target = positionMs.coerceAtLeast(0L)
+        nativePositionMs = target
+        pendingSeekMs = target
+        try {
+            val mp = mediaPlayer
+            if (mp != null && isNativePrepared) {
+                mp.seekTo(target.toInt())
+            }
+        } catch (_: Throwable) {
+        }
+        updateNotification(currentTitle, currentArtist, currentAlbum, isNativePlaying, readLiveDurationMs(), target)
+    }
+
+    private fun handleNativeStop(clearForeground: Boolean) {
+        releaseMediaPlayer()
+        isNativeActive = false
+        isNativePlaying = false
+        isPlayingNow = false
+        nativeTrackId = ""
+        nativePositionMs = 0L
+        nativeDurationMs = 0L
+        releaseLocks()
+        if (clearForeground) {
+            isInForeground = false
+            try {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } catch (_: Throwable) {
+            }
+            stopSelf()
+        }
     }
 
     private fun acquireLocks() {
@@ -227,6 +528,7 @@ class XmusicMediaService : Service() {
             PlaybackState.ACTION_PLAY_PAUSE or
             PlaybackState.ACTION_SKIP_TO_NEXT or
             PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+            PlaybackState.ACTION_SEEK_TO or
             PlaybackState.ACTION_STOP
         val playbackState = PlaybackState.Builder()
             .setActions(actions)
@@ -318,21 +620,19 @@ class XmusicMediaService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        if (!isPlayingNow) {
-            releaseLocks()
-            isInForeground = false
-            try {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } catch (_: Throwable) {
-            }
-            stopSelf()
+        if (!isPlayingNow && !isNativePlaying) {
+            handleNativeStop(true)
         }
         super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
+        instanceRef = null
+        releaseMediaPlayer()
         isRunning = false
         isPlayingNow = false
+        isNativeActive = false
+        isNativePlaying = false
         isInForeground = false
         releaseLocks()
         if (noisyReceiverRegistered) {
@@ -403,7 +703,7 @@ class MainActivity : TauriActivity() {
                     wv.goBack()
                     return
                 }
-                if (XmusicMediaService.isPlayingNow) {
+                if (XmusicMediaService.isPlayingNow || XmusicMediaService.isNativePlaying) {
                     moveTaskToBack(true)
                     return
                 }
@@ -429,7 +729,6 @@ class MainActivity : TauriActivity() {
         super.onWebViewCreate(webView)
         webView.settings.mediaPlaybackRequiresUserGesture = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // Prevent Android OS from waiving or killing the WebView renderer when screen is off or app is backgrounded
             webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
         }
         webViewRef = WeakReference(webView)
@@ -467,8 +766,6 @@ class MainActivity : TauriActivity() {
         val keepAlive = Runnable {
             if (!XmusicMediaService.isPlayingNow) return@Runnable
             try {
-                // Re-assert View.VISIBLE so Chromium WebView does not call WasHidden() and suspend
-                // background <audio>/<video> (YouTube Music) when screen turns off or user switches apps.
                 wv.dispatchWindowVisibilityChanged(View.VISIBLE)
                 wv.onResume()
                 wv.resumeTimers()
@@ -480,7 +777,8 @@ class MainActivity : TauriActivity() {
     }
 
     override fun onDestroy() {
-        if (isFinishing && !isChangingConfigurations) {
+        // NEVER kill XmusicMediaService if native Android MediaPlayer is actively playing in background!
+        if (isFinishing && !isChangingConfigurations && !XmusicMediaService.isNativePlaying) {
             try {
                 val intent = Intent(this, XmusicMediaService::class.java).apply {
                     action = XmusicMediaService.ACTION_CLEAR
@@ -492,7 +790,96 @@ class MainActivity : TauriActivity() {
         super.onDestroy()
     }
 
+    private fun dispatchServiceIntent(intent: Intent, requireForeground: Boolean) {
+        try {
+            if (XmusicMediaService.isRunning || !requireForeground) {
+                startService(intent)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (_: Throwable) {
+            try {
+                startService(intent)
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
     inner class AndroidMediaBridge {
+        @JavascriptInterface
+        fun playNativeUrl(
+            trackId: String,
+            title: String,
+            artist: String,
+            album: String,
+            url: String,
+            userAgent: String,
+            startMs: Long,
+            volume: Float
+        ) {
+            val intent = Intent(this@MainActivity, XmusicMediaService::class.java).apply {
+                action = XmusicMediaService.ACTION_PLAY_URL
+                putExtra(XmusicMediaService.EXTRA_TRACK_ID, trackId)
+                putExtra(XmusicMediaService.EXTRA_TITLE, title)
+                putExtra(XmusicMediaService.EXTRA_ARTIST, artist)
+                putExtra(XmusicMediaService.EXTRA_ALBUM, album)
+                putExtra(XmusicMediaService.EXTRA_URL, url)
+                putExtra(XmusicMediaService.EXTRA_USER_AGENT, userAgent)
+                putExtra(XmusicMediaService.EXTRA_POSITION_MS, startMs)
+                putExtra(XmusicMediaService.EXTRA_VOLUME, volume)
+            }
+            dispatchServiceIntent(intent, true)
+        }
+
+        @JavascriptInterface
+        fun pauseNative() {
+            val intent = Intent(this@MainActivity, XmusicMediaService::class.java).apply {
+                action = XmusicMediaService.ACTION_NATIVE_PAUSE
+            }
+            dispatchServiceIntent(intent, false)
+        }
+
+        @JavascriptInterface
+        fun resumeNative() {
+            val intent = Intent(this@MainActivity, XmusicMediaService::class.java).apply {
+                action = XmusicMediaService.ACTION_NATIVE_RESUME
+            }
+            dispatchServiceIntent(intent, true)
+        }
+
+        @JavascriptInterface
+        fun stopNative() {
+            val intent = Intent(this@MainActivity, XmusicMediaService::class.java).apply {
+                action = XmusicMediaService.ACTION_NATIVE_STOP
+            }
+            dispatchServiceIntent(intent, false)
+        }
+
+        @JavascriptInterface
+        fun seekNative(positionMs: Long) {
+            val intent = Intent(this@MainActivity, XmusicMediaService::class.java).apply {
+                action = XmusicMediaService.ACTION_NATIVE_SEEK
+                putExtra(XmusicMediaService.EXTRA_POSITION_MS, positionMs)
+            }
+            dispatchServiceIntent(intent, false)
+        }
+
+        @JavascriptInterface
+        fun setNativeVolume(volume: Float) {
+            val intent = Intent(this@MainActivity, XmusicMediaService::class.java).apply {
+                action = XmusicMediaService.ACTION_NATIVE_VOLUME
+                putExtra(XmusicMediaService.EXTRA_VOLUME, volume)
+            }
+            dispatchServiceIntent(intent, false)
+        }
+
+        @JavascriptInterface
+        fun getNativeStateJson(): String {
+            return XmusicMediaService.getNativeStateJson()
+        }
+
         @JavascriptInterface
         fun updateNowPlaying(
             title: String,
@@ -511,31 +898,15 @@ class MainActivity : TauriActivity() {
                 putExtra(XmusicMediaService.EXTRA_DURATION_MS, durationMs)
                 putExtra(XmusicMediaService.EXTRA_POSITION_MS, positionMs)
             }
-            try {
-                if (XmusicMediaService.isRunning) {
-                    startService(intent)
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(intent)
-                } else {
-                    startService(intent)
-                }
-            } catch (_: Throwable) {
-                try {
-                    startService(intent)
-                } catch (_: Throwable) {
-                }
-            }
+            dispatchServiceIntent(intent, true)
         }
 
         @JavascriptInterface
         fun clearNotification() {
-            try {
-                val intent = Intent(this@MainActivity, XmusicMediaService::class.java).apply {
-                    action = XmusicMediaService.ACTION_CLEAR
-                }
-                startService(intent)
-            } catch (_: Throwable) {
+            val intent = Intent(this@MainActivity, XmusicMediaService::class.java).apply {
+                action = XmusicMediaService.ACTION_CLEAR
             }
+            dispatchServiceIntent(intent, false)
         }
 
         @JavascriptInterface
@@ -547,7 +918,6 @@ class MainActivity : TauriActivity() {
     }
 }
 """
-
 
 def patch_manifest() -> None:
     manifest_path = os.path.join(ANDROID_DIR, "app", "src", "main", "AndroidManifest.xml")

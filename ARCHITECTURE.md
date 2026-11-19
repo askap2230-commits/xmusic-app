@@ -1,4 +1,4 @@
-# System Architecture — nys Xmusic v6.12.0
+# System Architecture — nys Xmusic v6.13.0
 
 ## 1. Layered Architecture
 
@@ -38,9 +38,9 @@
 
 ## 2. Single Source of Truth Versioning
 
-- **`package.json`** owns the canonical SemVer `"version": "6.12.0"`.
+- **`package.json`** owns the canonical SemVer `"version": "6.13.0"`.
 - **`src-tauri/tauri.conf.json`** declares `"version": "../package.json"`, which Tauri v2 resolves automatically during Android and Desktop bundling ([Tauri Configuration Reference](https://v2.tauri.app/reference/config/)).
-- **`src-tauri/Cargo.toml`** and **`src/lib/stores/library.svelte.ts`** mirror `"6.12.0"` for Rust crate metadata and web fallback runtime info.
+- **`src-tauri/Cargo.toml`** and **`src/lib/stores/library.svelte.ts`** mirror `"6.13.0"` for Rust crate metadata and web fallback runtime info.
 - **`src-tauri/src/lib.rs`** exposes `app.package_info().version.to_string()` via `get_runtime_info`.
 - **`.github/workflows/build-apk.yml`** reads `require('./package.json').version` to construct the dynamic release APK filename `Xmusic-v<version>-android-<abi>-release.apk` and default GitHub Release tag `v<version>`.
 
@@ -59,8 +59,8 @@
 4. **Cryptographic Verification**:
    - Every build outputs `Xmusic-v<version>-android-<abi>-release.apk` alongside `.sha256` and `.sha512` checksums.
 
-## 4. YouTube Music Background Playback & Zero-Stuck Recovery
+## 4. True Native Android Background Playback (`XmusicMediaService` MediaPlayer)
 
-- **Direct Native `<audio>` Priority (`directAudioEl`)**: `src-tauri/src/lib.rs` (`ytm_resolve_audio`) prioritizes `ANDROID_VR` (with `X-YouTube-Client-Name`/`X-YouTube-Client-Version` headers) followed by `IOS`, `ANDROID`, and `TVHTML5`. Whenever a direct stream resolves while `ytBridge` is active, `AudioEngine` hands off seamlessly to `directAudioEl` at the exact live timestamp (`resumeAt`), avoiding cross-origin iframe suspension on screen-off or app switching.
-- **Android WebView Background Keep-Alive (`MainActivity.kt`)**: While `XmusicMediaService.isPlayingNow` is true, `onPause()`/`onStop()` re-assert `dispatchWindowVisibilityChanged(View.VISIBLE)`, `onResume()`, and `resumeTimers()` (immediate + 250ms delayed) so Chromium WebView does not suspend background media decoders; `onResume()` dispatches `appResumed` to reconcile playback immediately on return.
-- **Zombie IFrame & Expired-URL Self-Healing**: `ytAudioStreamCache` enforces a 30-minute TTL with explicit invalidation (`invalidateYoutubeAudioCache`). On stalled resume (including frozen `BUFFERING` state `3` or `0.00s` progress over 2.0s), `retryYoutubeAudio(true)` calls `ytBridge.destroy()` to wipe the DOM slot and rebuild cleanly at the saved timestamp.
+- **Range-Verified Rust InnerTube Resolver (`src-tauri/src/lib.rs`)**: `ytm_resolve_audio` tries `ANDROID_VR`, `ANDROID`, `IOS`, and `TVHTML5` with explicit `X-YouTube-Client-Name`/`X-YouTube-Client-Version` headers and probes each candidate URL with `Range: bytes=0-1` (HTTP 200/206) before returning `YtmResolvedAudio { url, user_agent }` — rejecting HTTP 403 streams before playback starts.
+- **Native Foreground Service `MediaPlayer` (`XmusicMediaService.kt`)**: On Android, `AudioEngine` streams verified YouTube Music audio directly inside `XmusicMediaService`'s native `android.media.MediaPlayer` (`AudioAttributes.USAGE_MEDIA`, `setWakeMode(PARTIAL_WAKE_LOCK)`, `WifiLock`, and `setDataSource(ctx, uri, headers)` with the matching `User-Agent`). Because playback runs inside the `mediaPlayback` Foreground Service rather than WebView, audio continues uninterrupted when the screen turns off, when switching apps, or when `MainActivity` is closed (`onDestroy()` preserves the service while `isNativePlaying` is true).
+- **Zero-Reset Foreground Re-Sync**: Reopening Xmusic reads live state from `window.XmusicAndroidMedia.getNativeStateJson()` (`active`, `playing`, `trackId`, `positionMs`, `durationMs`) and syncs UI controls without interrupting or resetting audio to `0:00`. Lockscreen Play/Pause/Seek operate directly inside `XmusicMediaService` even when WebView is closed.

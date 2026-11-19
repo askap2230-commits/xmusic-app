@@ -25,6 +25,13 @@ pub struct YtmSong {
     pub thumbnail: String,
 }
 
+/// Verified direct YouTube Music audio stream URL paired with the exact User-Agent required to avoid HTTP 403.
+#[derive(Debug, Clone, Serialize)]
+pub struct YtmResolvedAudio {
+    pub url: String,
+    pub user_agent: String,
+}
+
 /// Returns single-source application version (resolved from package.json via tauri.conf.json)
 /// and target environment metadata to the frontend.
 #[tauri::command]
@@ -508,9 +515,27 @@ async fn fetch_visitor_data(client: &reqwest::Client) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Resolves a direct HTTPS audio stream directly from the user's own device IP using mobile InnerTube clients.
+async fn verify_stream_playable(client: &reqwest::Client, url: &str, ua: &str) -> bool {
+    let res = client
+        .get(url)
+        .header("User-Agent", ua)
+        .header("Range", "bytes=0-1")
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await;
+    match res {
+        Ok(r) => {
+            let code = r.status().as_u16();
+            code == 200 || code == 206
+        }
+        Err(_) => false,
+    }
+}
+
+/// Resolves and Range-verifies (HTTP 200/206) a direct HTTPS audio stream directly from the user's own device IP
+/// using mobile InnerTube clients, returning the exact User-Agent needed by native Android MediaPlayer to avoid 403.
 #[tauri::command]
-async fn ytm_resolve_audio(video_id: String) -> Result<Option<String>, String> {
+async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>, String> {
     let vid = video_id.trim();
     if vid.len() != 11 {
         return Ok(None);
@@ -523,7 +548,7 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<String>, String> {
 
     let visitor_data = fetch_visitor_data(&client).await;
 
-    // Prioritize ANDROID_VR first (fastest direct audio URL without PO-Token), then IOS, ANDROID, TVHTML5
+    // Prioritize ANDROID_VR first (most reliable direct audio URL without PO-Token), then ANDROID, IOS, TVHTML5
     let clients = [
         (
             "28",
@@ -548,6 +573,26 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<String>, String> {
             }),
         ),
         (
+            "3",
+            "20.10.38",
+            "com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip",
+            json!({
+                "context": {
+                    "client": {
+                        "clientName": "ANDROID",
+                        "clientVersion": "20.10.38",
+                        "osName": "Android",
+                        "osVersion": "14",
+                        "hl": "en",
+                        "gl": "US"
+                    }
+                },
+                "videoId": vid,
+                "contentCheckOk": true,
+                "racyCheckOk": true
+            }),
+        ),
+        (
             "5",
             "20.10.4",
             "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
@@ -560,26 +605,6 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<String>, String> {
                         "deviceModel": "iPhone16,2",
                         "osName": "iPhone",
                         "osVersion": "18.3.2.22D82",
-                        "hl": "en",
-                        "gl": "US"
-                    }
-                },
-                "videoId": vid,
-                "contentCheckOk": true,
-                "racyCheckOk": true
-            }),
-        ),
-        (
-            "3",
-            "20.10.38",
-            "com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip",
-            json!({
-                "context": {
-                    "client": {
-                        "clientName": "ANDROID",
-                        "clientVersion": "20.10.38",
-                        "osName": "Android",
-                        "osVersion": "14",
                         "hl": "en",
                         "gl": "US"
                     }
@@ -628,7 +653,12 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<String>, String> {
             if res.status().is_success() {
                 if let Ok(data) = res.json::<Value>().await {
                     if let Some(url) = pick_best_audio_url(&data) {
-                        return Ok(Some(url));
+                        if verify_stream_playable(&client, &url, ua).await {
+                            return Ok(Some(YtmResolvedAudio {
+                                url,
+                                user_agent: ua.to_string(),
+                            }));
+                        }
                     }
                 }
             }

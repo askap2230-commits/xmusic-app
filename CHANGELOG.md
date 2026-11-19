@@ -2,6 +2,14 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.13.0] - 2026-11-19
+
+### Fixed (100% True Native Android Background Audio Service for YouTube Music — Zero Reset & Zero 403)
+- **Mesin `android.media.MediaPlayer` Native di Dalam `XmusicMediaService.kt`**: Pemutaran audio YouTube Music di Android kini berjalan langsung di `MediaPlayer` native milik Foreground Service `XmusicMediaService` (`foregroundServiceType="mediaPlayback"`, `AudioAttributes.USAGE_MEDIA`, `PARTIAL_WAKE_LOCK`, `WifiLock`, serta `setDataSource(ctx, uri, headers)` dengan header `User-Agent` yang cocok) — 100% terpisah dari lifecycle WebView sehingga tetap berputar mulus saat layar mati, berpindah aplikasi lain, maupun ketika aplikasi ditutup (`MainActivity.onDestroy()` mempertahankan service saat `isNativePlaying` aktif).
+- **Verifikasi Stream HTTP 200/206 (`Range: bytes=0-1`) di Rust (`src-tauri/src/lib.rs`)**: `ytm_resolve_audio` kini mengembalikan `YtmResolvedAudio { url, user_agent }` (prioritas `ANDROID_VR` -> `ANDROID` -> `IOS` -> `TVHTML5`) hanya setelah lulus uji `Range: bytes=0-1` HTTP 200/206, menolak URL HTTP 403 sebelum dikirim ke pemutar dan meneruskan `User-Agent` persis ke `MediaPlayer` native Android.
+- **Eliminasi Total Bug Reset ke 0:00 Saat Kembali ke Aplikasi (`engine.svelte.ts`, `ytPlayerBridge.ts`)**: Saat membuka Xmusic kembali, `handleForegroundResume()` membaca posisi & status langsung dari `getNativeStateJson()` tanpa memutus atau mengulang lagu; kontrol Play/Pause/Seek di layar kunci juga dieksekusi langsung oleh `XmusicMediaService`. Di jalur cadangan `ytPlayerBridge.ts`, pemanggilan ganda `loadVideoById()` setelah `new YT.Player()` dihapus agar tidak lagi mereset lagu ke `0:00`.
+- **Sinkronisasi Dokumentasi & Kontrak AI (`AGENTS.md`, `ARCHITECTURE.md`, `README.md`, `CI_CD_GUIDE.md`, `WCAG_ACCESSIBILITY.md`)**: Seluruh dokumentasi dan versi diselaraskan ke `v6.13.0`.
+
 ## [6.12.0] - 2026-11-19
 
 ### Fixed & Improved (Library Page UI/UX & Zero-Collision Layout Overhaul)

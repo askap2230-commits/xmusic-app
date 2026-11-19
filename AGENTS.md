@@ -93,11 +93,11 @@ This document defines **non-negotiable architectural and design rules** for all 
    - Keep the mastering `DynamicsCompressorNode` anti-clipping limiter and `latencyHint: 'playback'` intact in `src/lib/audio/engine.svelte.ts`.
    - Keep `XmusicMediaService.kt`, `MainActivity.kt` (`XmusicAndroidMedia` bridge), and ProGuard `@JavascriptInterface` keep rules in `scripts/optimize-android-gradle.py`.
    - **NEVER** re-add `AudioManager.requestAudioFocus(...)` inside `XmusicMediaService.kt` (Chromium WebView's internal `AudioFocusDelegate` owns AudioFocus; dual focus causes fatal play/pause ping-pong loops).
-   - **YouTube Music Background & Anti-Stuck Contract (v6.11.0)**:
-     - Keep `MainActivity.kt` calling `wv.dispatchWindowVisibilityChanged(View.VISIBLE)` + `wv.onResume()` + `wv.resumeTimers()` (immediate + 250ms delayed) in `keepWebViewAudioAliveIfPlaying()`, and keep `dispatchMediaAction("appResumed")` inside `MainActivity.onResume()`.
-     - NEVER discard a resolved direct HTTPS audio stream in `startYoutubeSmartPlayback()` just because `ytBridge` started playing first — ALWAYS hand off seamlessly to native `<audio>` (`directAudioEl`) at the live playback timestamp so screen-off and app-switching stay 100% uninterrupted.
-     - NEVER reuse a suspended/zombie YouTube `<iframe>` on recovery: `retryYoutubeAudio(preservePosition)` MUST call `ytBridge.destroy()` (clearing `#xmusic-yt-audio-host`) and `ytPreloader.invalidate()` (which also invalidates `services.ts` TTL cache) before restarting at the saved timestamp.
-     - Keep `ANDROID_VR` first with explicit `X-YouTube-Client-Name` and `X-YouTube-Client-Version` headers in `src-tauri/src/lib.rs` (`ytm_resolve_audio`).
+   - **True Native Android Background Audio Service Contract (v6.13.0)**:
+     - YouTube Music background playback on Android MUST run through `XmusicMediaService`'s native `android.media.MediaPlayer` (`playNativeUrl` with `AudioAttributes.USAGE_MEDIA`, `PARTIAL_WAKE_LOCK`, `WifiLock`, and the exact `User-Agent` header in `setDataSource(context, uri, headers)`) — NEVER rely solely on cross-origin YouTube `<iframe>` (`YT.Player`) for background/screen-off/app-close playback.
+     - Keep `src-tauri/src/lib.rs` (`ytm_resolve_audio`) returning `YtmResolvedAudio { url, user_agent }` only after a live `Range: bytes=0-1` HTTP 200/206 verification probe (trying `ANDROID_VR` -> `ANDROID` -> `IOS` -> `TVHTML5`).
+     - Keep `MainActivity.onDestroy()` preserving `XmusicMediaService` whenever `XmusicMediaService.isNativePlaying` is true, and keep `handleForegroundResume()` syncing live state from `getNativeStateJson()` without restarting or resetting playback to `0:00`.
+     - In `ytPlayerBridge.ts`, NEVER call `loadVideoById()` again immediately after creating a fresh `YT.Player` with `initialVideoId` + `playerVars.start` (prevents double-load reset to `0:00`).
 4. **Konsta UI v5.5 iOS Polish & Privacy-First Rules**:
    - NEVER put more than 1 icon button inside `<Navbar>` `{#snippet left()}` or `{#snippet right()}` (Konsta v5.5 iOS 26 wraps each side in a single Liquid Glass capsule; multiple icons get cramped).
    - NEVER add a floating top DynamicBar over `<Navbar>`. `PlayerBar` docks cleanly above the floating `<Tabbar>` only when `engine.current` is active, and MUST include a Stop/Close (`X`) button (`engine.stopTrack()`).

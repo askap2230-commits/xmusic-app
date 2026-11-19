@@ -9,6 +9,7 @@ import type {
   DownloadResult,
   HubMeta,
   ParsedLyricLine,
+  ResolvedAudioStream,
   SearchSuggestion,
   SpotifyEmbedRef,
   Track
@@ -416,7 +417,7 @@ const DEFAULT_PIPED_INSTANCES: string[] = [
 let fastestPipedHost: string | null = null;
 let invidiousCache: { hosts: string[]; fetchedAt: number } = { hosts: [], fetchedAt: 0 };
 const YT_AUDIO_CACHE_TTL_MS = 30 * 60 * 1000;
-const ytAudioStreamCache = new Map<string, { url: string; expiresAt: number }>();
+const ytAudioStreamCache = new Map<string, { stream: ResolvedAudioStream; expiresAt: number }>();
 
 export function invalidateYoutubeAudioCache(videoId: string): void {
   if (videoId) ytAudioStreamCache.delete(videoId);
@@ -690,12 +691,17 @@ async function nativeYtmSearch(query: string, region = 'ID'): Promise<Track[]> {
   }
 }
 
-async function nativeYtmResolveAudio(videoId: string): Promise<string | null> {
+async function nativeYtmResolveAudio(videoId: string): Promise<ResolvedAudioStream | null> {
   if (typeof window === 'undefined' || !window.__TAURI_INTERNALS__) return null;
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    const url = await invoke<string | null>('ytm_resolve_audio', { videoId });
-    return url && url.startsWith('https://') ? url : null;
+    const res = await invoke<{ url?: string; user_agent?: string } | null>('ytm_resolve_audio', {
+      videoId
+    });
+    if (res?.url && res.url.startsWith('https://')) {
+      return { url: res.url, userAgent: res.user_agent || undefined };
+    }
+    return null;
   } catch (err) {
     console.warn('[Native InnerTube Audio Warning]', err);
     return null;
@@ -703,21 +709,25 @@ async function nativeYtmResolveAudio(videoId: string): Promise<string | null> {
 }
 
 /**
- * Resolves a direct high-bitrate audio stream URL in parallel (Promise.any) via FOSS Piped & Invidious.
+ * Resolves a verified direct audio stream URL (+ exact User-Agent for native Android MediaPlayer)
+ * via on-device Rust InnerTube first, then parallel FOSS Piped & Invidious fallbacks.
  */
-export async function resolveYoutubeAudioStream(videoId: string): Promise<string | null> {
+export async function resolveYoutubeAudioStream(videoId: string): Promise<ResolvedAudioStream | null> {
   if (!videoId || (typeof navigator !== 'undefined' && !navigator.onLine)) return null;
   const cached = ytAudioStreamCache.get(videoId);
   if (cached) {
-    if (Date.now() < cached.expiresAt) return cached.url;
+    if (Date.now() < cached.expiresAt) return cached.stream;
     ytAudioStreamCache.delete(videoId);
   }
 
-  // Fast native Rust InnerTube resolution directly from user's device IP (~300ms, zero public proxy)
-  const nativeUrl = await nativeYtmResolveAudio(videoId);
-  if (nativeUrl) {
-    ytAudioStreamCache.set(videoId, { url: nativeUrl, expiresAt: Date.now() + YT_AUDIO_CACHE_TTL_MS });
-    return nativeUrl;
+  // Fast Range-verified native Rust InnerTube resolution directly from user's device IP
+  const nativeStream = await nativeYtmResolveAudio(videoId);
+  if (nativeStream) {
+    ytAudioStreamCache.set(videoId, {
+      stream: nativeStream,
+      expiresAt: Date.now() + YT_AUDIO_CACHE_TTL_MS
+    });
+    return nativeStream;
   }
 
   const pipedAttempts = getPipedCandidates().map(async (host) => {
@@ -740,8 +750,9 @@ export async function resolveYoutubeAudioStream(videoId: string): Promise<string
 
   try {
     const url = await Promise.any(pipedAttempts);
-    ytAudioStreamCache.set(videoId, { url, expiresAt: Date.now() + YT_AUDIO_CACHE_TTL_MS });
-    return url;
+    const stream: ResolvedAudioStream = { url };
+    ytAudioStreamCache.set(videoId, { stream, expiresAt: Date.now() + YT_AUDIO_CACHE_TTL_MS });
+    return stream;
   } catch {
     // Fallback to parallel Invidious audio-only adaptive formats
   }
@@ -763,8 +774,9 @@ export async function resolveYoutubeAudioStream(videoId: string): Promise<string
     });
     try {
       const url = await Promise.any(invAttempts);
-      ytAudioStreamCache.set(videoId, { url, expiresAt: Date.now() + YT_AUDIO_CACHE_TTL_MS });
-      return url;
+      const stream: ResolvedAudioStream = { url };
+      ytAudioStreamCache.set(videoId, { stream, expiresAt: Date.now() + YT_AUDIO_CACHE_TTL_MS });
+      return stream;
     } catch {
       return null;
     }

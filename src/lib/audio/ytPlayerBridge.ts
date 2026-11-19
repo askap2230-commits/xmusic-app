@@ -241,14 +241,14 @@ export class YtAudioBridge {
       else p.unMute();
       p.setPlaybackRate(rate);
 
-      if (wasReady || prevVideoId !== videoId) {
+      // Only call loadVideoById when reusing an existing player; a freshly created YT.Player
+      // already loaded initialVideoId with playerVars.start (calling loadVideoById again resets to 0:00).
+      if (wasReady && (prevVideoId !== videoId || startSeconds > 1)) {
         if (startSeconds > 1) {
           p.loadVideoById({ videoId, startSeconds: Math.floor(startSeconds) });
         } else {
           p.loadVideoById(videoId);
         }
-      } else if (startSeconds > 1) {
-        p.seekTo(startSeconds, true);
       }
 
       const st = this.getPlayerState();

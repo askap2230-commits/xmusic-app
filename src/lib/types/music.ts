@@ -163,6 +163,19 @@ export interface DownloadResult {
   msg?: string;
 }
 
+export interface ResolvedAudioStream {
+  url: string;
+  userAgent?: string;
+}
+
+export interface NativeAndroidPlaybackState {
+  active: boolean;
+  playing: boolean;
+  trackId: string;
+  positionMs: number;
+  durationMs: number;
+}
+
 export interface AndroidMediaBridge {
   updateNowPlaying(
     title: string,
@@ -174,13 +187,44 @@ export interface AndroidMediaBridge {
   ): void;
   clearNotification(): void;
   setSystemBarTheme(isDark: boolean): void;
+  playNativeUrl?(
+    trackId: string,
+    title: string,
+    artist: string,
+    album: string,
+    url: string,
+    userAgent: string,
+    startMs: number,
+    volume: number
+  ): void;
+  pauseNative?(): void;
+  resumeNative?(): void;
+  stopNative?(): void;
+  seekNative?(positionMs: number): void;
+  setNativeVolume?(volume: number): void;
+  getNativeStateJson?(): string;
 }
 
 declare global {
   interface Window {
     __TAURI_INTERNALS__?: unknown;
     XmusicAndroidMedia?: AndroidMediaBridge;
-    __xmusicMediaAction?: (action: 'togglePlay' | 'play' | 'pause' | 'next' | 'prev' | 'stop' | 'duck' | 'unduck' | 'appResumed') => void;
+    __xmusicMediaAction?: (
+      action:
+        | 'togglePlay'
+        | 'play'
+        | 'pause'
+        | 'next'
+        | 'prev'
+        | 'stop'
+        | 'duck'
+        | 'unduck'
+        | 'appResumed'
+        | 'nativePlaying'
+        | 'nativePaused'
+        | 'nativeEnded'
+        | 'nativeError'
+    ) => void;
     webkitAudioContext?: typeof AudioContext;
     webkitOfflineAudioContext?: typeof OfflineAudioContext;
   }
