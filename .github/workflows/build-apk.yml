@@ -1,0 +1,210 @@
+name: Build Optimized Android APK (Manual)
+
+# Manual-only trigger: never auto-builds on push or pull_request.
+# Trigger via GitHub Web UI (Actions -> Run workflow) or GitHub CLI:
+#   gh workflow run build-apk.yml -f target_arch=aarch64 -f publish_release=true
+on:
+  workflow_dispatch:
+    inputs:
+      target_arch:
+        description: "Target CPU ABI (aarch64 = smallest ~3MB APK for modern 64-bit phones, universal = all ABIs)"
+        required: true
+        default: "aarch64"
+        type: choice
+        options:
+          - aarch64
+          - universal
+      publish_release:
+        description: "Publish signed APK to GitHub Releases"
+        required: false
+        default: true
+        type: boolean
+      release_tag:
+        description: "Optional custom GitHub Release tag (leave blank for auto v3.0.<run_number>)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_OPTS: "-Xmx4096m"
+  GRADLE_OPTS: "-Dorg.gradle.daemon=true -Dorg.gradle.parallel=true -Dorg.gradle.caching=true -Dorg.gradle.configureondemand=true -Xmx4096m"
+  CARGO_INCREMENTAL: "0"
+  CARGO_NET_RETRY: "10"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  build-android-apk:
+    name: Build & Sign Production APK (${{ inputs.target_arch }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 24 LTS
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Cache npm Global Cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node24-npm-${{ hashFiles('package.json', 'package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node24-npm-
+
+      - name: Setup Java 21 LTS (Temurin)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup Gradle Enhanced Caching
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-cleanup: on-success
+
+      - name: Install Python Pillow for Adaptive Icon Sync
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends python3-pil
+
+      - name: Configure Pre-Installed Android SDK & NDK
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+
+          SDKMANAGER=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n 1)
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+
+          # Reuse pre-installed NDK (r26/r27/r28) on ubuntu-24.04 to avoid downloading ~1.2GB
+          EXISTING_NDK=$(ls -d "$ANDROID_HOME"/ndk/28.* "$ANDROID_HOME"/ndk/27.* "$ANDROID_HOME"/ndk/26.* 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -z "$EXISTING_NDK" ]; then
+            echo "Installing Android NDK 27.2.12479018..."
+            "$SDKMANAGER" "ndk;27.2.12479018"
+            EXISTING_NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          else
+            echo "Reusing pre-installed NDK: $EXISTING_NDK"
+          fi
+
+          # Ensure modern Android SDK platforms compatible with Tauri v2.12
+          "$SDKMANAGER" "platform-tools" || true
+
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$EXISTING_NDK" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$EXISTING_NDK" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Setup Rust Stable Toolchain (MSRV >= 1.90)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ inputs.target_arch == 'universal' && 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android' || 'aarch64-linux-android' }}
+
+      - name: Cache Rust & Cargo Artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+          cache-on-failure: true
+          shared-key: "tauri-v2-12-android-${{ inputs.target_arch }}"
+
+      - name: Install Frontend Dependencies & Build Bundle
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Initialize Android Project, Sync Adaptive Icons & Enable R8 Optimization
+        run: |
+          npx tauri android init
+          npx tauri icon app-icon.png
+          python3 scripts/sync-android-icons.py
+          python3 scripts/optimize-android-gradle.py
+
+      - name: Build Production APK
+        run: |
+          if [ "${{ inputs.target_arch }}" = "universal" ]; then
+            npx tauri android build --apk
+          else
+            npx tauri android build --apk --target aarch64
+          fi
+
+      - name: Zipalign & Sign Production APK (v1 + v2 + v3)
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          APK=$(find src-tauri/gen/android -name "*.apk" -path "*release*" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: Release APK not found!"
+            exit 1
+          fi
+
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          echo "Using Android Build-Tools: $BT"
+
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > release-ks.jks
+            PASS="${KS_PASS:-xmusic123}"
+          elif [ -f "src-tauri/keystore/xmusic-release.jks" ]; then
+            cp src-tauri/keystore/xmusic-release.jks release-ks.jks
+            PASS="xmusic123"
+          else
+            PASS="xmusic123"
+            keytool -genkeypair -v -keystore release-ks.jks -alias xmusic -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$PASS" -keypass "$PASS" -dname "CN=nys Xmusic, O=Nys, C=ID"
+          fi
+
+          "$BT/zipalign" -f -p 4 "$APK" aligned.apk
+          "$BT/apksigner" sign \
+            --ks release-ks.jks \
+            --ks-key-alias xmusic \
+            --ks-pass pass:"$PASS" \
+            --key-pass pass:"$PASS" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out Xmusic.apk \
+            aligned.apk
+          "$BT/apksigner" verify -v Xmusic.apk
+
+          APK_SIZE=$(du -h Xmusic.apk | cut -f1)
+          {
+            echo "### Production APK Build Complete"
+            echo "- **Artifact**: \`Xmusic.apk\`"
+            echo "- **Size**: **${APK_SIZE}** (LTO Fat + Strip + R8 Full Mode)"
+            echo "- **Target ABI**: \`${{ inputs.target_arch }}\`"
+            echo "- **Signature**: v1 + v2 + v3 verified"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Direct APK Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Xmusic-${{ inputs.target_arch }}.apk
+          path: Xmusic.apk
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: ${{ inputs.publish_release }}
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || format('v3.0.{0}', github.run_number) }}
+          name: "nys Xmusic ${{ inputs.release_tag != '' && inputs.release_tag || format('v3.0.{0}', github.run_number) }}"
+          body: |
+            ### nys Xmusic Production Release
+            - **Stack**: Tauri v2.12 + SvelteKit 3.2 (Svelte 5 Runes) + Rust 2024
+            - **Target ABI**: `${{ inputs.target_arch }}`
+            - **Optimizations**: Cargo `opt-level="z"`, `lto="fat"`, `codegen-units=1`, `panic="abort"`, `strip=true`, Android R8 Full Mode + Resource Shrinking, Signed v1/v2/v3.
+          files: Xmusic.apk

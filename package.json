@@ -1,0 +1,32 @@
+{
+  "name": "xmusic",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "description": "nys Xmusic — Offline & Streaming Music Player with 5-Band Web Audio EQ, Synced Lyrics, and Tauri v2 + SvelteKit 3 Architecture",
+  "engines": {
+    "node": ">=22.17.0"
+  },
+  "imports": {
+    "#lib/*": "./src/lib/*"
+  },
+  "scripts": {
+    "dev": "vite dev",
+    "build": "node scripts/build-frontend.mjs",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "sync:icons": "python3 scripts/sync-android-icons.py",
+    "optimize:android": "python3 scripts/optimize-android-gradle.py"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.3"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^4.0.1",
+    "@sveltejs/kit": "^3.2.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tauri-apps/cli": "^2.12.2",
+    "svelte": "^5.57.3",
+    "vite": "^8.0.12"
+  }
+}

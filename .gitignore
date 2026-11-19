@@ -1,0 +1,27 @@
+# Dependencies & Build Outputs
+node_modules/
+dist/
+build/
+.svelte-kit/
+.vite/
+
+# Tauri & Rust Artifacts
+src-tauri/target/
+src-tauri/gen/android/
+src-tauri/gen/apple/
+*.apk
+*.aab
+*.jks
+!src-tauri/keystore/xmusic-release.jks
+
+# Environment & Local Secrets
+.env
+.env.*
+!.env.example
+
+# OS & Editor Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

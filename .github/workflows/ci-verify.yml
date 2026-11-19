@@ -1,0 +1,73 @@
+name: Verify Frontend & Rust Quality (Manual)
+
+# Manual-only verification workflow (no auto-trigger on push).
+# Run via GitHub Web UI or: gh workflow run ci-verify.yml
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Build Frontend, Check Rust & Validate Scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js 24 LTS
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Cache npm Global Cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node24-npm-${{ hashFiles('package.json', 'package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node24-npm-
+
+      - name: Build Production Frontend Bundle
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Validate Python Build Scripts
+        run: |
+          python3 -m py_compile scripts/sync-android-icons.py scripts/optimize-android-gradle.py
+
+      - name: Install Linux System Dependencies for Tauri Check
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Setup Rust Stable Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust & Cargo Artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+          cache-on-failure: true
+          shared-key: "tauri-v2-12-verify"
+
+      - name: Run Rust Format, Clippy & Cargo Check
+        working-directory: src-tauri
+        run: |
+          cargo fmt --all -- --check
+          cargo check --all-targets
+          cargo clippy --all-targets -- -D warnings

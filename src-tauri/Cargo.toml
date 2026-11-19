@@ -1,0 +1,33 @@
+[package]
+name = "xmusic"
+version = "3.0.0"
+description = "nys Xmusic — Offline & Streaming Music Player (Tauri v2.12 + SvelteKit 3)"
+authors = ["Nys"]
+edition = "2024"
+rust-version = "1.90"
+
+[lib]
+name = "xmusic_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.dev]
+incremental = true
+
+# Production binary size optimization (Android .so & Desktop executables)
+# Reference: https://v2.tauri.app/concept/size/
+[profile.release]
+codegen-units = 1       # Maximize cross-module LLVM optimizations
+lto = "fat"             # Full Link-Time Optimization across all crates
+opt-level = "z"         # Optimize aggressively for smallest binary size
+panic = "abort"         # Remove stack-unwinding overhead (~15-20% smaller)
+strip = true            # Strip debug info and symbol tables from final binary
+overflow-checks = false # Disable runtime integer overflow checks in release
+incremental = false     # Ensure clean, deterministic release artifacts
