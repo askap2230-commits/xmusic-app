@@ -1249,16 +1249,7 @@ class AudioEngine {
         return;
       }
 
-      if (this.usingNativeAndroid) {
-      const total = this.duration || 0;
-      if (!total) return;
-      const target = clamped * total;
-      this.position = target;
-      window.XmusicAndroidMedia?.seekNative?.(Math.round(target * 1000));
-      this.updateMediaSessionPosition();
-      return;
-    }
-    if (this.usingYtBridge) {
+      if (this.usingYtBridge) {
         const st = this.ytBridge.getPlayerState();
         const sameVideo = this.ytBridge.getCurrentVideoId() === this.current.videoId;
         if (
@@ -1404,6 +1395,15 @@ class AudioEngine {
   seekTo(fraction: number): void {
     if (!this.current) return;
     const clamped = Math.max(0, Math.min(1, fraction));
+    if (this.usingNativeAndroid) {
+      const total = this.duration || 0;
+      if (!total) return;
+      const target = clamped * total;
+      this.position = target;
+      window.XmusicAndroidMedia?.seekNative?.(Math.round(target * 1000));
+      this.updateMediaSessionPosition();
+      return;
+    }
     if (this.usingYtBridge) {
       const total = this.duration || this.ytBridge.getDuration() || 0;
       if (!total) return;
