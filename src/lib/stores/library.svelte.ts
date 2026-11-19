@@ -104,7 +104,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '6.14.0',
+    version: '6.16.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
@@ -248,8 +248,11 @@ class AppStore {
   }
 
   get activeModalTrack(): Track | null {
-    if (!this.modalTrack) return null;
-    return engine.current?.id === this.modalTrack.id ? engine.current : this.modalTrack;
+    if (!this.modalTrack && !engine.current) return null;
+    if (this.modalTrack?.spotifyId && engine.current?.id !== this.modalTrack.id) {
+      return this.modalTrack;
+    }
+    return engine.current ?? this.modalTrack;
   }
 
   initTheme(): void {

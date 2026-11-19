@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.14.0).
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.15.0).
  *
  * Signal Chain (Zero-Clipping Lossless-Clear DSP):
  *   MediaElementAudioSourceNode
@@ -13,7 +13,7 @@
  *     -> AnalyserNode (pull-based FFT visualizer)
  *     -> AudioContext.destination (latencyHint: 'playback')
  *
- * Stability Guarantees (v6.14.0):
+ * Stability Guarantees (v6.15.0):
  *   - Monotonic playSessionId eliminates async race conditions and phantom restarts after pause.
  *   - Transition guard suppresses spurious pause/play flicker during track switches.
  *   - Idempotent resume() + automatic self-healing recovery prevents stuck Play buttons on all sources.
@@ -903,7 +903,7 @@ class AudioEngine {
     });
   }
 
-  playTrack(track: Track | null, customQueue: Track[] | null = null): void {
+  playTrack(track: Track | null, customQueue: Track[] | null = null, forceRestart = false): void {
     if (!track) return;
     if (Array.isArray(customQueue) && customQueue.length > 0) {
       this.queue = [...customQueue];
@@ -923,7 +923,7 @@ class AudioEngine {
     }
 
     // Same track tapped again while healthy: toggle Play/Pause smoothly without resetting to 0:00
-    if (this.current?.id === track.id && !this.audioResolveFailed && !this.resolvingAudio) {
+    if (!forceRestart && this.current?.id === track.id && !this.audioResolveFailed && !this.resolvingAudio) {
       this.togglePlay();
       return;
     }
@@ -1448,7 +1448,8 @@ class AudioEngine {
       this.syncNativeAndroidNotification(true);
       return;
     }
-    this.playTrack(playable[(idx + 1) % playable.length]);
+    const nextTrack = playable[(idx + 1) % playable.length];
+    this.playTrack(nextTrack, null, fromEnded || nextTrack.id === this.current?.id);
   }
 
   prev(): void {
@@ -1687,8 +1688,11 @@ class AudioEngine {
           return;
         }
         if (this.repeat === 'one' && this.current) {
+          this.position = 0;
           window.XmusicAndroidMedia?.seekNative?.(0);
           window.XmusicAndroidMedia?.resumeNative?.();
+          this.playing = true;
+          this.startPositionSync();
         } else {
           this.next(true);
         }

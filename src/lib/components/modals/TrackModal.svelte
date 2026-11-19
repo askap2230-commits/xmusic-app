@@ -13,6 +13,11 @@
   let lyricsScrollEl = $state<HTMLDivElement | null>(null);
   let imgFailed = $state<boolean>(false);
   let showVideoFallback = $state<boolean>(false);
+  let manualScrollUntil = 0;
+
+  function pauseAutoScroll(): void {
+    manualScrollUntil = Date.now() + 4500;
+  }
 
   const track = $derived(appStore.activeModalTrack);
   const parsedLyrics = $derived(track ? parseLrcLyrics(track.lyrics || '') : []);
@@ -23,19 +28,31 @@
   );
 
   $effect(() => {
-    void track?.id;
+    const active = track;
+    void active?.id;
     imgFailed = false;
     showVideoFallback = false;
+    if (appStore.trackModalOpen && appStore.modalFlipped && active && !active.lyrics) {
+      void appStore.autoFetchLyricsForTrack(active);
+    }
   });
 
   $effect(() => {
-    if (appStore.modalFlipped && activeLyricIdx >= 0 && lyricsScrollEl) {
-      const target = lyricsScrollEl.querySelector(`[data-lrc-idx="${activeLyricIdx}"]`);
-      if (target) {
-        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        target.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
-      }
-    }
+    if (!appStore.modalFlipped || activeLyricIdx < 0 || !lyricsScrollEl) return;
+    if (Date.now() < manualScrollUntil) return;
+    const target = lyricsScrollEl.querySelector<HTMLElement>(`[data-lrc-idx="${activeLyricIdx}"]`);
+    if (!target) return;
+    const containerRect = lyricsScrollEl.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const targetTop =
+      lyricsScrollEl.scrollTop +
+      (targetRect.top - containerRect.top) -
+      (lyricsScrollEl.clientHeight - targetRect.height) / 2;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    lyricsScrollEl.scrollTo({
+      top: Math.max(0, targetTop),
+      behavior: reduced ? 'auto' : 'smooth'
+    });
   });
 
   // Throttled 30fps visualizer confined to its own clean strip (0% CPU when paused)
@@ -397,10 +414,11 @@
             <!-- BACK FACE (SYNCED LYRICS) -->
             <div class="xmusic-flip-face xmusic-flip-back" aria-hidden={!appStore.modalFlipped}>
               <Card
-                contentWrapPadding="p-5"
-                class="!m-0 flex h-full flex-col rounded-3xl border border-[#007aff] shadow-xl dark:border-[#0a84ff]"
+                contentWrap={false}
+                class="!m-0 flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-[#007aff] shadow-xl dark:border-[#0a84ff]"
               >
-                <div class="mb-3 flex items-center justify-between gap-2">
+                <div class="flex h-full min-h-0 flex-col p-5">
+                <div class="mb-3 flex shrink-0 items-center justify-between gap-2">
                   <div class="min-w-0">
                     <div class="truncate text-sm font-bold text-black dark:text-white">{track.title}</div>
                     <div class="truncate text-xs text-[#007aff] dark:text-[#64d2ff]">{track.artist} • Lirik LRC</div>
@@ -415,7 +433,13 @@
                   </div>
                 </div>
 
-                <div class="flex-1 space-y-1.5 overflow-y-auto py-1" bind:this={lyricsScrollEl}>
+                <div
+                  class="xmusic-vscroll min-h-0 flex-1 space-y-1.5 py-1 pr-1"
+                  bind:this={lyricsScrollEl}
+                  ontouchstart={pauseAutoScroll}
+                  onwheel={pauseAutoScroll}
+                  onpointerdown={pauseAutoScroll}
+                >
                   {#if appStore.fetchingLyrics}
                     <p class="py-12 text-center text-sm text-[#007aff] dark:text-[#64d2ff]" role="status">
                       {i18n.t('player.fetchingLyrics')}
@@ -429,6 +453,7 @@
                           : 'text-black/65 dark:text-white/65'}"
                         data-lrc-idx={idx}
                         onclick={() => {
+                          manualScrollUntil = 0;
                           if (line.synced && line.time !== null && engine.duration > 0 && engine.current?.id === track.id) {
                             engine.seekTo(line.time / engine.duration);
                           }
@@ -458,13 +483,14 @@
                   {/if}
                 </div>
 
-                <div class="mt-3 flex items-center justify-between border-t border-black/10 pt-3 dark:border-white/10">
+                <div class="mt-3 flex shrink-0 items-center justify-between border-t border-black/10 pt-3 dark:border-white/10">
                   <span class="text-xs tabular-nums text-black/60 dark:text-white/60">
                     {formatTime(engine.position)} / {formatTime(engine.duration)}
                   </span>
                   <Button tonal rounded small inline onclick={() => appStore.toggleModalFlip()}>
                     {i18n.t('player.backToCover')}
                   </Button>
+                </div>
                 </div>
               </Card>
             </div>

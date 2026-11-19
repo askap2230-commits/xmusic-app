@@ -85,6 +85,14 @@ html.dark .skip-link {
   display: none;
 }
 
+/* Smooth vertical touch-scroll container (Android WebView 3D-flip safe) */
+.xmusic-vscroll {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
+
 /* Scroll virtualization & paint containment for 60/120fps Android WebView grids */
 .xmusic-grid {
   content-visibility: auto;
@@ -121,6 +129,8 @@ html.dark .skip-link {
 .xmusic-flip-back {
   position: absolute;
   inset: 0;
+  height: 100%;
+  overflow: hidden;
   transform: rotateY(180deg);
   pointer-events: none;
 }

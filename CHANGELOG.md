@@ -2,6 +2,18 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.16.0] - 2026-11-19
+
+### Fixed (Smooth & Smart Synced Lyrics Scrolling in `TrackModal` & `TrackCard`)
+- **Eliminasi Bug Scroll Lirik Terkunci pada Konsta `<Card>` (`TrackModal.svelte`, `TrackCard.svelte`, `src/app.css`)**: Menonaktifkan wrapper internal `contentWrap={false}` pada `<Card>` sisi belakang kartu 3D dan menggantinya dengan kontainer flex sejati `flex h-full min-h-0 flex-col` serta kelas `.xmusic-vscroll` (`overflow-y: auto`, `overscroll-behavior-y: contain`, `touch-action: pan-y`, `-webkit-overflow-scrolling: touch`) dan `height: 100%; overflow: hidden` pada `.xmusic-flip-back` — sehingga daftar lirik sinkron kini dapat di-scroll ke atas/bawah dengan mulus di Android WebView.
+- **Auto-Scroll Lirik Cerdas Anti-Lawan Jari (`TrackModal.svelte`)**: Mengganti `scrollIntoView()` (yang sebelumnya menggoyang halaman luar) dengan `lyricsScrollEl.scrollTo()` terisolasi ke kontainer lirik saja, ditambah jeda otomatis 4.5 detik setiap kali pengguna menggulir manual (`touchstart`/`wheel`/`pointerdown`) dan langsung aktif kembali saat pengguna mengetuk baris lirik untuk loncat ke waktu tersebut.
+
+## [6.15.0] - 2026-11-19
+
+### Fixed (Now Playing Visual/Metadata Sync on Auto-Next, Next/Prev & Repeat)
+- **Sinkronisasi Reaktif `activeModalTrack` ke `engine.current` (`src/lib/stores/library.svelte.ts`, `TrackModal.svelte`)**: Memperbaiki bug di mana jendela pemutar penuh (`TrackModal`) terus menampilkan sampul, judul, artis, dan lirik lagu sebelumnya ketika lagu selesai dan otomatis berpindah ke lagu berikutnya (atau saat menekan Next/Prev dan mode Ulangi). `activeModalTrack` kini selalu mengikuti `engine.current` secara real-time, mereset status sampul (`imgFailed`), serta otomatis mengambil lirik sinkron lagu baru saat kartu sedang dibalik.
+- **Fix Mode Ulangi (`repeat: 'all'` & `repeat: 'one'`) (`src/lib/audio/engine.svelte.ts`)**: Menambahkan parameter `forceRestart` pada `playTrack()` agar mode `Ulangi: Semua` pada antrean 1 lagu atau transisi akhir lagu benar-benar memutar ulang dari `0:00` (tidak terjebak di `togglePlay()`), serta mereset `position = 0` dan menyalakan ulang sinkronisasi progres pada `repeat === 'one'` di `MediaPlayer` native Android.
+
 ## [6.14.0] - 2026-11-19
 
 ### Fixed (100% Fast Native YouTube Music Background Playback via Verified Late-2026 `VISIONOS` Client Chain)

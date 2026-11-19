@@ -167,10 +167,11 @@
     <!-- BACK FACE (SYNCED LYRICS) -->
     <div class="xmusic-flip-face xmusic-flip-back" aria-hidden={!isFlipped}>
       <Card
-        contentWrapPadding="p-3"
-        class="!m-0 flex h-full flex-col border border-[#007aff] dark:border-[#0a84ff]"
+        contentWrap={false}
+        class="!m-0 flex h-full min-h-0 flex-col overflow-hidden border border-[#007aff] dark:border-[#0a84ff]"
       >
-        <div class="mb-2 flex items-center justify-between gap-1">
+        <div class="flex h-full min-h-0 flex-col p-3">
+        <div class="mb-2 flex shrink-0 items-center justify-between gap-1">
           <div class="min-w-0">
             <div class="truncate text-xs font-bold text-black dark:text-white">{track.title}</div>
             <div class="truncate text-[11px] text-[#007aff] dark:text-[#64d2ff]">{track.artist}</div>
@@ -185,7 +186,7 @@
           </button>
         </div>
 
-        <div class="flex-1 overflow-y-auto text-xs leading-relaxed">
+        <div class="xmusic-vscroll min-h-0 flex-1 text-xs leading-relaxed">
           {#if parsedLyrics.length > 0}
             {#each parsedLyrics as line, idx}
               <div
@@ -209,6 +210,7 @@
           <Button tonal rounded small onclick={() => appStore.openTrackModal(track, true)}>
             {i18n.t('player.openFull')}
           </Button>
+        </div>
         </div>
       </Card>
     </div>
