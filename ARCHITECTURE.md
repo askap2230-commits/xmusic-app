@@ -1,4 +1,4 @@
-# System Architecture — nys Xmusic v6.8.0
+# System Architecture — nys Xmusic v6.9.0
 
 ## 1. Layered Architecture
 

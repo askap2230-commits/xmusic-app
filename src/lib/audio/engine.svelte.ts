@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript).
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.9.0).
  *
  * Signal Chain (Zero-Clipping Lossless-Clear DSP):
  *   MediaElementAudioSourceNode
@@ -13,9 +13,11 @@
  *     -> AnalyserNode (pull-based FFT visualizer)
  *     -> AudioContext.destination (latencyHint: 'playback')
  *
- * Native Android Media Notification:
- *   Synchronizes track metadata, playback state, and position to both W3C MediaSession API
- *   and the native Android Foreground MediaStyle Service bridge (window.XmusicAndroidMedia).
+ * Stability Guarantees (v6.9.0):
+ *   - Monotonic playSessionId eliminates async race conditions and phantom restarts after pause.
+ *   - Transition guard suppresses spurious pause/play flicker during track switches.
+ *   - Idempotent resume() + automatic self-healing recovery prevents stuck Play buttons on all sources.
+ *   - Deduplicated native Android notification sync (WebView owns AudioFocus, zero ping-pong loop).
  */
 import { YtAudioBridge } from './ytPlayerBridge.ts';
 import { ytPreloader } from './ytPreloader.ts';
@@ -44,6 +46,7 @@ class AudioEngine {
   // Core reactive playback state
   current = $state<Track | null>(null);
   playing = $state<boolean>(false);
+  buffering = $state<boolean>(false);
   resolvingAudio = $state<boolean>(false);
   audioResolveFailed = $state<boolean>(false);
   position = $state<number>(0);
@@ -71,7 +74,7 @@ class AudioEngine {
   queue = $state<Track[]>([]);
   history = $state<Track[]>([]);
 
-  // Non-reactive DSP nodes for zero overhead
+  // Non-reactive DSP nodes and concurrency guards for zero overhead
   private audioEl: HTMLAudioElement | null = null;
   private directAudioEl: HTMLAudioElement | null = null;
   private usingDirectAudio = false;
@@ -91,9 +94,15 @@ class AudioEngine {
   private sleepIntervalId: ReturnType<typeof setInterval> | null = null;
   private bgResumeTimers: ReturnType<typeof setTimeout>[] = [];
   private ytWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+  private resumeRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  private stallWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+  private playSessionId = 0;
+  private isTransitioning = false;
   private userPaused = false;
   private ducked = false;
   private bgAutoResumeCount = 0;
+  private stallRecoveryCount = 0;
+  private lastAndroidSyncKey = '';
   private bgVisibilityHandler: (() => void) | null = null;
   private onToast: ((message: string) => void) | null = null;
 
@@ -103,8 +112,11 @@ class AudioEngine {
 
   private bindAudioEvents(el: HTMLAudioElement, isDirect: boolean): void {
     el.addEventListener('play', () => {
-      if (this.usingDirectAudio !== isDirect) return;
+      if (this.usingDirectAudio !== isDirect || this.isTransitioning) return;
       this.playing = true;
+      this.resolvingAudio = false;
+      this.audioResolveFailed = false;
+      this.clearResumeRecovery();
       if (!isDirect && this.audioCtx?.state === 'suspended') {
         this.audioCtx.resume().catch(() => {});
       }
@@ -113,9 +125,42 @@ class AudioEngine {
       this.syncNativeAndroidNotification();
     });
 
-    el.addEventListener('pause', () => {
+    el.addEventListener('playing', () => {
+      if (this.usingDirectAudio !== isDirect || this.isTransitioning) return;
+      this.playing = true;
+      this.buffering = false;
+      this.resolvingAudio = false;
+      this.audioResolveFailed = false;
+      this.stallRecoveryCount = 0;
+      this.clearStallWatchdog();
+      this.clearResumeRecovery();
+      this.startPositionSync();
+      this.updateMediaSessionState();
+      this.syncNativeAndroidNotification();
+    });
+
+    el.addEventListener('canplay', () => {
       if (this.usingDirectAudio !== isDirect) return;
+      this.buffering = false;
+      this.clearStallWatchdog();
+    });
+
+    const handleBuffering = (): void => {
+      if (this.usingDirectAudio !== isDirect || this.isTransitioning || this.userPaused || el.paused) {
+        return;
+      }
+      this.buffering = true;
+      this.armStallWatchdog(el, this.playSessionId);
+    };
+
+    el.addEventListener('waiting', handleBuffering);
+    el.addEventListener('stalled', handleBuffering);
+
+    el.addEventListener('pause', () => {
+      if (this.usingDirectAudio !== isDirect || this.isTransitioning) return;
       this.playing = false;
+      this.buffering = false;
+      this.clearStallWatchdog();
       this.stopPositionSync();
       this.updateMediaSessionState();
       this.syncNativeAndroidNotification();
@@ -133,12 +178,14 @@ class AudioEngine {
     });
 
     el.addEventListener('ended', () => {
-      if (this.usingDirectAudio !== isDirect) return;
+      if (this.usingDirectAudio !== isDirect || this.isTransitioning) return;
+      this.buffering = false;
+      this.clearStallWatchdog();
       this.stopPositionSync();
       if (this.sleepMinutes === -1) {
         this.setSleepTimer(0);
         this.playing = false;
-        this.syncNativeAndroidNotification();
+        this.syncNativeAndroidNotification(true);
         this.toast('Sleep Timer: Pemutaran dihentikan di akhir lagu.');
         return;
       }
@@ -152,33 +199,44 @@ class AudioEngine {
 
     if (!isDirect) {
       el.addEventListener('error', () => {
-        if (this.usingDirectAudio) return;
+        if (this.usingDirectAudio || this.isTransitioning) return;
+        this.buffering = false;
+        this.clearStallWatchdog();
         if (this.current?.url && !this.current.url.startsWith('blob:') && this.directAudioEl) {
           // Automatic seamless switch to CORS-free directAudioEl if server lacks CORS headers
           this.corsBypassMode = true;
           const resumePos = this.position || 0;
+          this.isTransitioning = true;
           this.usingDirectAudio = true;
           this.directAudioEl.volume = this.volume;
           this.directAudioEl.muted = this.muted;
           this.directAudioEl.src = this.current.url;
           this.directAudioEl.currentTime = resumePos;
           this.applyPlaybackRate();
-          this.directAudioEl.play().catch((err: Error) =>
-            this.toast(`Gagal memutar stream: ${err.message}`)
-          );
+          this.isTransitioning = false;
+          this.directAudioEl.play().catch((err: Error) => {
+            if (err.name === 'AbortError') return;
+            this.toast(`Gagal memutar stream: ${err.message}`);
+          });
         }
       });
     } else {
       el.addEventListener('error', () => {
-        if (!this.usingDirectAudio || !this.current) return;
+        if (!this.usingDirectAudio || !this.current || this.isTransitioning) return;
+        this.buffering = false;
+        this.clearStallWatchdog();
         const vid = this.current.videoId;
         if (vid) {
           ytPreloader.invalidate(vid);
+          const sessionId = ++this.playSessionId;
           this.usingDirectAudio = false;
           this.current = { ...this.current, url: undefined };
           this.usingYtBridge = true;
           this.resolvingAudio = true;
-          void this.startYoutubeAudioBridge(this.current);
+          void this.startYoutubeAudioBridge(this.current, sessionId);
+        } else {
+          this.playing = false;
+          this.syncNativeAndroidNotification();
         }
       });
     }
@@ -217,24 +275,26 @@ class AudioEngine {
     if (this.audioEl) return;
 
     this.audioEl = new Audio();
-    this.audioEl.preload = 'metadata';
+    this.audioEl.preload = 'auto';
     this.audioEl.crossOrigin = 'anonymous';
     this.audioEl.volume = this.volume;
     this.bindAudioEvents(this.audioEl, false);
 
     // Pure native HTML5 audio element (no crossorigin, never attached to Web Audio CORS lock)
-    // Guarantees loud, glitch-free playback for direct googlevideo.com YouTube Music audio streams
+    // Guarantees smooth, buffered, glitch-free playback for remote & YouTube Music direct streams
     this.directAudioEl = new Audio();
-    this.directAudioEl.preload = 'metadata';
+    this.directAudioEl.preload = 'auto';
     this.directAudioEl.volume = this.volume;
     this.bindAudioEvents(this.directAudioEl, true);
 
     this.ytBridge.configure({
       onStateChange: (state) => {
-        if (!this.usingYtBridge) return;
+        if (!this.usingYtBridge || this.isTransitioning) return;
         if (state === 1) {
           this.clearYtWatchdog();
+          this.clearResumeRecovery();
           this.playing = true;
+          this.buffering = false;
           this.bgAutoResumeCount = 0;
           this.resolvingAudio = false;
           this.audioResolveFailed = false;
@@ -246,20 +306,30 @@ class AudioEngine {
           this.startPositionSync();
           this.updateMediaSessionState();
           this.syncNativeAndroidNotification();
+        } else if (state === 3) {
+          // Buffering: keep playing state stable so UI doesn't flicker Play/Pause
+          this.buffering = true;
         } else if (state === 2) {
+          this.buffering = false;
           if (
             typeof document !== 'undefined' &&
             document.hidden &&
             !this.userPaused &&
             this.playing &&
-            this.bgAutoResumeCount < 4
+            this.bgAutoResumeCount < 3
           ) {
             this.bgAutoResumeCount += 1;
+            const sessionId = this.playSessionId;
             setTimeout(() => {
-              if (!this.userPaused && this.usingYtBridge) {
+              if (
+                sessionId === this.playSessionId &&
+                !this.userPaused &&
+                this.usingYtBridge &&
+                this.ytBridge.getPlayerState() !== 1
+              ) {
                 this.ytBridge.resume();
               }
-            }, 120);
+            }, 150);
             return;
           }
           this.playing = false;
@@ -267,11 +337,12 @@ class AudioEngine {
           this.updateMediaSessionState();
           this.syncNativeAndroidNotification();
         } else if (state === 0) {
+          this.buffering = false;
           this.stopPositionSync();
           if (this.sleepMinutes === -1) {
             this.setSleepTimer(0);
             this.playing = false;
-            this.syncNativeAndroidNotification();
+            this.syncNativeAndroidNotification(true);
             this.toast('Sleep Timer: Pemutaran dihentikan di akhir lagu.');
             return;
           }
@@ -284,10 +355,11 @@ class AudioEngine {
         }
       },
       onError: () => {
-        if (!this.usingYtBridge || !this.current?.videoId) return;
+        if (!this.usingYtBridge || !this.current?.videoId || this.isTransitioning) return;
         // Fallback to direct InnerTube/Piped stream resolver if uploader blocked IFrame playback
         this.usingYtBridge = false;
-        void this.resolveAndPlayYoutubeAudio(this.current);
+        this.buffering = false;
+        void this.resolveAndPlayYoutubeAudio(this.current, this.playSessionId);
       }
     });
 
@@ -299,9 +371,12 @@ class AudioEngine {
   }
 
   destroy(): void {
+    this.playSessionId += 1;
     this.stopPositionSync();
     this.clearBgResumeTimers();
     this.clearYtWatchdog();
+    this.clearResumeRecovery();
+    this.clearStallWatchdog();
     if (this.bgVisibilityHandler && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.bgVisibilityHandler);
       this.bgVisibilityHandler = null;
@@ -309,10 +384,12 @@ class AudioEngine {
     if (this.sleepIntervalId) clearInterval(this.sleepIntervalId);
     this.ytBridge.destroy();
     window.XmusicAndroidMedia?.clearNotification();
-    if (this.audioEl) {
-      this.audioEl.pause();
-      this.audioEl.removeAttribute('src');
-      this.audioEl.load();
+    for (const el of [this.audioEl, this.directAudioEl]) {
+      if (el) {
+        el.pause();
+        el.removeAttribute('src');
+        el.load();
+      }
     }
     if (this.audioCtx && this.audioCtx.state !== 'closed') {
       this.audioCtx.close().catch(() => {});
@@ -554,7 +631,7 @@ class AudioEngine {
     this.sleepMinutes = minutes;
     if (minutes <= 0) {
       this.sleepRemainingSec = 0;
-      if (this.audioEl) this.audioEl.volume = this.volume;
+      this.applyEffectiveVolume();
       if (minutes === -1) {
         this.toast('Sleep Timer: Berhenti otomatis setelah lagu ini selesai.');
       }
@@ -564,15 +641,18 @@ class AudioEngine {
     this.toast(`Sleep Timer aktif: ${minutes} menit`);
     this.sleepIntervalId = setInterval(() => {
       this.sleepRemainingSec -= 1;
-      if (this.sleepRemainingSec > 0 && this.sleepRemainingSec <= 5 && this.audioEl) {
-        this.audioEl.volume = this.volume * (this.sleepRemainingSec / 5);
+      if (this.sleepRemainingSec > 0 && this.sleepRemainingSec <= 5) {
+        const faded = this.volume * (this.sleepRemainingSec / 5);
+        if (this.audioEl) this.audioEl.volume = faded;
+        if (this.directAudioEl) this.directAudioEl.volume = faded;
+        if (this.usingYtBridge) this.ytBridge.setVolume(faded, this.muted);
       }
       if (this.sleepRemainingSec <= 0) {
         if (this.sleepIntervalId) clearInterval(this.sleepIntervalId);
         this.sleepMinutes = 0;
         this.sleepRemainingSec = 0;
         this.pause();
-        if (this.audioEl) this.audioEl.volume = this.volume;
+        this.applyEffectiveVolume();
         this.toast('Sleep Timer selesai. Selamat beristirahat!');
       }
     }, 1000);
@@ -595,6 +675,49 @@ class AudioEngine {
     }
   }
 
+  private clearResumeRecovery(): void {
+    if (this.resumeRecoveryTimer !== null) {
+      clearTimeout(this.resumeRecoveryTimer);
+      this.resumeRecoveryTimer = null;
+    }
+  }
+
+  private clearStallWatchdog(): void {
+    if (this.stallWatchdogTimer !== null) {
+      clearTimeout(this.stallWatchdogTimer);
+      this.stallWatchdogTimer = null;
+    }
+  }
+
+  private armStallWatchdog(el: HTMLAudioElement, sessionId: number): void {
+    this.clearStallWatchdog();
+    const startPos = el.currentTime;
+    this.stallWatchdogTimer = setTimeout(() => {
+      this.stallWatchdogTimer = null;
+      if (sessionId !== this.playSessionId || this.userPaused || el.paused || !this.current) return;
+      if (Math.abs(el.currentTime - startPos) >= 0.05) {
+        this.buffering = false;
+        return;
+      }
+      if (this.stallRecoveryCount >= 2) return;
+      this.stallRecoveryCount += 1;
+
+      if (this.current.videoId) {
+        ytPreloader.invalidate(this.current.videoId);
+        this.retryYoutubeAudio();
+        return;
+      }
+
+      try {
+        const target = Math.max(0, el.currentTime);
+        el.currentTime = target;
+        el.play().catch(() => {});
+      } catch {
+        // Ignore seek errors on live/unseekable streams
+      }
+    }, 8000);
+  }
+
   private preloadUpcomingQueue(): void {
     if (!this.queue.length || !this.current) return;
     const idx = this.queue.findIndex((t) => t.id === this.current?.id);
@@ -611,28 +734,38 @@ class AudioEngine {
     }
   }
 
-  private playDirectUrl(url: string, track: Track): void {
-    if (!this.directAudioEl) return;
-    if (this.audioEl) this.audioEl.pause();
-    if (this.usingYtBridge) this.ytBridge.stop();
-    this.usingYtBridge = false;
-    this.usingDirectAudio = true;
-    this.corsBypassMode = true;
-    this.resolvingAudio = false;
-    this.audioResolveFailed = false;
-    this.directAudioEl.volume = this.ducked ? Math.max(0.05, this.volume * 0.25) : this.volume;
-    this.directAudioEl.muted = this.muted;
-    this.directAudioEl.src = url;
-    this.applyPlaybackRate();
+  private playDirectUrl(url: string, track: Track, sessionId: number): void {
+    if (!this.directAudioEl || sessionId !== this.playSessionId || this.userPaused) return;
+    this.isTransitioning = true;
+    try {
+      if (this.audioEl && !this.audioEl.paused) this.audioEl.pause();
+      if (this.usingYtBridge) this.ytBridge.stop();
+      this.usingYtBridge = false;
+      this.usingDirectAudio = true;
+      this.corsBypassMode = true;
+      this.resolvingAudio = false;
+      this.audioResolveFailed = false;
+      this.buffering = false;
+      this.directAudioEl.volume = this.ducked ? Math.max(0.05, this.volume * 0.25) : this.volume;
+      this.directAudioEl.muted = this.muted;
+      this.directAudioEl.src = url;
+      this.applyPlaybackRate();
+    } finally {
+      this.isTransitioning = false;
+    }
+
     this.directAudioEl.play().catch((err: Error) => {
-      if (this.current?.id !== track.id) return;
+      if (err.name === 'AbortError' || sessionId !== this.playSessionId || this.userPaused) return;
       if (track.videoId) {
         ytPreloader.invalidate(track.videoId);
         this.usingDirectAudio = false;
         this.usingYtBridge = true;
         this.resolvingAudio = true;
-        void this.startYoutubeAudioBridge({ ...track, url: undefined });
+        void this.startYoutubeAudioBridge({ ...track, url: undefined }, sessionId);
       } else {
+        this.playing = false;
+        this.buffering = false;
+        this.syncNativeAndroidNotification();
         this.toast(`Gagal memutar: ${err.message}`);
       }
     });
@@ -653,37 +786,50 @@ class AudioEngine {
       this.duration = track.dur || 0;
       this.recordHistory(track);
       this.updateMediaSessionMeta();
-      this.syncNativeAndroidNotification();
+      this.syncNativeAndroidNotification(true);
       return;
     }
 
+    // Same track tapped again while healthy: toggle Play/Pause smoothly without resetting to 0:00
+    if (this.current?.id === track.id && !this.audioResolveFailed && !this.resolvingAudio) {
+      this.togglePlay();
+      return;
+    }
+
+    const sessionId = ++this.playSessionId;
+    this.clearYtWatchdog();
+    this.clearResumeRecovery();
+    this.clearStallWatchdog();
+    this.clearBgResumeTimers();
+    this.userPaused = false;
+    this.bgAutoResumeCount = 0;
+    this.stallRecoveryCount = 0;
+    this.buffering = false;
+    this.audioResolveFailed = false;
+
     // YouTube Music Track (Instant Cached Preload -> Dual-Path Fast Race)
     if (track.videoId && !track.url) {
-      if (this.current?.id === track.id && !this.audioResolveFailed && !this.resolvingAudio) {
-        this.togglePlay();
-        return;
+      this.isTransitioning = true;
+      try {
+        if (this.audioEl && !this.audioEl.paused) this.audioEl.pause();
+        if (this.directAudioEl && !this.directAudioEl.paused) this.directAudioEl.pause();
+        if (this.usingYtBridge) this.ytBridge.stop();
+      } finally {
+        this.isTransitioning = false;
       }
-      this.clearYtWatchdog();
-      if (this.audioEl) this.audioEl.pause();
-      if (this.directAudioEl) this.directAudioEl.pause();
-      if (this.usingYtBridge) this.ytBridge.stop();
 
-      this.userPaused = false;
-      this.bgAutoResumeCount = 0;
       this.current = track;
       this.position = 0;
       this.duration = track.dur || 0;
-      this.audioResolveFailed = false;
       this.recordHistory(track);
       this.updateMediaSessionMeta();
-      this.syncNativeAndroidNotification();
       this.preloadUpcomingQueue();
 
       // Path A: 0ms Instant playback if SmartYtPreloader already cached the direct stream URL
       const cachedUrl = ytPreloader.getCachedUrl(track.videoId);
       if (cachedUrl) {
         this.current = { ...track, url: cachedUrl };
-        this.playDirectUrl(cachedUrl, this.current);
+        this.playDirectUrl(cachedUrl, this.current, sessionId);
         return;
       }
 
@@ -691,7 +837,8 @@ class AudioEngine {
       this.usingDirectAudio = false;
       this.usingYtBridge = true;
       this.resolvingAudio = true;
-      void this.startYoutubeSmartPlayback(track);
+      this.syncNativeAndroidNotification();
+      void this.startYoutubeSmartPlayback(track, sessionId);
       return;
     }
 
@@ -700,22 +847,10 @@ class AudioEngine {
       return;
     }
 
-    if (this.current?.id === track.id && this.playing) {
-      this.togglePlay();
-      return;
-    }
-
-    this.clearYtWatchdog();
-    this.userPaused = false;
-    this.bgAutoResumeCount = 0;
     this.resolvingAudio = false;
-    this.audioResolveFailed = false;
     this.current = track;
     this.position = 0;
     this.duration = track.dur || 0;
-
-    if (this.usingYtBridge) this.ytBridge.stop();
-    this.usingYtBridge = false;
 
     const isLocalBlob = track.url.startsWith('blob:') || track.url.startsWith('data:');
 
@@ -725,22 +860,30 @@ class AudioEngine {
       if (this.audioCtx?.state === 'suspended') {
         this.audioCtx.resume().catch(() => {});
       }
-      if (this.directAudioEl) this.directAudioEl.pause();
-      this.usingDirectAudio = false;
-      this.corsBypassMode = false;
-      this.audioEl.removeAttribute('crossorigin');
-      this.audioEl.src = track.url;
-      this.applyPlaybackRate();
-      this.audioEl.play().catch(() => {
+      this.isTransitioning = true;
+      try {
+        if (this.usingYtBridge) this.ytBridge.stop();
+        this.usingYtBridge = false;
+        if (this.directAudioEl && !this.directAudioEl.paused) this.directAudioEl.pause();
+        this.usingDirectAudio = false;
+        this.corsBypassMode = false;
+        this.audioEl.removeAttribute('crossorigin');
+        this.audioEl.src = track.url;
+        this.applyPlaybackRate();
+      } finally {
+        this.isTransitioning = false;
+      }
+      this.audioEl.play().catch((err: Error) => {
+        if (err.name === 'AbortError' || sessionId !== this.playSessionId || this.userPaused) return;
         // Guaranteed fallback to pure native audio element if Web Audio fails
         if (this.current?.id === track.id && track.url) {
-          this.playDirectUrl(track.url, track);
+          this.playDirectUrl(track.url, track, sessionId);
         }
       });
     } else {
-      // All remote HTTP/HTTPS streams (Audius, iTunes, Internet Archive, Direct URLs):
-      // Play directly on CORS-free native HTML5 audio element for 100% instant Android WebView playback
-      this.playDirectUrl(track.url, track);
+      // All remote HTTP/HTTPS streams (Audius, Deezer, iTunes, Internet Archive, Direct URLs):
+      // Play directly on CORS-free native HTML5 audio element for instant Android WebView playback
+      this.playDirectUrl(track.url, track, sessionId);
     }
 
     this.recordHistory(track);
@@ -749,7 +892,7 @@ class AudioEngine {
     this.preloadUpcomingQueue();
   }
 
-  private async startYoutubeSmartPlayback(track: Track): Promise<void> {
+  private async startYoutubeSmartPlayback(track: Track, sessionId: number): Promise<void> {
     if (!track.videoId) return;
     const videoId = track.videoId;
     const trackId = track.id;
@@ -760,13 +903,18 @@ class AudioEngine {
     // Watchdog: if IFrame bridge hasn't started playing within 4.5s, switch to direct stream or surface retry
     this.clearYtWatchdog();
     this.ytWatchdogTimer = setTimeout(() => {
-      if (this.current?.id !== trackId || this.playing) return;
+      this.ytWatchdogTimer = null;
+      if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== trackId || this.playing) {
+        return;
+      }
       if (this.usingYtBridge && this.resolvingAudio) {
         void directPromise.then((url) => {
-          if (this.current?.id !== trackId || this.playing) return;
+          if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== trackId || this.playing) {
+            return;
+          }
           if (url) {
             this.current = { ...track, url };
-            this.playDirectUrl(url, this.current);
+            this.playDirectUrl(url, this.current, sessionId);
           } else {
             this.resolvingAudio = false;
             this.audioResolveFailed = true;
@@ -775,45 +923,77 @@ class AudioEngine {
       }
     }, 4500);
 
-    // If direct stream resolves super fast (< 1.2s) before IFrame starts playing, use native <audio> immediately!
+    // If direct stream resolves quickly before IFrame starts playing, use native <audio> immediately!
     void directPromise.then((url) => {
-      if (!url || this.current?.id !== trackId || this.playing) return;
+      if (
+        !url ||
+        sessionId !== this.playSessionId ||
+        this.userPaused ||
+        this.current?.id !== trackId ||
+        this.playing
+      ) {
+        return;
+      }
       this.clearYtWatchdog();
       this.current = { ...track, url };
-      this.playDirectUrl(url, this.current);
+      this.playDirectUrl(url, this.current, sessionId);
     });
 
     // Simultaneously start pre-warmed YouTube IFrame Bridge
-    await this.startYoutubeAudioBridge(track);
+    await this.startYoutubeAudioBridge(track, sessionId);
   }
 
-  private async startYoutubeAudioBridge(track: Track): Promise<void> {
+  private async startYoutubeAudioBridge(track: Track, sessionId: number): Promise<void> {
     if (!track.videoId) return;
     const ok = await this.ytBridge.play(track.videoId, this.volume, this.muted, this.playbackRate);
-    if (this.current?.id !== track.id || this.playing || this.usingDirectAudio) return;
+    if (
+      sessionId !== this.playSessionId ||
+      this.userPaused ||
+      this.current?.id !== track.id ||
+      this.playing ||
+      this.usingDirectAudio
+    ) {
+      return;
+    }
     if (!ok) {
       this.usingYtBridge = false;
-      void this.resolveAndPlayYoutubeAudio(track);
+      void this.resolveAndPlayYoutubeAudio(track, sessionId);
     }
   }
 
   retryYoutubeAudio(): void {
-    if (this.current?.videoId) {
-      ytPreloader.invalidate(this.current.videoId);
-      this.usingDirectAudio = false;
-      this.usingYtBridge = true;
-      this.resolvingAudio = true;
-      this.audioResolveFailed = false;
-      void this.startYoutubeSmartPlayback({ ...this.current, url: undefined });
+    if (!this.current?.videoId) return;
+    const sessionId = ++this.playSessionId;
+    ytPreloader.invalidate(this.current.videoId);
+    this.clearYtWatchdog();
+    this.clearResumeRecovery();
+    this.clearStallWatchdog();
+    this.userPaused = false;
+    this.bgAutoResumeCount = 0;
+    this.buffering = false;
+    this.isTransitioning = true;
+    try {
+      if (this.audioEl && !this.audioEl.paused) this.audioEl.pause();
+      if (this.directAudioEl && !this.directAudioEl.paused) this.directAudioEl.pause();
+      this.ytBridge.stop();
+    } finally {
+      this.isTransitioning = false;
     }
+    this.usingDirectAudio = false;
+    this.usingYtBridge = true;
+    this.resolvingAudio = true;
+    this.audioResolveFailed = false;
+    const cleanTrack: Track = { ...this.current, url: undefined };
+    this.current = cleanTrack;
+    void this.startYoutubeSmartPlayback(cleanTrack, sessionId);
   }
 
-  private async resolveAndPlayYoutubeAudio(track: Track): Promise<void> {
+  private async resolveAndPlayYoutubeAudio(track: Track, sessionId: number): Promise<void> {
     if (!track.videoId) return;
     this.resolvingAudio = true;
     this.audioResolveFailed = false;
     const streamUrl = await ytPreloader.resolveNow(track.videoId, true);
-    if (this.current?.id !== track.id) return;
+    if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== track.id) return;
     this.clearYtWatchdog();
     this.resolvingAudio = false;
 
@@ -824,7 +1004,104 @@ class AudioEngine {
     }
 
     this.current = { ...track, url: streamUrl };
-    this.playDirectUrl(streamUrl, this.current);
+    this.playDirectUrl(streamUrl, this.current, sessionId);
+  }
+
+  /**
+   * Idempotent resume with automatic self-healing recovery so clicking Play never gets stuck.
+   */
+  resume(): void {
+    if (!this.current) {
+      if (this.queue.length > 0) this.playTrack(this.queue[0]);
+      return;
+    }
+    if (this.current.spotifyId) return;
+    if (this.playing && !this.resolvingAudio) return;
+
+    this.userPaused = false;
+    this.bgAutoResumeCount = 0;
+    this.clearResumeRecovery();
+
+    if (this.current.videoId) {
+      if (this.usingDirectAudio && this.directAudioEl) {
+        const el = this.directAudioEl;
+        const needsReload =
+          !el.src ||
+          el.error !== null ||
+          el.networkState === HTMLMediaElement.NETWORK_NO_SOURCE;
+        if (needsReload) {
+          this.retryYoutubeAudio();
+          return;
+        }
+        el.play().catch((err: Error) => {
+          if (err.name === 'AbortError' || this.userPaused) return;
+          this.retryYoutubeAudio();
+        });
+        return;
+      }
+
+      if (this.usingYtBridge) {
+        const st = this.ytBridge.getPlayerState();
+        const sameVideo = this.ytBridge.getCurrentVideoId() === this.current.videoId;
+        if (
+          !this.ytBridge.isReady() ||
+          this.audioResolveFailed ||
+          !sameVideo ||
+          st === -1 ||
+          st === 0
+        ) {
+          this.retryYoutubeAudio();
+          return;
+        }
+        const ok = this.ytBridge.resume();
+        if (!ok) {
+          this.retryYoutubeAudio();
+          return;
+        }
+        const sessionId = this.playSessionId;
+        this.resumeRecoveryTimer = setTimeout(() => {
+          this.resumeRecoveryTimer = null;
+          if (sessionId !== this.playSessionId || this.userPaused || this.playing) return;
+          const liveState = this.ytBridge.getPlayerState();
+          if (liveState !== 1 && liveState !== 3) {
+            this.retryYoutubeAudio();
+          }
+        }, 2500);
+        return;
+      }
+
+      this.retryYoutubeAudio();
+      return;
+    }
+
+    const el = this.activeEl;
+    if (!el) return;
+    const needsReload =
+      !el.src ||
+      el.error !== null ||
+      el.networkState === HTMLMediaElement.NETWORK_NO_SOURCE;
+    if (needsReload && this.current.url) {
+      const sessionId = ++this.playSessionId;
+      this.playDirectUrl(this.current.url, this.current, sessionId);
+      return;
+    }
+
+    if (!this.usingDirectAudio) {
+      this.ensureWebAudio();
+      if (this.audioCtx?.state === 'suspended') {
+        this.audioCtx.resume().catch(() => {});
+      }
+    }
+
+    el.play().catch((err: Error) => {
+      if (err.name === 'AbortError' || this.userPaused) return;
+      if (!this.usingDirectAudio && this.current?.url) {
+        const sessionId = ++this.playSessionId;
+        this.playDirectUrl(this.current.url, this.current, sessionId);
+      } else {
+        this.toast(`Gagal memutar: ${err.message}`);
+      }
+    });
   }
 
   togglePlay(): void {
@@ -833,59 +1110,62 @@ class AudioEngine {
       return;
     }
     if (this.current.spotifyId) return;
-    if (this.usingYtBridge) {
-      if (this.playing) {
-        this.userPaused = true;
-        this.ytBridge.pause();
-      } else {
-        this.userPaused = false;
-        this.bgAutoResumeCount = 0;
-        this.ytBridge.resume();
-      }
-      return;
-    }
-    if (this.playing) {
+
+    if (this.playing && !this.resolvingAudio) {
       this.pause();
-    } else if (this.activeEl) {
-      this.userPaused = false;
-      this.bgAutoResumeCount = 0;
-      if (!this.usingDirectAudio) {
-        this.ensureWebAudio();
-        if (this.audioCtx?.state === 'suspended') {
-          this.audioCtx.resume().catch(() => {});
-        }
-      }
-      this.activeEl.play().catch((err: Error) => this.toast(`Gagal memutar: ${err.message}`));
+    } else {
+      this.resume();
     }
   }
 
   pause(): void {
     this.userPaused = true;
     this.clearBgResumeTimers();
-    if (this.audioEl) this.audioEl.pause();
-    if (this.directAudioEl) this.directAudioEl.pause();
+    this.clearResumeRecovery();
+    this.clearStallWatchdog();
+    this.clearYtWatchdog();
+    this.resolvingAudio = false;
+    this.buffering = false;
+    if (this.audioEl && !this.audioEl.paused) this.audioEl.pause();
+    if (this.directAudioEl && !this.directAudioEl.paused) this.directAudioEl.pause();
     if (this.usingYtBridge) this.ytBridge.pause();
+    this.playing = false;
+    this.stopPositionSync();
+    this.updateMediaSessionState();
+    this.syncNativeAndroidNotification();
   }
 
   stopTrack(): void {
+    this.playSessionId += 1;
     this.userPaused = true;
     this.clearBgResumeTimers();
+    this.clearYtWatchdog();
+    this.clearResumeRecovery();
+    this.clearStallWatchdog();
     this.stopPositionSync();
-    for (const el of [this.audioEl, this.directAudioEl]) {
-      if (el) {
-        el.pause();
-        el.currentTime = 0;
-        el.removeAttribute('src');
-        el.load();
+    this.isTransitioning = true;
+    try {
+      for (const el of [this.audioEl, this.directAudioEl]) {
+        if (el) {
+          el.pause();
+          el.currentTime = 0;
+          el.removeAttribute('src');
+          el.load();
+        }
       }
+    } finally {
+      this.isTransitioning = false;
     }
     this.usingDirectAudio = false;
+    this.usingYtBridge = false;
     this.playing = false;
+    this.buffering = false;
     this.resolvingAudio = false;
     this.audioResolveFailed = false;
     this.current = null;
     this.position = 0;
     this.duration = 0;
+    this.lastAndroidSyncKey = '';
     if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
       navigator.mediaSession.metadata = null;
       navigator.mediaSession.playbackState = 'none';
@@ -904,7 +1184,7 @@ class AudioEngine {
       this.ytBridge.seekTo(target);
       this.position = target;
       this.updateMediaSessionPosition();
-      this.syncNativeAndroidNotification();
+      this.syncNativeAndroidNotification(true);
       return;
     }
     const el = this.activeEl;
@@ -914,11 +1194,11 @@ class AudioEngine {
     el.currentTime = clamped * total;
     this.position = el.currentTime;
     this.updateMediaSessionPosition();
-    this.syncNativeAndroidNotification();
+    this.syncNativeAndroidNotification(true);
   }
 
   seekBySeconds(deltaSec: number): void {
-    const total = this.duration || this.audioEl?.duration || 0;
+    const total = this.duration || this.activeEl?.duration || 0;
     if (!total) return;
     this.seekTo((this.position + deltaSec) / total);
   }
@@ -938,7 +1218,7 @@ class AudioEngine {
     if (idx + 1 >= playable.length && fromEnded && this.repeat === 'off') {
       this.playing = false;
       this.position = 0;
-      this.syncNativeAndroidNotification();
+      this.syncNativeAndroidNotification(true);
       return;
     }
     this.playTrack(playable[(idx + 1) % playable.length]);
@@ -1062,15 +1342,19 @@ class AudioEngine {
         this.audioCtx.resume().catch(() => {});
       }
       this.clearBgResumeTimers();
+      const sessionId = this.playSessionId;
       // Keep audio playing seamlessly across Android WebView visibility transitions / screen off
-      for (const delayMs of [150, 500, 1200]) {
+      for (const delayMs of [200, 650, 1400]) {
         const timer = setTimeout(() => {
-          if (this.userPaused || !this.current) return;
+          if (sessionId !== this.playSessionId || this.userPaused || !this.current) return;
           if (this.audioCtx?.state === 'suspended') {
             this.audioCtx.resume().catch(() => {});
           }
           if (this.usingYtBridge) {
-            this.ytBridge.resume();
+            const st = this.ytBridge.getPlayerState();
+            if (st !== 1 && st !== 3) {
+              this.ytBridge.resume();
+            }
           } else if (this.activeEl && this.activeEl.paused) {
             this.activeEl.play().catch(() => {});
           }
@@ -1085,9 +1369,8 @@ class AudioEngine {
     if (typeof window === 'undefined') return;
     window.__xmusicMediaAction = (action) => {
       if (action === 'togglePlay') this.togglePlay();
-      else if (action === 'play') {
-        if (!this.playing) this.togglePlay();
-      } else if (action === 'pause') this.pause();
+      else if (action === 'play') this.resume();
+      else if (action === 'pause') this.pause();
       else if (action === 'next') this.next(false);
       else if (action === 'prev') this.prev();
       else if (action === 'stop') this.stopTrack();
@@ -1101,12 +1384,16 @@ class AudioEngine {
     };
   }
 
-  private syncNativeAndroidNotification(): void {
+  private syncNativeAndroidNotification(force = false): void {
     if (typeof window === 'undefined' || !window.XmusicAndroidMedia) return;
     if (!this.current) {
+      this.lastAndroidSyncKey = '';
       window.XmusicAndroidMedia.clearNotification();
       return;
     }
+    const syncKey = `${this.current.id}|${this.playing ? 1 : 0}|${Math.round(this.duration || 0)}`;
+    if (!force && syncKey === this.lastAndroidSyncKey) return;
+    this.lastAndroidSyncKey = syncKey;
     try {
       window.XmusicAndroidMedia.updateNowPlaying(
         this.current.title || 'nys Xmusic',
@@ -1123,7 +1410,7 @@ class AudioEngine {
 
   private setupMediaSession(): void {
     if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
-    navigator.mediaSession.setActionHandler('play', () => this.togglePlay());
+    navigator.mediaSession.setActionHandler('play', () => this.resume());
     navigator.mediaSession.setActionHandler('pause', () => this.pause());
     navigator.mediaSession.setActionHandler('previoustrack', () => this.prev());
     navigator.mediaSession.setActionHandler('nexttrack', () => this.next(false));

@@ -1,4 +1,4 @@
-# nys Xmusic v6.8.0 — Native iOS-Themed Music Player (Konsta UI + Tauri v2.12 + pnpm)
+# nys Xmusic v6.9.0 — Native iOS-Themed Music Player (Konsta UI + Tauri v2.12 + pnpm)
 
 **nys Xmusic** is a lightweight, offline-first Android and Desktop music player authored by **Azka Putra** and licensed under **GNU AGPL-3.0-or-later**. Built with [Tauri v2.12](https://v2.tauri.app/blog/tauri-2.12/), SvelteKit 3 (Svelte 5 Runes), [Konsta UI v5.5 for Svelte](https://konstaui.com/svelte) (**iOS Theme**), Tailwind CSS v4, and `pnpm`.
 

@@ -270,10 +270,20 @@
                       <button
                         type="button"
                         class="grid h-14 w-14 place-items-center rounded-full bg-black text-white shadow-lg active:scale-95 dark:bg-white dark:text-black"
-                        aria-label={engine.playing ? 'Jeda' : 'Putar'}
-                        onclick={() => engine.togglePlay()}
+                        aria-label={engine.current?.id === track.id && engine.playing ? 'Jeda' : 'Putar'}
+                        onclick={() => {
+                          if (engine.current?.id === track.id) {
+                            engine.togglePlay();
+                          } else {
+                            engine.playTrack(track, appStore.allTracks);
+                          }
+                        }}
                       >
-                        <Icon name={engine.playing ? 'pause' : 'play'} size={24} />
+                        {#if engine.current?.id === track.id && (engine.resolvingAudio || engine.buffering)}
+                          <Preloader class="w-5 h-5" />
+                        {:else}
+                          <Icon name={engine.current?.id === track.id && engine.playing ? 'pause' : 'play'} size={24} />
+                        {/if}
                       </button>
 
                       <button

@@ -16,6 +16,7 @@
   const progressFraction = $derived(
     engine.duration > 0 ? Math.min(1, engine.position / engine.duration) : 0
   );
+  const isLoadingAudio = $derived(engine.resolvingAudio || engine.buffering);
 </script>
 
 <!-- Shown cleanly only when a track is active, docked above Konsta v5.5 Floating iOS Tabbar -->
@@ -68,7 +69,7 @@
           aria-label={engine.playing ? 'Jeda' : 'Putar'}
           onclick={() => engine.togglePlay()}
         >
-          {#if engine.resolvingAudio}
+          {#if isLoadingAudio}
             <Preloader class="w-4 h-4" />
           {:else}
             <Icon name={engine.playing ? 'pause' : 'play'} size={17} />

@@ -4,12 +4,13 @@
 /**
  * Official YouTube IFrame Player API Audio Bridge (Strict TypeScript).
  *
- * Improvements in v6.6.0:
- * - Uses a 200x200 offscreen container (opacity: 0.001, left: -9999px) inside a stable wrapper
- *   so YouTube's minimum-viewport anti-hidden-player check never blocks playback.
- * - Recreates its inner mount node cleanly after destroy() so subsequent tracks never lose the host.
- * - Omits invalid localhost/tauri.localhost origin parameter to prevent YouTube Error 150/153 on Android WebView.
- * - Supports warmUp() at app startup so the IFrame API is already loaded before the user taps a song.
+ * Improvements in v6.9.0:
+ * - Monotonic playGen counter cancels stale async ensurePlayer() / play() calls immediately on stop()
+ *   or track switch so two playback paths never overlap or hijack active direct <audio> playback.
+ * - Avoids redundant double playVideo() calls when loadVideoById / autoplay is already starting,
+ *   preventing YouTube IFrame double state transitions (PLAYING -> PAUSED stutter).
+ * - Exposes isReady() and boolean resume() so AudioEngine can detect dead/unready players and recover
+ *   immediately instead of leaving the Play button stuck.
  */
 
 export interface YtPlayerInstance {
@@ -107,6 +108,8 @@ export class YtAudioBridge {
   private ready = false;
   private initPromise: Promise<YtPlayerInstance | null> | null = null;
   private callbacks: YtBridgeCallbacks | null = null;
+  private playGen = 0;
+  private currentVideoId: string | null = null;
 
   configure(callbacks: YtBridgeCallbacks): void {
     this.callbacks = callbacks;
@@ -117,6 +120,14 @@ export class YtAudioBridge {
    */
   warmUp(): void {
     void loadYoutubeIframeApi();
+  }
+
+  isReady(): boolean {
+    return Boolean(this.player && this.ready);
+  }
+
+  getCurrentVideoId(): string | null {
+    return this.currentVideoId;
   }
 
   private ensureMountNode(): string | null {
@@ -196,29 +207,45 @@ export class YtAudioBridge {
   }
 
   async play(videoId: string, volume01: number, muted: boolean, rate: number): Promise<boolean> {
+    const gen = ++this.playGen;
     const wasReady = Boolean(this.player && this.ready);
+    const prevVideoId = this.currentVideoId;
+    this.currentVideoId = videoId;
+
     const p = await this.ensurePlayer(videoId);
-    if (!p) return false;
+    // Abort immediately if stop(), destroy(), or a newer play() ran while awaiting onReady
+    if (!p || gen !== this.playGen) return false;
+
     try {
       p.setVolume(Math.round(Math.max(0, Math.min(1, volume01)) * 100));
       if (muted) p.mute();
       else p.unMute();
       p.setPlaybackRate(rate);
-      if (wasReady) {
+
+      if (wasReady || prevVideoId !== videoId) {
         p.loadVideoById(videoId);
       }
-      p.playVideo();
+
+      const st = this.getPlayerState();
+      if (st !== 1 && st !== 3) {
+        p.playVideo();
+      }
       return true;
     } catch {
       return false;
     }
   }
 
-  resume(): void {
+  resume(): boolean {
+    if (!this.player || !this.ready) return false;
     try {
-      this.player?.playVideo();
+      const st = this.getPlayerState();
+      if (st !== 1 && st !== 3) {
+        this.player.playVideo();
+      }
+      return true;
     } catch {
-      // Ignore
+      return false;
     }
   }
 
@@ -231,6 +258,8 @@ export class YtAudioBridge {
   }
 
   stop(): void {
+    this.playGen += 1;
+    this.currentVideoId = null;
     try {
       this.player?.stopVideo();
     } catch {
@@ -289,6 +318,8 @@ export class YtAudioBridge {
   }
 
   destroy(): void {
+    this.playGen += 1;
+    this.currentVideoId = null;
     try {
       this.player?.destroy();
     } catch {

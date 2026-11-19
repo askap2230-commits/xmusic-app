@@ -13,7 +13,7 @@ Operations:
 2. Injects native Kotlin XmusicMediaService.kt using standard Android Framework APIs:
    - MediaSession + Notification.MediaStyle + Foreground Service (Android 14-16 compliant)
    - PowerManager.PARTIAL_WAKE_LOCK + WifiManager.WifiLock while playing (keeps audio alive with screen off)
-   - AudioManager AudioFocusRequest (pauses on calls/other apps, ducks on navigation, auto-resumes after transient loss)
+   - Single-owner AudioFocus: WebView's internal Chromium AudioFocusDelegate owns AUDIOFOCUS_GAIN (eliminates self-steal pause/play loop)
    - ACTION_AUDIO_BECOMING_NOISY receiver (auto-pauses when headphones/Bluetooth disconnect)
 3. Injects MainActivity.kt with:
    - WebView RENDERER_PRIORITY_IMPORTANT (waivedWhenNotVisible = false) + onPause/onStop WebView audio keep-alive
@@ -45,8 +45,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaSession
@@ -83,40 +81,8 @@ class XmusicMediaService : Service() {
     private var mediaSession: MediaSession? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
-    private var audioManager: AudioManager? = null
-    private var audioFocusRequest: AudioFocusRequest? = null
-    private var hasAudioFocus: Boolean = false
-    private var pausedByTransientFocus: Boolean = false
+    private var isInForeground: Boolean = false
     private var noisyReceiverRegistered: Boolean = false
-
-    private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
-        when (focusChange) {
-            AudioManager.AUDIOFOCUS_LOSS -> {
-                hasAudioFocus = false
-                pausedByTransientFocus = false
-                MainActivity.dispatchMediaAction("pause")
-            }
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                if (isPlayingNow) {
-                    pausedByTransientFocus = true
-                    MainActivity.dispatchMediaAction("pause")
-                }
-            }
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                if (isPlayingNow) {
-                    MainActivity.dispatchMediaAction("duck")
-                }
-            }
-            AudioManager.AUDIOFOCUS_GAIN -> {
-                hasAudioFocus = true
-                MainActivity.dispatchMediaAction("unduck")
-                if (pausedByTransientFocus) {
-                    pausedByTransientFocus = false
-                    MainActivity.dispatchMediaAction("play")
-                }
-            }
-        }
-    }
 
     private val becomingNoisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -130,7 +96,6 @@ class XmusicMediaService : Service() {
         super.onCreate()
         isRunning = true
         ensureChannel()
-        audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
         val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
         wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Xmusic:BackgroundPlaybackLock")?.apply {
@@ -189,7 +154,7 @@ class XmusicMediaService : Service() {
             ACTION_CLEAR -> {
                 isPlayingNow = false
                 releaseLocks()
-                abandonAudioFocus()
+                isInForeground = false
                 try {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                 } catch (_: Throwable) {
@@ -207,7 +172,6 @@ class XmusicMediaService : Service() {
                 isPlayingNow = isPlaying
                 if (isPlaying) {
                     acquireLocks()
-                    requestAudioFocus()
                 } else {
                     releaseLocks()
                 }
@@ -238,52 +202,6 @@ class XmusicMediaService : Service() {
             wifiLock?.let { if (it.isHeld) it.release() }
         } catch (_: Throwable) {
         }
-    }
-
-    private fun requestAudioFocus() {
-        if (hasAudioFocus) return
-        val am = audioManager ?: return
-        try {
-            val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val attrs = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
-                val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(attrs)
-                    .setAcceptsDelayedFocusGain(true)
-                    .setWillPauseWhenDucked(false)
-                    .setOnAudioFocusChangeListener(audioFocusListener)
-                    .build()
-                audioFocusRequest = req
-                am.requestAudioFocus(req)
-            } else {
-                @Suppress("DEPRECATION")
-                am.requestAudioFocus(
-                    audioFocusListener,
-                    AudioManager.STREAM_MUSIC,
-                    AudioManager.AUDIOFOCUS_GAIN
-                )
-            }
-            hasAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        } catch (_: Throwable) {
-        }
-    }
-
-    private fun abandonAudioFocus() {
-        val am = audioManager ?: return
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                audioFocusRequest?.let { am.abandonAudioFocusRequest(it) }
-                audioFocusRequest = null
-            } else {
-                @Suppress("DEPRECATION")
-                am.abandonAudioFocus(audioFocusListener)
-            }
-        } catch (_: Throwable) {
-        }
-        hasAudioFocus = false
-        pausedByTransientFocus = false
     }
 
     private fun updateNotification(
@@ -356,16 +274,21 @@ class XmusicMediaService : Service() {
             )
             .build()
 
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
+        val nm = getSystemService(NotificationManager::class.java)
+        if (!isInForeground) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+                isInForeground = true
+                return
+            } catch (_: Throwable) {
+                isInForeground = false
             }
-        } catch (_: Throwable) {
-            val nm = getSystemService(NotificationManager::class.java)
-            nm?.notify(NOTIFICATION_ID, notification)
         }
+        nm?.notify(NOTIFICATION_ID, notification)
     }
 
     private fun serviceActionIntent(action: String, requestCode: Int): PendingIntent {
@@ -397,7 +320,7 @@ class XmusicMediaService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         if (!isPlayingNow) {
             releaseLocks()
-            abandonAudioFocus()
+            isInForeground = false
             try {
                 stopForeground(STOP_FOREGROUND_REMOVE)
             } catch (_: Throwable) {
@@ -410,8 +333,8 @@ class XmusicMediaService : Service() {
     override fun onDestroy() {
         isRunning = false
         isPlayingNow = false
+        isInForeground = false
         releaseLocks()
-        abandonAudioFocus()
         if (noisyReceiverRegistered) {
             try {
                 unregisterReceiver(becomingNoisyReceiver)

@@ -2,6 +2,14 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.9.0] - 2026-11-19
+
+### Fixed (Fatal Play/Pause Loop & Stuck Play Button Elimination)
+- **Eliminasi Konflik AudioFocus Android (`XmusicMediaService.kt`)**: Menghapus panggilan `AudioManager.requestAudioFocus(AUDIOFOCUS_GAIN)` ganda di `XmusicMediaService` yang sebelumnya saling merebut fokus audio dengan `AudioFocusDelegate` internal Chromium Android WebView — menghilangkan 100% bug fatal pemutaran berhenti-putar berulang (`AUDIOFOCUS_LOSS` ping-pong) sekaligus mempertahankan `PARTIAL_WAKE_LOCK`, `WifiLock`, `ACTION_AUDIO_BECOMING_NOISY`, dan notifikasi kontrol MediaStyle layar kunci.
+- **Anti-Thrashing Foreground Service (`isInForeground`)**: `XmusicMediaService` kini hanya memanggil `startForeground()` sekali saat aktif dan memakai `NotificationManager.notify()` untuk pembaruan status/metadata berikutnya, dipadukan dengan deduplikasi sinkronisasi notifikasi di `AudioEngine`.
+- **Self-Healing `resume()` & Anti-Stuck Play Button (`engine.svelte.ts`)**: Memisahkan `resume()` idempoten dari `togglePlay()`, memperbaiki `navigator.mediaSession.setActionHandler('play')` agar tidak pernah menjeda lagu yang sedang berputar, serta menambahkan pemulihan otomatis (2.5 detik untuk YouTube Bridge, reload sumber jika `NETWORK_NO_SOURCE`/error) sehingga tombol Putar di `PlayerBar` maupun `TrackModal` tidak pernah macet.
+- **Monotonic `playSessionId` & `playGen` Anti-Race Guard (`engine.svelte.ts`, `ytPlayerBridge.ts`)**: Menambahkan token sesi monotonik pada setiap transisi lagu untuk membatalkan callback async lama secara instan, menekan flicker `pause`/`play` saat ganti lagu (`isTransitioning`), mencegah panggilan `playVideo()` ganda pada YouTube IFrame, serta mengganti `preload` menjadi `auto` dengan stall watchdog 8 detik anti putus-putus.
+
 ## [6.8.0] - 2026-11-19
 
 ### Fixed (Fatal Empty Music Catalog & Streaming Server Busy Fix)
