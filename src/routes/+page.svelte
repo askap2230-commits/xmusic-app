@@ -269,6 +269,10 @@
   </Tabbar>
 </Page>
 
+
+<!-- Offscreen 1x1 audio-only host for official YouTube IFrame Player API -->
+<div id="xmusic-yt-audio-host" class="pointer-events-none fixed bottom-0 left-0 h-px w-px opacity-0" aria-hidden="true"></div>
+
 <QueueDrawer />
 <TrackModal />
 <UploadModal />

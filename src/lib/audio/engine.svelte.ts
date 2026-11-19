@@ -18,6 +18,7 @@
  *   and the native Android Foreground MediaStyle Service bridge (window.XmusicAndroidMedia).
  */
 import { resolveYoutubeAudioStream } from '#lib/api/services.ts';
+import { YtAudioBridge } from './ytPlayerBridge.ts';
 import { EQ_BANDS, EQ_PRESETS } from '#lib/data/presets.ts';
 import { loadJSON, saveJSON } from '#lib/db/storage.ts';
 import type { RepeatMode, Track } from '#lib/types/music.ts';
@@ -74,6 +75,8 @@ class AudioEngine {
   private audioEl: HTMLAudioElement | null = null;
   private directAudioEl: HTMLAudioElement | null = null;
   private usingDirectAudio = false;
+  private ytBridge = new YtAudioBridge();
+  private usingYtBridge = false;
   private audioCtx: AudioContext | null = null;
   private sourceNode: MediaElementAudioSourceNode | null = null;
   private preampNode: GainNode | null = null;
@@ -207,6 +210,51 @@ class AudioEngine {
     this.directAudioEl.volume = this.volume;
     this.bindAudioEvents(this.directAudioEl, true);
 
+    this.ytBridge.configure({
+      onStateChange: (state) => {
+        if (!this.usingYtBridge) return;
+        if (state === 1) {
+          this.playing = true;
+          this.resolvingAudio = false;
+          this.audioResolveFailed = false;
+          const dur = this.ytBridge.getDuration();
+          if (Number.isFinite(dur) && dur > 0) {
+            this.duration = dur;
+            if (this.current) this.current.dur = dur;
+          }
+          this.startPositionSync();
+          this.updateMediaSessionState();
+          this.syncNativeAndroidNotification();
+        } else if (state === 2) {
+          this.playing = false;
+          this.stopPositionSync();
+          this.updateMediaSessionState();
+          this.syncNativeAndroidNotification();
+        } else if (state === 0) {
+          this.stopPositionSync();
+          if (this.sleepMinutes === -1) {
+            this.setSleepTimer(0);
+            this.playing = false;
+            this.syncNativeAndroidNotification();
+            this.toast('Sleep Timer: Pemutaran dihentikan di akhir lagu.');
+            return;
+          }
+          if (this.repeat === 'one') {
+            this.ytBridge.seekTo(0);
+            this.ytBridge.resume();
+          } else {
+            this.next(true);
+          }
+        }
+      },
+      onError: () => {
+        if (!this.usingYtBridge || !this.current?.videoId) return;
+        // Fallback to direct InnerTube/Piped stream resolver if uploader blocked IFrame playback
+        this.usingYtBridge = false;
+        void this.resolveAndPlayYoutubeAudio(this.current);
+      }
+    });
+
     this.setupMediaSession();
     this.registerAndroidNotificationBridge();
   }
@@ -214,6 +262,7 @@ class AudioEngine {
   destroy(): void {
     this.stopPositionSync();
     if (this.sleepIntervalId) clearInterval(this.sleepIntervalId);
+    this.ytBridge.destroy();
     window.XmusicAndroidMedia?.clearNotification();
     if (this.audioEl) {
       this.audioEl.pause();
@@ -403,6 +452,7 @@ class AudioEngine {
         el.muted = this.muted;
       }
     }
+    if (this.usingYtBridge) this.ytBridge.setVolume(clamped, this.muted);
     this.savePrefs();
   }
 
@@ -410,6 +460,7 @@ class AudioEngine {
     this.muted = !this.muted;
     if (this.audioEl) this.audioEl.muted = this.muted;
     if (this.directAudioEl) this.directAudioEl.muted = this.muted;
+    if (this.usingYtBridge) this.ytBridge.setVolume(this.volume, this.muted);
   }
 
   setSpeed(rate: number): void {
@@ -432,6 +483,7 @@ class AudioEngine {
         el.preservesPitch = this.preservesPitch;
       }
     }
+    if (this.usingYtBridge) this.ytBridge.setPlaybackRate(this.playbackRate);
   }
 
   toggleShuffle(): void {
@@ -501,14 +553,24 @@ class AudioEngine {
     }
 
     if (track.videoId && !track.url) {
+      if (this.current?.id === track.id && this.usingYtBridge) {
+        this.togglePlay();
+        return;
+      }
       this.pause();
       this.current = track;
       this.position = 0;
       this.duration = track.dur || 0;
+      this.ytBridge.stop();
+    this.usingYtBridge = false;
+    this.usingDirectAudio = false;
+      this.usingYtBridge = true;
+      this.resolvingAudio = true;
+      this.audioResolveFailed = false;
       this.recordHistory(track);
       this.updateMediaSessionMeta();
       this.syncNativeAndroidNotification();
-      void this.resolveAndPlayYoutubeAudio(track);
+      void this.startYoutubeAudioBridge(track);
       return;
     }
 
@@ -534,6 +596,8 @@ class AudioEngine {
     this.duration = track.dur || 0;
     this.corsBypassMode = false;
 
+    if (this.usingYtBridge) this.ytBridge.stop();
+    this.usingYtBridge = false;
     if (this.directAudioEl) this.directAudioEl.pause();
     this.usingDirectAudio = false;
     if (this.audioEl) {
@@ -551,9 +615,22 @@ class AudioEngine {
     this.syncNativeAndroidNotification();
   }
 
+  private async startYoutubeAudioBridge(track: Track): Promise<void> {
+    if (!track.videoId) return;
+    const ok = await this.ytBridge.play(track.videoId, this.volume, this.muted, this.playbackRate);
+    if (this.current?.id !== track.id) return;
+    if (!ok) {
+      this.usingYtBridge = false;
+      void this.resolveAndPlayYoutubeAudio(track);
+    }
+  }
+
   retryYoutubeAudio(): void {
     if (this.current?.videoId) {
-      void this.resolveAndPlayYoutubeAudio(this.current);
+      this.usingYtBridge = true;
+      this.resolvingAudio = true;
+      this.audioResolveFailed = false;
+      void this.startYoutubeAudioBridge(this.current);
     }
   }
 
@@ -596,7 +673,12 @@ class AudioEngine {
       if (this.queue.length > 0) this.playTrack(this.queue[0]);
       return;
     }
-    if ((this.current.videoId && !this.current.url) || this.current.spotifyId) return;
+    if (this.current.spotifyId) return;
+    if (this.usingYtBridge) {
+      if (this.playing) this.ytBridge.pause();
+      else this.ytBridge.resume();
+      return;
+    }
     if (this.playing) {
       this.pause();
     } else if (this.activeEl) {
@@ -613,6 +695,7 @@ class AudioEngine {
   pause(): void {
     if (this.audioEl) this.audioEl.pause();
     if (this.directAudioEl) this.directAudioEl.pause();
+    if (this.usingYtBridge) this.ytBridge.pause();
   }
 
   stopTrack(): void {
@@ -636,15 +719,27 @@ class AudioEngine {
       navigator.mediaSession.metadata = null;
       navigator.mediaSession.playbackState = 'none';
     }
+    this.ytBridge.destroy();
     window.XmusicAndroidMedia?.clearNotification();
   }
 
   seekTo(fraction: number): void {
+    if (!this.current) return;
+    const clamped = Math.max(0, Math.min(1, fraction));
+    if (this.usingYtBridge) {
+      const total = this.duration || this.ytBridge.getDuration() || 0;
+      if (!total) return;
+      const target = clamped * total;
+      this.ytBridge.seekTo(target);
+      this.position = target;
+      this.updateMediaSessionPosition();
+      this.syncNativeAndroidNotification();
+      return;
+    }
     const el = this.activeEl;
-    if (!el || !this.current) return;
+    if (!el) return;
     const total = this.duration || el.duration || 0;
     if (!total) return;
-    const clamped = Math.max(0, Math.min(1, fraction));
     el.currentTime = clamped * total;
     this.position = el.currentTime;
     this.updateMediaSessionPosition();
@@ -658,7 +753,7 @@ class AudioEngine {
   }
 
   next(fromEnded = false): void {
-    const playable = this.queue.filter((t) => !t.videoId && !t.spotifyId);
+    const playable = this.queue.filter((t) => !t.spotifyId);
     if (!playable.length) return;
     const idx = playable.findIndex((t) => t.id === this.current?.id);
 
@@ -679,13 +774,14 @@ class AudioEngine {
   }
 
   prev(): void {
-    if (this.activeEl && this.position > 3) {
-      this.activeEl.currentTime = 0;
+    if (this.position > 3) {
+      if (this.usingYtBridge) this.ytBridge.seekTo(0);
+      else if (this.activeEl) this.activeEl.currentTime = 0;
       this.position = 0;
       this.updateMediaSessionPosition();
       return;
     }
-    const playable = this.queue.filter((t) => !t.videoId && !t.spotifyId);
+    const playable = this.queue.filter((t) => !t.spotifyId);
     if (!playable.length) return;
     const idx = playable.findIndex((t) => t.id === this.current?.id);
     this.playTrack(playable[(idx - 1 + playable.length) % playable.length]);
@@ -712,13 +808,20 @@ class AudioEngine {
   private startPositionSync(): void {
     this.stopPositionSync();
     this.syncIntervalId = setInterval(() => {
+      if (!this.playing) return;
+      if (this.usingYtBridge) {
+        this.position = this.ytBridge.getCurrentTime();
+        const dur = this.ytBridge.getDuration();
+        if (Number.isFinite(dur) && dur > 0) this.duration = dur;
+        return;
+      }
       const el = this.activeEl;
-      if (!this.playing || !el) return;
+      if (!el) return;
       this.position = el.currentTime || 0;
       if (Number.isFinite(el.duration) && el.duration > 0) {
         this.duration = el.duration;
       }
-    }, 150);
+    }, 200);
   }
 
   private stopPositionSync(): void {

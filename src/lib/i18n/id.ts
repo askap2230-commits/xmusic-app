@@ -76,6 +76,12 @@ export const id: TranslationDict = {
   'search.searching': 'Mencari lagu di YouTube Music, Audius & Katalog 1900–2026...',
   'search.noResults': 'Tidak ditemukan lagu yang cocok pada filter ini untuk "{query}".',
   'search.resetFilters': 'Reset Semua Filter',
+  'search.topResult': 'Hasil Teratas',
+  'search.sortRelevant': 'Relevan',
+  'search.sortNewest': 'Terbaru',
+  'search.sortLongest': 'Durasi Penuh',
+  'search.hideSuggestions': 'Tutup Sugesti',
+  'search.playNow': 'Putar',
 
   // Library View
   'library.tabOffline': 'Offline',

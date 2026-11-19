@@ -76,6 +76,12 @@ export type TranslationDict = {
   'search.searching': string;
   'search.noResults': string;
   'search.resetFilters': string;
+  'search.topResult': string;
+  'search.sortRelevant': string;
+  'search.sortNewest': string;
+  'search.sortLongest': string;
+  'search.hideSuggestions': string;
+  'search.playNow': string;
 
   // Library View
   'library.tabOffline': string;

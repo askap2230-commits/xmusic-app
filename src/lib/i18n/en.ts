@@ -76,6 +76,12 @@ export const en: TranslationDict = {
   'search.searching': 'Searching YouTube Music, Audius & 1900–2026 Catalog...',
   'search.noResults': 'No tracks match these filters for "{query}".',
   'search.resetFilters': 'Reset All Filters',
+  'search.topResult': 'Top Result',
+  'search.sortRelevant': 'Relevant',
+  'search.sortNewest': 'Newest',
+  'search.sortLongest': 'Full Length',
+  'search.hideSuggestions': 'Hide Suggestions',
+  'search.playNow': 'Play',
 
   // Library View
   'library.tabOffline': 'Offline',

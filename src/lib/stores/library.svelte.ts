@@ -63,6 +63,7 @@ class AppStore {
   eraFilter = $state<string>('all');
   fullOnlyFilter = $state<boolean>(false);
   searchSourceFilter = $state<'all' | 'youtube' | 'audius' | 'local'>('all');
+  searchSort = $state<'relevant' | 'newest' | 'longest'>('relevant');
   searchVisibleCount = $state<number>(12);
   searchLoadingMore = $state<boolean>(false);
   private searchArchiveLoaded = false;
@@ -103,7 +104,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '6.1.0',
+    version: '6.3.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
@@ -202,15 +203,24 @@ class AppStore {
     if (this.fullOnlyFilter) {
       list = list.filter((t) => !t.isPreview);
     }
-    if (this.eraFilter === 'all') return list;
-    const era = ERA_PRESETS.find((e) => e.id === this.eraFilter);
-    if (!era) return list;
-    return list.filter(
-      (t) =>
-        typeof t.releaseYear === 'number' &&
-        t.releaseYear >= era.minYear &&
-        t.releaseYear <= era.maxYear
-    );
+    if (this.eraFilter !== 'all') {
+      const era = ERA_PRESETS.find((e) => e.id === this.eraFilter);
+      if (era) {
+        list = list.filter(
+          (t) =>
+            typeof t.releaseYear === 'number' &&
+            t.releaseYear >= era.minYear &&
+            t.releaseYear <= era.maxYear
+        );
+      }
+    }
+    if (this.searchSort === 'newest') {
+      return [...list].sort((a, b) => (b.releaseYear || 0) - (a.releaseYear || 0));
+    }
+    if (this.searchSort === 'longest') {
+      return [...list].sort((a, b) => (b.dur || 0) - (a.dur || 0));
+    }
+    return list;
   }
 
   get visibleSearchResults(): Track[] {
@@ -1071,8 +1081,14 @@ class AppStore {
   }
 
   setSearchSourceFilter(source: 'all' | 'youtube' | 'audius' | 'local'): void {
+    this.showSuggestions = false;
     this.searchSourceFilter = source;
     this.searchVisibleCount = 12;
+  }
+
+  setSearchSort(sort: 'relevant' | 'newest' | 'longest'): void {
+    this.showSuggestions = false;
+    this.searchSort = sort;
   }
 
   async loadMoreSearch(): Promise<void> {

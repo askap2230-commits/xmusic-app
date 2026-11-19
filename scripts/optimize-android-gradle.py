@@ -280,6 +280,7 @@ class MainActivity : TauriActivity() {
 
     override fun onWebViewCreate(webView: WebView) {
         super.onWebViewCreate(webView)
+        webView.settings.mediaPlaybackRequiresUserGesture = false
         webViewRef = WeakReference(webView)
         webView.addJavascriptInterface(AndroidMediaBridge(), "XmusicAndroidMedia")
     }

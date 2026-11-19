@@ -18,11 +18,11 @@ All GitHub Actions workflows in this repository are **manual-only** (`workflow_d
 Every production build automatically reads `"version"` from `package.json` and maps the selected target architecture to a clear, unambiguous filename:
 
 - **`aarch64` (default, smallest ~3 MB)**:
-  - `Xmusic-v5.0.0-android-arm64-v8a-release.apk`
-  - `Xmusic-v5.0.0-android-arm64-v8a-release.apk.sha256` + `.sha512` (embedded with signing cert SHA-256, exact byte size, `SOURCE_DATE_EPOCH`, Git SHA, and toolchain versions directly in the GitHub Release body)`
+  - `Xmusic-v6.3.0-android-arm64-v8a-release.apk`
+  - `Xmusic-v6.3.0-android-arm64-v8a-release.apk.sha256` + `.sha512` (embedded with signing cert SHA-256, exact byte size, `SOURCE_DATE_EPOCH`, Git SHA, and toolchain versions directly in the GitHub Release body)`
 - **`universal` (all Android ABIs)**:
-  - `Xmusic-v5.0.0-android-universal-release.apk`
-  - `Xmusic-v5.0.0-android-universal-release.apk.sha256`
+  - `Xmusic-v6.3.0-android-universal-release.apk`
+  - `Xmusic-v6.3.0-android-universal-release.apk.sha256`
 
 ---
 
@@ -73,5 +73,5 @@ gh workflow run ci-verify.yml
 ## 5. Verifying Reproducibility Locally
 
 ```bash
-sha256sum -c Xmusic-v5.0.0-android-arm64-v8a-release.apk.sha256` + `.sha512` (embedded with signing cert SHA-256, exact byte size, `SOURCE_DATE_EPOCH`, Git SHA, and toolchain versions directly in the GitHub Release body)
+sha256sum -c Xmusic-v6.3.0-android-arm64-v8a-release.apk.sha256` + `.sha512` (embedded with signing cert SHA-256, exact byte size, `SOURCE_DATE_EPOCH`, Git SHA, and toolchain versions directly in the GitHub Release body)
 ```

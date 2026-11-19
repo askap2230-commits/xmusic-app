@@ -2,6 +2,23 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.3.0] - 2026-11-19
+
+### Changed & Added (Search Page UI/UX Overhaul)
+- **Top Result Spotlight Card**: Hasil pencarian teratas dalam mode Daftar kini tampil di kartu sorotan khusus (Konsta `<Card>`) dengan sampul besar, metadata tahun rilis, badge `Penuh`/`30d`, durasi, dan tombol putar langsung (`Putar`).
+- **Functional Sort Bar (`Relevan` / `Terbaru` / `Durasi Penuh`)**: Penambahan menu urutkan berbasis Konsta `<Segmented>` (`appStore.searchSort`) yang langsung menyortir hasil pencarian tanpa memuat ulang API.
+- **List / Grid Layout Toggle**: Tombol alih tampilan Daftar dan Grid di header hasil pencarian untuk navigasi cepat sesuai preferensi pengguna.
+- **Dismissible Smart Suggestions**: Dropdown sugesti real-time kini dilengkapi tombol `Tutup` (`search.hideSuggestions`) dan otomatis tertutup saat pengguna mengubah filter sumber, filter era, atau urutan agar tidak menutupi hasil.
+- **Resilient Artwork & Non-Overlapping Empty State**: Fallback gradien otomatis (`onerror`) untuk sampul lagu di halaman Cari serta reset filter satu ketukan saat hasil kosong.
+- **Full i18n Parity (`id` & `en`)**: Penambahan 6 kunci lokalisasi baru (`search.topResult`, `search.sortRelevant`, `search.sortNewest`, `search.sortLongest`, `search.hideSuggestions`, `search.playNow`) pada `types.ts`, `id.ts`, dan `en.ts`.
+
+## [6.2.0] - 2026-11-19
+
+### Critical Fix: 100% Reliable YouTube Music Audio Playback
+- **Official YouTube IFrame Player API Audio Bridge (`src/lib/audio/ytPlayerBridge.ts`)**: Resolved the late-2026 YouTube SABR + GVS PO Token restriction (which broke unauthenticated InnerTube/Piped direct audio URLs) by integrating an offscreen 1×1 `YT.Player` audio backend controlled directly by `AudioEngine`. Every YouTube Music track now plays full-length immediately with Xmusic's native iOS Audio UI, working seekbar, volume, Next/Prev queue, synced lyrics, and Android lockscreen media notifications — zero "stream audio langsung belum tersedia" errors.
+- **Android WebView Autoplay Enablement**: Configured `webView.settings.mediaPlaybackRequiresUserGesture = false` in `MainActivity.kt` (`scripts/optimize-android-gradle.py`) so track-to-track playback on Android WebView starts seamlessly without user-gesture blocks.
+- **Version Bump**: Upgraded single-source version in `package.json` and `Cargo.toml` to `6.2.0` (`Xmusic-v6.2.0-android-<abi>-release.apk`).
+
 ## [6.1.0] - 2026-11-19
 
 ### Smooth Page Transitions & Keep-Alive Tab Engine

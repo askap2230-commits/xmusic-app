@@ -10,23 +10,37 @@
     List,
     ListItem,
     Preloader,
-    Searchbar
+    Searchbar,
+    Segmented,
+    SegmentedButton
   } from 'konsta/svelte';
   import { engine } from '#lib/audio/engine.svelte.ts';
   import { CATEGORIES, ERA_PRESETS, TRENDING_QUERIES } from '#lib/data/presets.ts';
   import { i18n } from '#lib/i18n/index.svelte.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
+  import type { Track } from '#lib/types/music.ts';
+  import { formatTime, getTrackInitial } from '#lib/utils/format.ts';
   import Icon from '../Icon.svelte';
   import TrackCard from '../TrackCard.svelte';
 
-  const SOURCE_TABS: Array<{ id: 'all' | 'youtube' | 'audius' | 'local'; label: string }> = [
-    { id: 'all', label: 'Semua' },
-    { id: 'youtube', label: 'YouTube Music' },
-    { id: 'audius', label: 'Audius' },
-    { id: 'local', label: 'Lokal' }
-  ];
+  let layoutMode = $state<'list' | 'grid'>('list');
+  let brokenImages = $state<Record<string, boolean>>({});
+
+  const topTrack = $derived(appStore.visibleSearchResults[0] || null);
+  const restTracks = $derived(
+    layoutMode === 'list'
+      ? appStore.visibleSearchResults.slice(1)
+      : appStore.visibleSearchResults
+  );
+
+  function openAndPlay(track: Track): void {
+    appStore.showSuggestions = false;
+    engine.playTrack(track, appStore.filteredSearchResults);
+    appStore.openTrackModal(track, false);
+  }
 </script>
 
+<!-- Search Input Header -->
 <Block class="!mb-2">
   <Searchbar
     placeholder={i18n.t('search.placeholder')}
@@ -36,9 +50,14 @@
   />
 </Block>
 
-<!-- Smart Real-Time Autocomplete Suggestions -->
+<!-- Real-Time Smart Suggestions Dropdown (Clean, Non-Overlapping, Dismissible) -->
 {#if appStore.showSuggestions && appStore.searchQuery.trim().length > 0 && (appStore.searchSuggestions.length > 0 || appStore.suggesting)}
   <div class="mb-2">
+    <div class="flex items-center justify-end px-4">
+      <Button clear small inline onclick={() => (appStore.showSuggestions = false)}>
+        {i18n.t('search.hideSuggestions')}
+      </Button>
+    </div>
     <List strong inset class="!my-1">
       {#if appStore.suggesting && appStore.searchSuggestions.length === 0}
         <ListItem title={i18n.t('search.suggesting')}>
@@ -52,38 +71,21 @@
             link
             title={sug.title}
             subtitle={sug.subtitle}
+            titleWrapClass="min-w-0"
+            class="overflow-hidden"
             onclick={() => appStore.applySuggestion(sug)}
           >
             {#snippet media()}
-              <span class="grid h-8 w-8 place-items-center rounded-full bg-black/5 text-[#007aff] dark:bg-white/10 dark:text-[#64d2ff]">
+              <span class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-black/5 text-[#007aff] dark:bg-white/10 dark:text-[#64d2ff]">
                 <Icon name={sug.kind === 'era' ? 'spark' : sug.track ? 'music' : 'search'} size={15} />
               </span>
             {/snippet}
             {#snippet after()}
-              <div class="flex items-center gap-1.5">
-                {#if sug.year}
-                  <Badge class="bg-black/10 text-black text-[11px] dark:bg-white/15 dark:text-white">
-                    {sug.year}
-                  </Badge>
-                {/if}
-                {#if sug.track}
-                  <button
-                    type="button"
-                    class="grid h-8 w-8 place-items-center rounded-full bg-[#007aff] text-white active:scale-95 dark:bg-[#0a84ff]"
-                    aria-label="Putar {sug.title}"
-                    onclick={(e: MouseEvent) => {
-                      e.stopPropagation();
-                      if (sug.track) {
-                        appStore.showSuggestions = false;
-                        engine.playTrack(sug.track, appStore.allTracks);
-                        appStore.openTrackModal(sug.track, false);
-                      }
-                    }}
-                  >
-                    <Icon name="play" size={13} />
-                  </button>
-                {/if}
-              </div>
+              {#if sug.year}
+                <Badge class="shrink-0 bg-black/10 text-black text-[11px] dark:bg-white/15 dark:text-white">
+                  {sug.year}
+                </Badge>
+              {/if}
             {/snippet}
           </ListItem>
         {/each}
@@ -104,6 +106,7 @@
 {/if}
 
 {#if !appStore.searchQuery.trim()}
+  <!-- Empty Search Discovery Hub -->
   {#if appStore.recentSearches.length > 0}
     <BlockTitle class="flex items-center justify-between">
       <span>{i18n.t('search.recent')}</span>
@@ -202,39 +205,73 @@
     </div>
   </Block>
 {:else}
-  <!-- Compact Horizontal Source Filter Rail -->
+  <!-- Clean Source Filter Rail -->
   <div class="xmusic-hscroll flex items-center gap-2 px-4 pt-1 pb-1.5">
     <Chip
       outline={!appStore.fullOnlyFilter}
       class="shrink-0 cursor-pointer {appStore.fullOnlyFilter
         ? '!bg-[#248a3d] !text-white font-semibold dark:!bg-[#30d158] dark:!text-black'
         : ''}"
-      onclick={() => appStore.toggleFullOnly()}
+      onclick={() => {
+        appStore.showSuggestions = false;
+        appStore.toggleFullOnly();
+      }}
     >
       {i18n.t('search.fullOnly')}
     </Chip>
 
-    {#each SOURCE_TABS as tab (tab.id)}
-      <Chip
-        outline={appStore.searchSourceFilter !== tab.id}
-        class="shrink-0 cursor-pointer {appStore.searchSourceFilter === tab.id
-          ? '!bg-[#007aff] !text-white font-semibold'
-          : ''}"
-        onclick={() => appStore.setSearchSourceFilter(tab.id)}
-      >
-        {tab.label}
-      </Chip>
-    {/each}
+    <Chip
+      outline={appStore.searchSourceFilter !== 'all'}
+      class="shrink-0 cursor-pointer {appStore.searchSourceFilter === 'all'
+        ? '!bg-[#007aff] !text-white font-semibold'
+        : ''}"
+      onclick={() => appStore.setSearchSourceFilter('all')}
+    >
+      {i18n.t('search.sourceAll')}
+    </Chip>
+
+    <Chip
+      outline={appStore.searchSourceFilter !== 'youtube'}
+      class="shrink-0 cursor-pointer {appStore.searchSourceFilter === 'youtube'
+        ? '!bg-[#007aff] !text-white font-semibold'
+        : ''}"
+      onclick={() => appStore.setSearchSourceFilter('youtube')}
+    >
+      YouTube Music
+    </Chip>
+
+    <Chip
+      outline={appStore.searchSourceFilter !== 'audius'}
+      class="shrink-0 cursor-pointer {appStore.searchSourceFilter === 'audius'
+        ? '!bg-[#007aff] !text-white font-semibold'
+        : ''}"
+      onclick={() => appStore.setSearchSourceFilter('audius')}
+    >
+      Audius
+    </Chip>
+
+    <Chip
+      outline={appStore.searchSourceFilter !== 'local'}
+      class="shrink-0 cursor-pointer {appStore.searchSourceFilter === 'local'
+        ? '!bg-[#007aff] !text-white font-semibold'
+        : ''}"
+      onclick={() => appStore.setSearchSourceFilter('local')}
+    >
+      {i18n.t('search.sourceLocal')}
+    </Chip>
   </div>
 
-  <!-- Compact Horizontal Era Filter Rail -->
+  <!-- Clean Era Filter Rail -->
   <div class="xmusic-hscroll flex items-center gap-2 px-4 pb-2">
     <Chip
       outline={appStore.eraFilter !== 'all'}
       class="shrink-0 cursor-pointer {appStore.eraFilter === 'all'
         ? '!bg-[#007aff] !text-white font-semibold'
         : ''}"
-      onclick={() => appStore.setEraFilter('all')}
+      onclick={() => {
+        appStore.showSuggestions = false;
+        appStore.setEraFilter('all');
+      }}
     >
       {i18n.t('search.allEras')}
     </Chip>
@@ -244,55 +281,220 @@
         class="shrink-0 cursor-pointer {appStore.eraFilter === era.id
           ? '!bg-[#007aff] !text-white font-semibold'
           : ''}"
-        onclick={() => appStore.setEraFilter(era.id)}
+        onclick={() => {
+          appStore.showSuggestions = false;
+          appStore.setEraFilter(era.id);
+        }}
       >
         {era.label}
       </Chip>
     {/each}
   </div>
 
-  <BlockTitle class="flex items-center justify-between">
-    <span class="truncate">
-      {i18n.t('search.results', { query: appStore.searchQuery, count: appStore.filteredSearchResults.length })}
+  <!-- Functional Sort Bar (Relevant / Newest / Full Length) -->
+  <Block class="!my-1.5">
+    <Segmented strong rounded>
+      <SegmentedButton
+        active={appStore.searchSort === 'relevant'}
+        onclick={() => appStore.setSearchSort('relevant')}
+      >
+        {i18n.t('search.sortRelevant')}
+      </SegmentedButton>
+      <SegmentedButton
+        active={appStore.searchSort === 'newest'}
+        onclick={() => appStore.setSearchSort('newest')}
+      >
+        {i18n.t('search.sortNewest')}
+      </SegmentedButton>
+      <SegmentedButton
+        active={appStore.searchSort === 'longest'}
+        onclick={() => appStore.setSearchSort('longest')}
+      >
+        {i18n.t('search.sortLongest')}
+      </SegmentedButton>
+    </Segmented>
+  </Block>
+
+  <!-- Results Header with Layout Toggle (List / Grid) -->
+  <BlockTitle class="flex items-center justify-between gap-2">
+    <span class="min-w-0 flex-1 truncate">
+      {i18n.t('search.results', {
+        query: appStore.searchQuery,
+        count: appStore.filteredSearchResults.length
+      })}
     </span>
-    {#if appStore.searching}
-      <Preloader class="w-4 h-4 shrink-0" />
-    {/if}
+    <div class="flex shrink-0 items-center gap-2">
+      {#if appStore.searching}
+        <Preloader class="w-4 h-4" />
+      {/if}
+      {#if appStore.visibleSearchResults.length > 0}
+        <Button
+          clear
+          small
+          inline
+          onclick={() => (layoutMode = layoutMode === 'list' ? 'grid' : 'list')}
+        >
+          {layoutMode === 'list' ? i18n.t('library.viewGrid') : i18n.t('library.viewList')}
+        </Button>
+      {/if}
+    </div>
   </BlockTitle>
 
-  <Block class="space-y-3">
-    {#if appStore.searching && appStore.visibleSearchResults.length === 0}
+  {#if appStore.searching && appStore.visibleSearchResults.length === 0}
+    <Block>
       <div class="flex items-center gap-3 py-6 text-sm text-black/65 dark:text-white/65" role="status">
         <Preloader class="w-5 h-5" />
         <span>{i18n.t('search.searching')}</span>
       </div>
-    {:else if appStore.visibleSearchResults.length > 0}
-      <div class="xmusic-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        {#each appStore.visibleSearchResults as track (track.id)}
-          <TrackCard {track} />
-        {/each}
-      </div>
+    </Block>
+  {:else if appStore.visibleSearchResults.length > 0}
+    <!-- Top Result Spotlight Card (List Mode) -->
+    {#if layoutMode === 'list' && topTrack}
+      <Block class="!my-2">
+        <Card contentWrapPadding="p-3.5" class="!m-0 border border-black/10 dark:border-white/10">
+          <div class="mb-2 text-[11px] font-bold tracking-wide text-[#007aff] uppercase dark:text-[#64d2ff]">
+            {i18n.t('search.topResult')}
+          </div>
+          <div class="flex items-center gap-3">
+            <span
+              class="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl text-lg font-bold text-white shadow-sm"
+              style={topTrack.imageUrl
+                ? ''
+                : `background: linear-gradient(135deg, ${topTrack.c1 || '#007aff'}, ${topTrack.c2 || '#1c1c1e'})`}
+            >
+              {#if topTrack.imageUrl && !brokenImages[topTrack.id]}
+                <img
+                  src={topTrack.imageUrl}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  class="h-full w-full object-cover"
+                  onerror={() => (brokenImages[topTrack.id] = true)}
+                />
+              {:else}
+                {getTrackInitial(topTrack.title)}
+              {/if}
+            </span>
 
-      {#if appStore.hasMoreSearchResults}
-        <div class="flex justify-center pt-1">
-          <Button
-            tonal
-            rounded
-            small
-            inline
-            disabled={appStore.searchLoadingMore}
-            onclick={() => appStore.loadMoreSearch()}
-          >
-            {appStore.searchLoadingMore ? i18n.t('home.loadingMore') : i18n.t('home.loadMore')}
-          </Button>
-        </div>
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-base font-bold text-black dark:text-white">
+                {topTrack.title}
+              </div>
+              <div class="truncate text-xs text-black/60 dark:text-white/60">
+                {topTrack.artist}
+                {#if topTrack.releaseYear}• {topTrack.releaseYear}{/if}
+              </div>
+              <div class="mt-1.5 flex items-center gap-1.5">
+                <Badge
+                  class="{topTrack.isPreview
+                    ? 'bg-[#ff9f0a]/90 text-black'
+                    : 'bg-[#248a3d] text-white'} text-[10px]"
+                >
+                  {topTrack.isPreview ? i18n.t('common.preview30s') : i18n.t('common.full')}
+                </Badge>
+                {#if topTrack.dur > 0}
+                  <span class="text-xs tabular-nums text-black/50 dark:text-white/50">
+                    {formatTime(topTrack.dur)}
+                  </span>
+                {/if}
+              </div>
+            </div>
+
+            <Button rounded small inline class="shrink-0" onclick={() => openAndPlay(topTrack)}>
+              <span class="inline-flex items-center gap-1">
+                <Icon name="play" size={13} />
+                <span>{i18n.t('search.playNow')}</span>
+              </span>
+            </Button>
+          </div>
+        </Card>
+      </Block>
+    {/if}
+
+    {#if layoutMode === 'list'}
+      {#if restTracks.length > 0}
+        <List strong inset class="!my-2">
+          {#each restTracks as track (track.id)}
+            <ListItem
+              link
+              title={track.title}
+              subtitle={track.releaseYear ? `${track.artist} • ${track.releaseYear}` : track.artist}
+              titleWrapClass="min-w-0"
+              class="overflow-hidden"
+              onclick={() => openAndPlay(track)}
+            >
+              {#snippet media()}
+                <span
+                  class="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-xl text-sm font-bold text-white"
+                  style={track.imageUrl
+                    ? ''
+                    : `background: linear-gradient(135deg, ${track.c1 || '#007aff'}, ${track.c2 || '#1c1c1e'})`}
+                >
+                  {#if track.imageUrl && !brokenImages[track.id]}
+                    <img
+                      src={track.imageUrl}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      class="h-full w-full object-cover"
+                      onerror={() => (brokenImages[track.id] = true)}
+                    />
+                  {:else}
+                    {getTrackInitial(track.title)}
+                  {/if}
+                </span>
+              {/snippet}
+
+              {#snippet after()}
+                <div class="flex shrink-0 items-center gap-1.5">
+                  <Badge
+                    class="{track.isPreview
+                      ? 'bg-[#ff9f0a]/90 text-black'
+                      : 'bg-[#248a3d] text-white'} text-[10px]"
+                  >
+                    {track.isPreview ? i18n.t('common.preview30s') : i18n.t('common.full')}
+                  </Badge>
+                  {#if track.dur > 0}
+                    <span class="text-xs tabular-nums text-black/50 dark:text-white/50">
+                      {formatTime(track.dur)}
+                    </span>
+                  {/if}
+                </div>
+              {/snippet}
+            </ListItem>
+          {/each}
+        </List>
       {/if}
     {:else}
-      <Block strong inset class="!mx-0 space-y-2.5">
+      <Block class="!my-2">
+        <div class="xmusic-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          {#each appStore.visibleSearchResults as track (track.id)}
+            <TrackCard {track} />
+          {/each}
+        </div>
+      </Block>
+    {/if}
+
+    {#if appStore.hasMoreSearchResults}
+      <Block class="!mt-2 flex justify-center">
+        <Button
+          tonal
+          rounded
+          small
+          inline
+          disabled={appStore.searchLoadingMore}
+          onclick={() => appStore.loadMoreSearch()}
+        >
+          {appStore.searchLoadingMore ? i18n.t('home.loadingMore') : i18n.t('home.loadMore')}
+        </Button>
+      </Block>
+    {/if}
+  {:else}
+    <Block strong inset class="space-y-2.5">
         <p class="text-sm text-black/65 dark:text-white/65">
           {i18n.t('search.noResults', { query: appStore.searchQuery })}
         </p>
-        {#if appStore.eraFilter !== 'all' || appStore.searchSourceFilter !== 'all' || appStore.fullOnlyFilter}
+        {#if appStore.eraFilter !== 'all' || appStore.searchSourceFilter !== 'all' || appStore.fullOnlyFilter || appStore.searchSort !== 'relevant'}
           <Button
             tonal
             rounded
@@ -301,13 +503,13 @@
             onclick={() => {
               appStore.setEraFilter('all');
               appStore.setSearchSourceFilter('all');
+              appStore.setSearchSort('relevant');
               appStore.fullOnlyFilter = false;
             }}
           >
             {i18n.t('search.resetFilters')}
           </Button>
         {/if}
-      </Block>
-    {/if}
-  </Block>
+    </Block>
+  {/if}
 {/if}
