@@ -1,4 +1,4 @@
-# System Architecture — nys Xmusic v4.0
+# System Architecture — nys Xmusic v5.0
 
 ## 1. Layered Architecture
 
@@ -38,7 +38,7 @@
 
 ## 2. Single Source of Truth Versioning
 
-- **`package.json`** owns the canonical SemVer `"version": "4.0.0"`.
+- **`package.json`** owns the canonical SemVer `"version": "5.0.0"`.
 - **`src-tauri/tauri.conf.json`** declares `"version": "../package.json"`, which Tauri v2 resolves automatically during Android and Desktop bundling ([Tauri Configuration Reference](https://v2.tauri.app/reference/config/)).
 - **`src-tauri/src/lib.rs`** exposes `app.package_info().version.to_string()` via `get_runtime_info`.
 - **`.github/workflows/build-apk.yml`** reads `require('./package.json').version` to construct the dynamic release APK filename `Xmusic-v<version>-android-<abi>-release.apk` and default GitHub Release tag `v<version>`.

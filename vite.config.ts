@@ -9,7 +9,7 @@ import { defineConfig } from 'vite';
 const host = process.env.TAURI_DEV_HOST;
 
 /**
- * Unified SvelteKit 3 + Tailwind CSS v4 + Konsta UI + Vite 8 configuration for Tauri v2.12.
+ * Unified SvelteKit 3 + Strict TypeScript + Tailwind CSS v4 + Konsta UI + Vite 8 configuration.
  */
 export default defineConfig({
   plugins: [

@@ -1,15 +1,15 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script>
+<script lang="ts">
   import { Block, Button, Chip, Link, Navbar, Page, Popup, Range } from 'konsta/svelte';
-  import { engine } from '#lib/audio/engine.svelte.js';
-  import { parseLrcLyrics } from '#lib/api/services.js';
-  import { EQ_PRESETS } from '#lib/data/presets.js';
-  import { appStore } from '#lib/stores/library.svelte.js';
-  import { findActiveLyricIndex, formatTime, getTrackInitial } from '#lib/utils/format.js';
+  import { engine } from '#lib/audio/engine.svelte';
+  import { parseLrcLyrics } from '#lib/api/services';
+  import { EQ_PRESETS } from '#lib/data/presets';
+  import { appStore } from '#lib/stores/library.svelte';
+  import { findActiveLyricIndex, formatTime, getTrackInitial } from '#lib/utils/format';
   import Icon from '../Icon.svelte';
 
-  let vizCanvas = $state(null);
-  let lyricsScrollEl = $state(null);
+  let vizCanvas = $state<HTMLCanvasElement | null>(null);
+  let lyricsScrollEl = $state<HTMLDivElement | null>(null);
 
   const track = $derived(appStore.activeModalTrack);
   const parsedLyrics = $derived(track ? parseLrcLyrics(track.lyrics || '') : []);
@@ -34,24 +34,26 @@
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     let rafId = 0;
-    const render = (now) => {
+    const render = (now: number): void => {
       if (!appStore.trackModalOpen || !vizCanvas) return;
       if (!document.hidden && !appStore.modalFlipped) {
         const ctx = vizCanvas.getContext('2d');
-        const w = vizCanvas.clientWidth || 320;
-        const h = vizCanvas.clientHeight || 480;
-        if (vizCanvas.width !== w || vizCanvas.height !== h) {
-          vizCanvas.width = w;
-          vizCanvas.height = h;
-        }
-        ctx.clearRect(0, 0, w, h);
-        const bars = engine.getSpectrum(28, now);
-        const barWidth = w / bars.length;
-        for (let i = 0; i < bars.length; i++) {
-          const val = bars[i];
-          const barHeight = Math.max(3, val * (h * 0.22));
-          ctx.fillStyle = `rgba(10, 132, 255, ${0.14 + val * 0.36})`;
-          ctx.fillRect(i * barWidth + 2, h - barHeight, Math.max(2, barWidth - 4), barHeight);
+        if (ctx) {
+          const w = vizCanvas.clientWidth || 320;
+          const h = vizCanvas.clientHeight || 480;
+          if (vizCanvas.width !== w || vizCanvas.height !== h) {
+            vizCanvas.width = w;
+            vizCanvas.height = h;
+          }
+          ctx.clearRect(0, 0, w, h);
+          const bars = engine.getSpectrum(28, now);
+          const barWidth = w / bars.length;
+          for (let i = 0; i < bars.length; i++) {
+            const val = bars[i];
+            const barHeight = Math.max(3, val * (h * 0.22));
+            ctx.fillStyle = `rgba(10, 132, 255, ${0.14 + val * 0.36})`;
+            ctx.fillRect(i * barWidth + 2, h - barHeight, Math.max(2, barWidth - 4), barHeight);
+          }
         }
       }
       rafId = requestAnimationFrame(render);
@@ -61,8 +63,9 @@
     return () => cancelAnimationFrame(rafId);
   });
 
-  function handleDoubleTap(event) {
-    if (event.target.closest('button, input, textarea, .lyric-line')) return;
+  function handleDoubleTap(event: MouseEvent): void {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('button, input, textarea, .lyric-line')) return;
     appStore.toggleModalFlip();
   }
 </script>
@@ -80,7 +83,7 @@
           </Link>
         {/snippet}
         {#snippet right()}
-          <div class="flex items-center gap-1">
+          <div class="flex items-center gap-1.5 px-1">
             <Link
               iconOnly
               onclick={() => {
@@ -98,7 +101,7 @@
         {/snippet}
       </Navbar>
 
-      <Block class="mx-auto max-w-md !my-3">
+      <Block class="mx-auto max-w-md">
         <div class="xmusic-flip-scene">
           <div
             class="xmusic-flip-inner"
@@ -107,7 +110,7 @@
           >
             <!-- FRONT FACE -->
             <div
-              class="xmusic-flip-face relative overflow-hidden rounded-3xl border border-black/10 bg-white dark:border-white/10 dark:bg-[#1c1c1e] p-5 shadow-2xl"
+              class="xmusic-flip-face relative overflow-hidden rounded-3xl border border-black/10 bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-[#1c1c1e]"
               aria-hidden={appStore.modalFlipped}
             >
               <canvas
@@ -118,36 +121,54 @@
 
               <div class="relative z-10 flex flex-col">
                 {#if track.videoId}
-                  <div class="mb-4 aspect-video w-full overflow-hidden rounded-2xl bg-black">
-                    <iframe
-                      title={track.title}
-                      class="h-full w-full border-0"
-                      src="https://www.youtube.com/embed/{track.videoId}?autoplay=1&playsinline=1&rel=0"
-                      allow="autoplay; encrypted-media; picture-in-picture"
-                      allowfullscreen
-                    ></iframe>
-                  </div>
+                  {#if appStore.isOnline}
+                    <div class="mb-4 aspect-video w-full overflow-hidden rounded-2xl bg-black">
+                      <iframe
+                        title={track.title}
+                        class="h-full w-full border-0"
+                        src="https://www.youtube.com/embed/{track.videoId}?autoplay=1&playsinline=1&rel=0"
+                        allow="autoplay; encrypted-media; picture-in-picture"
+                        allowfullscreen
+                      ></iframe>
+                    </div>
+                  {:else}
+                    <div class="mb-4 flex flex-col items-center gap-2 rounded-2xl border border-black/10 bg-zinc-100 p-6 text-center dark:border-white/10 dark:bg-black/40">
+                      <Icon name="wifi-off" size={28} />
+                      <p class="text-xs text-zinc-600 dark:text-zinc-300">
+                        Video YouTube memerlukan koneksi internet.
+                      </p>
+                    </div>
+                  {/if}
                 {:else if track.spotifyId}
-                  <div class="mb-4 overflow-hidden rounded-2xl">
-                    <iframe
-                      title={track.title}
-                      class="w-full border-0"
-                      src="https://open.spotify.com/embed/{track.spotifyType || 'track'}/{track.spotifyId}?theme=0"
-                      height="152"
-                      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                    ></iframe>
-                  </div>
+                  {#if appStore.isOnline}
+                    <div class="mb-4 overflow-hidden rounded-2xl">
+                      <iframe
+                        title={track.title}
+                        class="w-full border-0"
+                        src="https://open.spotify.com/embed/{track.spotifyType || 'track'}/{track.spotifyId}?theme=0"
+                        height="152"
+                        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                      ></iframe>
+                    </div>
+                  {:else}
+                    <div class="mb-4 flex flex-col items-center gap-2 rounded-2xl border border-black/10 bg-zinc-100 p-6 text-center dark:border-white/10 dark:bg-black/40">
+                      <Icon name="wifi-off" size={28} />
+                      <p class="text-xs text-zinc-600 dark:text-zinc-300">
+                        Pemutar Spotify Embed memerlukan koneksi internet.
+                      </p>
+                    </div>
+                  {/if}
                 {:else}
                   <div
                     class="mx-auto mb-5 grid aspect-square w-full max-w-[260px] place-items-center overflow-hidden rounded-2xl shadow-xl"
                     style={track.imageUrl
                       ? ''
-                      : `background: linear-gradient(135deg, ${track.c1 || '#0a84ff'}, ${track.c2 || '#1c1c1e'})`}
+                      : `background: linear-gradient(135deg, ${track.c1 || '#007aff'}, ${track.c2 || '#1c1c1e'})`}
                   >
                     {#if track.imageUrl}
                       <img src={track.imageUrl} alt="Sampul {track.title}" class="h-full w-full object-cover" />
                     {:else}
-                      <span class="text-6xl font-extrabold text-white/90">
+                      <span class="text-6xl font-extrabold text-white/95">
                         {getTrackInitial(track.title)}
                       </span>
                     {/if}
@@ -179,9 +200,9 @@
                       max={Math.max(1, Math.round(engine.duration || 100))}
                       step={1}
                       value={Math.round(engine.position)}
-                      onInput={(e) => {
+                      onInput={(e: Event) => {
                         const d = engine.duration || 1;
-                        engine.seekTo(Number(e.target.value) / d);
+                        engine.seekTo(Number((e.target as HTMLInputElement).value) / d);
                       }}
                     />
                     <div class="flex justify-between text-xs tabular-nums text-zinc-600 dark:text-zinc-300">
@@ -214,7 +235,7 @@
 
                     <button
                       type="button"
-                      class="grid h-14 w-14 place-items-center rounded-full bg-zinc-950 text-white shadow-lg dark:bg-white dark:text-black active:scale-95"
+                      class="grid h-14 w-14 place-items-center rounded-full bg-zinc-950 text-white shadow-lg active:scale-95 dark:bg-white dark:text-black"
                       aria-label={engine.playing ? 'Jeda' : 'Putar'}
                       onclick={() => engine.togglePlay()}
                     >
@@ -240,7 +261,7 @@
                     >
                       <Icon name="repeat" size={19} />
                       {#if engine.repeat === 'one'}
-                        <span class="absolute top-1.5 right-1.5 grid h-3.5 w-3.5 place-items-center rounded-full bg-[#0a84ff] text-[9px] font-bold text-white">
+                        <span class="absolute top-1.5 right-1.5 grid h-3.5 w-3.5 place-items-center rounded-full bg-[#007aff] text-[9px] font-bold text-white">
                           1
                         </span>
                       {/if}
@@ -254,7 +275,7 @@
                       max={1}
                       step={0.02}
                       value={engine.volume}
-                      onInput={(e) => engine.setVolume(e.target.value)}
+                      onInput={(e: Event) => engine.setVolume((e.target as HTMLInputElement).value)}
                     />
                     <Icon name="volume" size={16} />
                   </div>
@@ -291,7 +312,7 @@
 
             <!-- BACK FACE (SYNCED LYRICS) -->
             <div
-              class="xmusic-flip-face xmusic-flip-back flex flex-col rounded-3xl border border-[#007aff] bg-white dark:border-[#0a84ff] dark:bg-[#1c1c1e] p-5 shadow-2xl"
+              class="xmusic-flip-face xmusic-flip-back flex flex-col rounded-3xl border border-[#007aff] bg-white p-5 shadow-2xl dark:border-[#0a84ff] dark:bg-[#1c1c1e]"
               aria-hidden={!appStore.modalFlipped}
             >
               <div class="mb-3 flex items-center justify-between gap-2">
@@ -323,12 +344,12 @@
                         : 'text-zinc-600 hover:bg-black/5 dark:text-zinc-300 dark:hover:bg-white/5'}"
                       data-lrc-idx={idx}
                       onclick={() => {
-                        if (line.synced && engine.duration > 0 && engine.current?.id === track.id) {
+                        if (line.synced && line.time !== null && engine.duration > 0 && engine.current?.id === track.id) {
                           engine.seekTo(line.time / engine.duration);
                         }
                       }}
                     >
-                      {#if line.synced}
+                      {#if line.synced && line.time !== null}
                         <span class="mr-2 text-[11px] tabular-nums opacity-70">
                           {formatTime(line.time)}
                         </span>
@@ -352,7 +373,7 @@
                 {/if}
               </div>
 
-              <div class="mt-3 flex items-center justify-between border-t border-black/10 dark:border-white/10 pt-3">
+              <div class="mt-3 flex items-center justify-between border-t border-black/10 pt-3 dark:border-white/10">
                 <span class="text-xs tabular-nums text-zinc-600 dark:text-zinc-300">
                   {formatTime(engine.position)} / {formatTime(engine.duration)}
                 </span>

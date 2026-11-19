@@ -1,5 +1,5 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script>
+<script lang="ts">
   import { Block, Button, Link, List, ListInput, Navbar, Page, Popup } from 'konsta/svelte';
   import {
     extractSpotifyEmbed,
@@ -7,23 +7,31 @@
     fetchOEmbedMeta,
     fetchSpotifyMetadata,
     fetchSyncedLyrics
-  } from '#lib/api/services.js';
-  import { saveLocalTrack } from '#lib/db/storage.js';
-  import { appStore } from '#lib/stores/library.svelte.js';
+  } from '#lib/api/services';
+  import { saveLocalTrack } from '#lib/db/storage';
+  import { appStore } from '#lib/stores/library.svelte';
+  import type { HubMeta, SpotifyEmbedRef, Track } from '#lib/types/music';
   import Icon from '../Icon.svelte';
 
-  let hubUrlInput = $state('');
-  let hubEmbedType = $state(null);
-  let hubVideoId = $state('');
-  let hubSpotify = $state(null);
-  let hubMeta = $state(null);
-  let hubDetecting = $state(false);
-  let hubMessage = $state('');
-  let hubSaving = $state(false);
+  let hubUrlInput = $state<string>('');
+  let hubEmbedType = $state<'spotify' | 'youtube' | null>(null);
+  let hubVideoId = $state<string>('');
+  let hubSpotify = $state<SpotifyEmbedRef | null>(null);
+  let hubMeta = $state<HubMeta | null>(null);
+  let hubDetecting = $state<boolean>(false);
+  let hubMessage = $state<string>('');
+  let hubSaving = $state<boolean>(false);
 
-  async function processHubLink() {
+  async function processHubLink(): Promise<void> {
+    if (!appStore.isOnline) {
+      hubMessage = 'Mode Offline: Hub Spotify & YouTube memerlukan koneksi internet.';
+      return;
+    }
     const url = hubUrlInput.trim();
-    if (!url) return appStore.showToast('Masukkan tautan Spotify atau YouTube.');
+    if (!url) {
+      appStore.showToast('Masukkan tautan Spotify atau YouTube.');
+      return;
+    }
 
     hubEmbedType = null;
     hubVideoId = '';
@@ -70,7 +78,7 @@
     hubMessage = 'Tautan tidak dikenali. Gunakan URL Spotify atau YouTube.';
   }
 
-  async function saveHubToLibrary() {
+  async function saveHubToLibrary(): Promise<void> {
     const url = hubUrlInput.trim();
     if (!url) return;
     hubSaving = true;
@@ -81,14 +89,16 @@
       meta = await fetchSpotifyMetadata(hubSpotify.type, hubSpotify.id, url);
     }
 
-    const title = meta?.title || (isSpotify ? `Spotify ${hubSpotify.type}` : 'YouTube Music');
+    const title = meta?.title || (isSpotify ? `Spotify ${hubSpotify?.type || 'track'}` : 'YouTube Music');
     const artist = meta?.artist || (isSpotify ? 'Spotify' : 'YouTube');
     const imageUrl =
       meta?.imageUrl || (hubVideoId ? `https://img.youtube.com/vi/${hubVideoId}/hqdefault.jpg` : null);
 
-    const syncedLyrics = await fetchSyncedLyrics(title, artist, meta?.dur || 0);
+    const syncedLyrics = appStore.isOnline
+      ? await fetchSyncedLyrics(title, artist, meta?.dur || 0)
+      : null;
 
-    const track = {
+    const track: Track = {
       id: `embed_${Date.now()}`,
       title,
       artist,
@@ -129,18 +139,29 @@
       {/snippet}
     </Navbar>
 
+    {#if !appStore.isOnline}
+      <Block strong inset class="flex items-center gap-3">
+        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#007aff]/15 text-[#007aff] dark:bg-[#0a84ff]/20 dark:text-[#64d2ff]">
+          <Icon name="wifi-off" size={18} />
+        </span>
+        <p class="text-xs text-zinc-600 dark:text-zinc-300">
+          Sedang offline. Hubungkan ke internet untuk mendeteksi tautan Spotify atau YouTube.
+        </p>
+      </Block>
+    {/if}
+
     <List strong inset>
       <ListInput
         label="Tautan Spotify / YouTube"
         type="url"
         placeholder="https://open.spotify.com/track/... atau https://youtu.be/..."
         value={hubUrlInput}
-        onInput={(e) => (hubUrlInput = e.target.value)}
+        onInput={(e: Event) => (hubUrlInput = (e.target as HTMLInputElement).value)}
       />
     </List>
 
-    <Block class="grid grid-cols-2 gap-2 !my-2">
-      <Button rounded disabled={hubDetecting} onclick={processHubLink}>
+    <Block class="grid grid-cols-2 gap-2">
+      <Button rounded disabled={hubDetecting || !appStore.isOnline} onclick={processHubLink}>
         {hubDetecting ? 'Mendeteksi...' : 'Deteksi & Muat'}
       </Button>
       <Button
@@ -173,13 +194,13 @@
     {/if}
 
     {#if hubMessage}
-      <Block class="!my-2">
+      <Block>
         <p class="text-xs text-[#007aff] dark:text-[#64d2ff]" role="status">{hubMessage}</p>
       </Block>
     {/if}
 
-    {#if hubEmbedType === 'spotify' && hubSpotify}
-      <Block class="!my-2">
+    {#if appStore.isOnline && hubEmbedType === 'spotify' && hubSpotify}
+      <Block>
         <iframe
           title="Spotify Preview"
           class="w-full rounded-2xl border-0"
@@ -188,8 +209,8 @@
           allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
         ></iframe>
       </Block>
-    {:else if hubEmbedType === 'youtube' && hubVideoId}
-      <Block class="!my-2">
+    {:else if appStore.isOnline && hubEmbedType === 'youtube' && hubVideoId}
+      <Block>
         <iframe
           title="YouTube Preview"
           class="w-full rounded-2xl border-0"

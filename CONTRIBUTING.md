@@ -22,7 +22,7 @@ pnpm license:check
 addlicense -check -f .license-header.txt \
   -ignore "node_modules/**" -ignore "dist/**" -ignore ".svelte-kit/**" \
   -ignore "src-tauri/target/**" -ignore "src-tauri/gen/**" \
-  src-tauri/src scripts vite.config.js static/sw.js
+  src-tauri/src scripts vite.config.ts static/sw.js
 ```
 
 ## 3. UI & Engineering Standards

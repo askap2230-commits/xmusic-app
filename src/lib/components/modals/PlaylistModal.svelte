@@ -1,5 +1,5 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script>
+<script lang="ts">
   import {
     Badge,
     Block,
@@ -13,17 +13,17 @@
     Page,
     Popup
   } from 'konsta/svelte';
-  import { appStore } from '#lib/stores/library.svelte.js';
+  import { appStore } from '#lib/stores/library.svelte';
   import Icon from '../Icon.svelte';
 
-  let newName = $state('');
+  let newName = $state<string>('');
 
-  function closeModal() {
+  function closeModal(): void {
     appStore.playlistModalOpen = false;
     appStore.targetTrackForPlaylist = null;
   }
 
-  function handleCreate(event) {
+  function handleCreate(event: SubmitEvent): void {
     event.preventDefault();
     if (appStore.createPlaylist(newName)) {
       newName = '';
@@ -53,7 +53,11 @@
             onclick={() => appStore.toggleTrackInPlaylist(pl.id, appStore.targetTrackForPlaylist)}
           >
             {#snippet after()}
-              <Badge class={inPlaylist ? 'bg-[#248a3d] text-white font-bold dark:bg-[#30d158] dark:!text-black' : 'bg-black/10 text-zinc-900 dark:bg-white/15 dark:text-white'}>
+              <Badge
+                class={inPlaylist
+                  ? 'bg-[#248a3d] text-white font-bold dark:bg-[#30d158] dark:!text-black'
+                  : 'bg-black/10 text-zinc-900 dark:bg-white/15 dark:text-white'}
+              >
                 {inPlaylist ? 'Terdaftar' : '+ Tambah'}
               </Badge>
             {/snippet}
@@ -70,7 +74,7 @@
           type="text"
           placeholder="Contoh: Fokus Kerja / Senja"
           value={newName}
-          onInput={(e) => (newName = e.target.value)}
+          onInput={(e: Event) => (newName = (e.target as HTMLInputElement).value)}
         />
       </List>
       <Block>

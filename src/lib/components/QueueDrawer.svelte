@@ -1,5 +1,5 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script>
+<script lang="ts">
   import {
     Block,
     Button,
@@ -12,9 +12,9 @@
     Segmented,
     SegmentedButton
   } from 'konsta/svelte';
-  import { engine } from '#lib/audio/engine.svelte.js';
-  import { appStore } from '#lib/stores/library.svelte.js';
-  import { getTrackInitial } from '#lib/utils/format.js';
+  import { engine } from '#lib/audio/engine.svelte';
+  import { appStore } from '#lib/stores/library.svelte';
+  import { getTrackInitial } from '#lib/utils/format';
   import Icon from './Icon.svelte';
 </script>
 
@@ -32,7 +32,7 @@
       {/snippet}
     </Navbar>
 
-    <Block class="!my-3">
+    <Block>
       <Segmented strong rounded>
         <SegmentedButton
           active={appStore.npTab === 'queue'}
@@ -51,7 +51,7 @@
 
     {#if appStore.npTab === 'queue'}
       {#if engine.queue.length > 0}
-        <Block class="!my-2 flex items-center justify-between">
+        <Block class="flex items-center justify-between">
           <span class="text-xs font-medium text-zinc-600 dark:text-zinc-300">Daftar Putar Berikutnya</span>
           <Button clear small inline onclick={() => (engine.queue = [])}>Bersihkan</Button>
         </Block>
@@ -84,7 +84,7 @@
                   type="button"
                   class="grid h-9 w-9 place-items-center rounded-full text-zinc-600 hover:bg-black/5 dark:text-zinc-300 dark:hover:bg-white/10"
                   aria-label="Hapus {qTrack.title} dari antrean"
-                  onclick={(e) => {
+                  onclick={(e: MouseEvent) => {
                     e.stopPropagation();
                     engine.queue = engine.queue.filter((_, i) => i !== idx);
                   }}
@@ -107,7 +107,7 @@
             <div class="truncate text-sm font-bold text-zinc-950 dark:text-white">{engine.current.title}</div>
             <div class="truncate text-xs text-zinc-600 dark:text-zinc-300">{engine.current.artist}</div>
           </div>
-          <Button tonal rounded small inline onclick={() => appStore.openEditTrack(engine.current)}>
+          <Button tonal rounded small inline onclick={() => engine.current && appStore.openEditTrack(engine.current)}>
             Edit
           </Button>
         </div>

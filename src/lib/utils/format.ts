@@ -1,16 +1,12 @@
 // Copyright 2026 Azka Putra
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-/**
- * Shared formatting and pure helper utilities.
- */
+import type { ParsedLyricLine } from '#lib/types/music';
 
 /**
  * Formats seconds as M:SS.
- * @param {number} seconds
- * @returns {string}
  */
-export function formatTime(seconds) {
+export function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
   const total = Math.floor(seconds);
   const mins = Math.floor(total / 60);
@@ -20,10 +16,8 @@ export function formatTime(seconds) {
 
 /**
  * Returns a time-of-day greeting in Indonesian for the UI header.
- * @param {Date} [now]
- * @returns {string}
  */
-export function getTimeGreeting(now = new Date()) {
+export function getTimeGreeting(now: Date = new Date()): string {
   const hour = now.getHours();
   if (hour < 11) return 'Selamat pagi';
   if (hour < 15) return 'Selamat siang';
@@ -33,24 +27,20 @@ export function getTimeGreeting(now = new Date()) {
 
 /**
  * Returns the uppercase initial character for fallback artwork.
- * @param {string | undefined | null} title
- * @returns {string}
  */
-export function getTrackInitial(title) {
+export function getTrackInitial(title: string | undefined | null): string {
   return (String(title || '?').trim()[0] || '?').toUpperCase();
 }
 
 /**
  * Computes the active synced lyric index for the current playback position.
- * @param {Array<{ time: number | null, text: string, synced: boolean }>} lines
- * @param {number} positionSec
- * @returns {number}
  */
-export function findActiveLyricIndex(lines, positionSec) {
+export function findActiveLyricIndex(lines: ParsedLyricLine[], positionSec: number): number {
   if (!lines.length || !lines[0]?.synced) return -1;
   let activeIdx = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].time !== null && lines[i].time <= positionSec + 0.15) {
+    const lineTime = lines[i].time;
+    if (lineTime !== null && lineTime <= positionSec + 0.15) {
       activeIdx = i;
     } else {
       break;

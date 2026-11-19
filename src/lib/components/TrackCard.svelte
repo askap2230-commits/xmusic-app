@@ -1,13 +1,14 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script>
+<script lang="ts">
   import { Button, Card } from 'konsta/svelte';
-  import { engine } from '#lib/audio/engine.svelte.js';
-  import { parseLrcLyrics } from '#lib/api/services.js';
-  import { appStore } from '#lib/stores/library.svelte.js';
-  import { findActiveLyricIndex, formatTime, getTrackInitial } from '#lib/utils/format.js';
+  import { engine } from '#lib/audio/engine.svelte';
+  import { parseLrcLyrics } from '#lib/api/services';
+  import { appStore } from '#lib/stores/library.svelte';
+  import type { Track } from '#lib/types/music';
+  import { findActiveLyricIndex, formatTime, getTrackInitial } from '#lib/utils/format';
   import Icon from './Icon.svelte';
 
-  let { track } = $props();
+  let { track }: { track: Track } = $props();
   let lastTapAt = 0;
 
   const isPlaying = $derived(engine.current?.id === track.id && engine.playing);
@@ -20,7 +21,7 @@
       : -1
   );
 
-  function handleCoverActivate() {
+  function handleCoverActivate(): void {
     const now = Date.now();
     if (now - lastTapAt < 320) {
       lastTapAt = 0;

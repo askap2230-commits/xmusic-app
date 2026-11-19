@@ -1,15 +1,15 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script>
+<script lang="ts">
   import { Block, Button, Link, List, ListInput, Navbar, Page, Popup } from 'konsta/svelte';
-  import { fetchSyncedLyrics } from '#lib/api/services.js';
-  import { appStore } from '#lib/stores/library.svelte.js';
+  import { fetchSyncedLyrics } from '#lib/api/services';
+  import { appStore } from '#lib/stores/library.svelte';
   import Icon from '../Icon.svelte';
 
-  let title = $state('');
-  let artist = $state('');
-  let album = $state('');
-  let lyrics = $state('');
-  let searchingLrc = $state(false);
+  let title = $state<string>('');
+  let artist = $state<string>('');
+  let album = $state<string>('');
+  let lyrics = $state<string>('');
+  let searchingLrc = $state<boolean>(false);
 
   $effect(() => {
     if (appStore.editTrackOpen && appStore.editingTrack) {
@@ -20,8 +20,12 @@
     }
   });
 
-  async function autoFindLrc() {
+  async function autoFindLrc(): Promise<void> {
     if (!appStore.editingTrack || searchingLrc) return;
+    if (!appStore.isOnline) {
+      appStore.showToast('Mode Offline: tidak dapat mencari lirik otomatis.');
+      return;
+    }
     searchingLrc = true;
     const found = await fetchSyncedLyrics(title, artist, appStore.editingTrack.dur || 0);
     searchingLrc = false;
@@ -33,9 +37,9 @@
     }
   }
 
-  function handleSave(event) {
+  function handleSave(event: SubmitEvent): void {
     event.preventDefault();
-    appStore.saveEditedTrack({ title, artist, album, lyrics });
+    void appStore.saveEditedTrack({ title, artist, album, lyrics });
   }
 </script>
 
@@ -59,19 +63,19 @@
           type="text"
           required
           value={title}
-          onInput={(e) => (title = e.target.value)}
+          onInput={(e: Event) => (title = (e.target as HTMLInputElement).value)}
         />
         <ListInput
           label="Nama Artis"
           type="text"
           value={artist}
-          onInput={(e) => (artist = e.target.value)}
+          onInput={(e: Event) => (artist = (e.target as HTMLInputElement).value)}
         />
         <ListInput
           label="Album / Kategori"
           type="text"
           value={album}
-          onInput={(e) => (album = e.target.value)}
+          onInput={(e: Event) => (album = (e.target as HTMLInputElement).value)}
         />
         <ListInput
           label="Lirik LRC ([mm:ss.xx] Baris)"
@@ -79,15 +83,20 @@
           inputClass="!h-36 resize-y"
           placeholder="[00:12.50] Contoh lirik sinkron..."
           value={lyrics}
-          onInput={(e) => (lyrics = e.target.value)}
+          onInput={(e: Event) => (lyrics = (e.target as HTMLTextAreaElement).value)}
         />
       </List>
 
       <Block class="space-y-2.5">
-        <Button tonal rounded disabled={searchingLrc} onclick={autoFindLrc}>
+        <Button tonal rounded disabled={searchingLrc || !appStore.isOnline} onclick={autoFindLrc}>
           {searchingLrc ? 'Mencari di LRCLIB...' : 'Auto-Cari Lirik LRCLIB'}
         </Button>
-        <Button type="submit" rounded large class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black">
+        <Button
+          type="submit"
+          rounded
+          large
+          class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
+        >
           Simpan Perubahan
         </Button>
       </Block>

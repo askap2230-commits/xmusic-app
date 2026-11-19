@@ -1,9 +1,9 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script>
-  import { engine } from '#lib/audio/engine.svelte.js';
-  import { EQ_PRESETS } from '#lib/data/presets.js';
-  import { appStore } from '#lib/stores/library.svelte.js';
-  import { getTrackInitial } from '#lib/utils/format.js';
+<script lang="ts">
+  import { engine } from '#lib/audio/engine.svelte';
+  import { EQ_PRESETS } from '#lib/data/presets';
+  import { appStore } from '#lib/stores/library.svelte';
+  import { getTrackInitial } from '#lib/utils/format';
   import Icon from './Icon.svelte';
 </script>
 
@@ -16,7 +16,7 @@
     <button
       type="button"
       class="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-      onclick={() => appStore.openTrackModal(engine.current, false)}
+      onclick={() => engine.current && appStore.openTrackModal(engine.current, false)}
       aria-label="Buka pemutar penuh untuk {engine.current.title}"
     >
       <span

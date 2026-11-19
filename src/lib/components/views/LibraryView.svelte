@@ -1,12 +1,12 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script>
+<script lang="ts">
   import { Block, BlockTitle, Button, Chip } from 'konsta/svelte';
-  import { engine } from '#lib/audio/engine.svelte.js';
-  import { appStore } from '#lib/stores/library.svelte.js';
+  import { engine } from '#lib/audio/engine.svelte';
+  import { appStore } from '#lib/stores/library.svelte';
   import TrackCard from '../TrackCard.svelte';
 </script>
 
-<Block class="!my-3 flex flex-wrap items-center justify-between gap-2">
+<Block class="flex flex-wrap items-center justify-between gap-3">
   <div class="flex flex-wrap gap-2" role="tablist" aria-label="Filter perpustakaan">
     <Chip
       outline={appStore.libFilter !== 'local'}
@@ -54,7 +54,7 @@
 </Block>
 
 <BlockTitle>Koleksi Lagu ({appStore.filteredLibrary.length})</BlockTitle>
-<Block class="!my-2">
+<Block>
   {#if appStore.filteredLibrary.length > 0}
     <div class="xmusic-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       {#each appStore.filteredLibrary as track (track.id)}

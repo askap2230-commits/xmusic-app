@@ -1,12 +1,9 @@
 // Copyright 2026 Azka Putra
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-/**
- * 5-Band Web Audio Equalizer presets, WCAG-verified category cards,
- * Spotify chart embeds, playback speed/sleep options, and procedural WAV demo generator.
- */
+import type { CategoryItem, EqBand, EqPreset, SleepOption, SpotifyChart } from '#lib/types/music';
 
-export const EQ_BANDS = [
+export const EQ_BANDS: EqBand[] = [
   { freq: 60, label: '60 Hz', sub: 'Sub Bass', type: 'lowshelf' },
   { freq: 230, label: '230 Hz', sub: 'Warmth', type: 'peaking' },
   { freq: 910, label: '910 Hz', sub: 'Vocal', type: 'peaking' },
@@ -14,8 +11,8 @@ export const EQ_BANDS = [
   { freq: 14000, label: '14 kHz', sub: 'Treble Air', type: 'highshelf' }
 ];
 
-export const EQ_PRESETS = {
-  flat: { name: 'Flat (Studio)', preamp: 0, gains: [0, 0, 0, 0, 0] },
+export const EQ_PRESETS: Record<string, EqPreset> = {
+  flat: { name: 'Flat (Lossless)', preamp: 0, gains: [0, 0, 0, 0, 0] },
   bass: { name: 'Bass Boost', preamp: -1, gains: [6.5, 4.5, 0, 0.5, 1.0] },
   superbass: { name: 'Super Bass', preamp: -2, gains: [9.0, 6.0, -1.0, 1.0, 2.0] },
   vocal: { name: 'Vocal Presence', preamp: 0, gains: [-2.0, -1.0, 4.5, 5.0, 1.5] },
@@ -26,8 +23,7 @@ export const EQ_PRESETS = {
   custom: { name: 'Kustom', preamp: 0, gains: [0, 0, 0, 0, 0] }
 };
 
-// Deep, high-contrast tones ensuring >= 7:1 contrast with #f8fafc foreground text
-export const CATEGORIES = [
+export const CATEGORIES: CategoryItem[] = [
   { label: 'Lagu Indonesia', sub: 'Pop & Indie Lokal', accent: '#dc2626', bg: '#2b1014', q: 'indonesia' },
   { label: 'Lo-Fi & Chill', sub: 'Fokus & Santai', accent: '#0891b2', bg: '#0c242d', q: 'lofi chill' },
   { label: 'Electronic & EDM', sub: 'Bass & Club', accent: '#7c3aed', bg: '#1e1233', q: 'electronic' },
@@ -38,15 +34,15 @@ export const CATEGORIES = [
   { label: 'Synthwave & Night', sub: 'Retro Cyber', accent: '#2563eb', bg: '#101d38', q: 'synthwave' }
 ];
 
-export const SPOTIFY_CHARTS = [
+export const SPOTIFY_CHARTS: SpotifyChart[] = [
   { id: '37i9dQZEVXbObFQZ3JLcXt', title: 'Top 50 Indonesia' },
   { id: '37i9dQZEVXbMDoHDwVN2tF', title: 'Top 50 Global' },
   { id: '37i9dQZF1DXcBWIGoYBM5M', title: "Today's Top Hits" }
 ];
 
-export const SPEED_OPTIONS = [0.5, 0.75, 0.9, 1.0, 1.15, 1.25, 1.5, 2.0];
+export const SPEED_OPTIONS: number[] = [0.5, 0.75, 0.9, 1.0, 1.15, 1.25, 1.5, 2.0];
 
-export const SLEEP_OPTIONS = [
+export const SLEEP_OPTIONS: SleepOption[] = [
   { label: 'Matikan Timer', minutes: 0 },
   { label: '5 Menit', minutes: 5 },
   { label: '15 Menit', minutes: 15 },
@@ -57,19 +53,18 @@ export const SLEEP_OPTIONS = [
 ];
 
 /**
- * Generates a procedural 44.1kHz 16-bit stereo WAV track in memory so users can test
- * offline playback, 5-Band EQ, and the FFT visualizer with zero APK size bloat.
- * @param {number} [durationSec=24]
- * @returns {Promise<Blob>}
+ * Generates a lossless 44.1kHz 16-bit PCM stereo WAV track in memory (0 KB APK bloat).
  */
-export async function generateDemoSynthBlob(durationSec = 24) {
+export async function generateDemoSynthBlob(durationSec = 24): Promise<Blob> {
   const sampleRate = 44100;
   const numFrames = sampleRate * durationSec;
   const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!OfflineCtx) {
+    throw new Error('OfflineAudioContext tidak didukung pada perangkat ini.');
+  }
   const offlineCtx = new OfflineCtx(2, numFrames, sampleRate);
 
-  // Chord progression: Am9 -> Fmaj7 -> Cmaj7 -> G6
-  const chords = [
+  const chords: number[][] = [
     [110.0, 220.0, 261.63, 329.63, 392.0, 493.88],
     [87.31, 174.61, 220.0, 261.63, 329.63, 440.0],
     [130.81, 261.63, 329.63, 392.0, 493.88, 587.33],
@@ -135,20 +130,20 @@ export async function generateDemoSynthBlob(durationSec = 24) {
   return audioBufferToWavBlob(rendered);
 }
 
-function audioBufferToWavBlob(buffer) {
+function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const numChannels = buffer.numberOfChannels;
   const length = buffer.length * numChannels * 2 + 44;
   const out = new ArrayBuffer(length);
   const view = new DataView(out);
-  const channels = [];
+  const channels: Float32Array[] = [];
   let offset = 0;
   let pos = 0;
 
-  const setUint16 = (data) => {
+  const setUint16 = (data: number): void => {
     view.setUint16(pos, data, true);
     pos += 2;
   };
-  const setUint32 = (data) => {
+  const setUint32 = (data: number): void => {
     view.setUint32(pos, data, true);
     pos += 4;
   };

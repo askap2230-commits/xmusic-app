@@ -5,26 +5,23 @@
  * Unified local persistence layer (IndexedDB v2 + LocalStorage + ObjectURL cache).
  * Prevents Android WebView memory leaks by caching and revoking Blob URLs deterministically.
  */
+import type { Track } from '#lib/types/music';
 
 const DB_NAME = 'nys_xmusic_db';
 const DB_VERSION = 2;
 const STORE_TRACKS = 'local_tracks';
 const STORE_PLAYLISTS = 'playlists';
 
-let dbInstance = null;
-const objectUrlCache = new Map();
-const coverUrlCache = new Map();
+let dbInstance: IDBDatabase | null = null;
+const objectUrlCache = new Map<string, string>();
+const coverUrlCache = new Map<string, string>();
 
-/**
- * Opens or returns the singleton IndexedDB connection.
- * @returns {Promise<IDBDatabase>}
- */
-export function openDB() {
+export function openDB(): Promise<IDBDatabase> {
   if (dbInstance) return Promise.resolve(dbInstance);
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
+    request.onupgradeneeded = () => {
+      const db = request.result;
       if (!db.objectStoreNames.contains(STORE_TRACKS)) {
         db.createObjectStore(STORE_TRACKS, { keyPath: 'id' });
       }
@@ -32,83 +29,67 @@ export function openDB() {
         db.createObjectStore(STORE_PLAYLISTS, { keyPath: 'id' });
       }
     };
-    request.onsuccess = (event) => {
-      dbInstance = event.target.result;
+    request.onsuccess = () => {
+      dbInstance = request.result;
       resolve(dbInstance);
     };
-    request.onerror = (event) => reject(event);
+    request.onerror = () => reject(request.error);
   });
 }
 
-/**
- * Saves or updates a local track record in IndexedDB.
- * @param {Record<string, any>} track
- */
-export async function saveLocalTrack(track) {
+export async function saveLocalTrack(track: Track): Promise<Track> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_TRACKS, 'readwrite');
     tx.objectStore(STORE_TRACKS).put(track);
     tx.oncomplete = () => resolve(hydrateTrackUrls(track));
-    tx.onerror = (event) => reject(event);
+    tx.onerror = () => reject(tx.error);
   });
 }
 
-/**
- * Loads all locally persisted tracks sorted newest-first.
- */
-export async function getAllLocalTracks() {
+export async function getAllLocalTracks(): Promise<Track[]> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_TRACKS, 'readonly');
     const req = tx.objectStore(STORE_TRACKS).getAll();
     req.onsuccess = () => {
-      const list = (req.result || []).map(hydrateTrackUrls);
+      const list = ((req.result as Track[]) || []).map(hydrateTrackUrls);
       list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       resolve(list);
     };
-    req.onerror = (event) => reject(event);
+    req.onerror = () => reject(req.error);
   });
 }
 
-/**
- * Deletes a local track and revokes any cached ObjectURLs.
- * @param {string} id
- */
-export async function deleteLocalTrack(id) {
+export async function deleteLocalTrack(id: string): Promise<void> {
   const db = await openDB();
-  if (objectUrlCache.has(id)) {
-    URL.revokeObjectURL(objectUrlCache.get(id));
+  const cachedAudio = objectUrlCache.get(id);
+  if (cachedAudio) {
+    URL.revokeObjectURL(cachedAudio);
     objectUrlCache.delete(id);
   }
-  if (coverUrlCache.has(id)) {
-    URL.revokeObjectURL(coverUrlCache.get(id));
+  const cachedCover = coverUrlCache.get(id);
+  if (cachedCover) {
+    URL.revokeObjectURL(cachedCover);
     coverUrlCache.delete(id);
   }
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_TRACKS, 'readwrite');
     tx.objectStore(STORE_TRACKS).delete(id);
     tx.oncomplete = () => resolve();
-    tx.onerror = (event) => reject(event);
+    tx.onerror = () => reject(tx.error);
   });
 }
 
-/**
- * Revokes all cached ObjectURLs on application teardown.
- */
-export function revokeAllTrackUrls() {
+export function revokeAllTrackUrls(): void {
   for (const url of objectUrlCache.values()) URL.revokeObjectURL(url);
   for (const url of coverUrlCache.values()) URL.revokeObjectURL(url);
   objectUrlCache.clear();
   coverUrlCache.clear();
 }
 
-/**
- * Hydrates in-memory Blob URLs for audio and cover art without duplicating allocations.
- * @param {Record<string, any>} track
- */
-export function hydrateTrackUrls(track) {
-  const copy = { ...track, source: track.source || 'local' };
+export function hydrateTrackUrls(track: Track): Track {
+  const copy: Track = { ...track, source: track.source || 'local' };
   if (copy.blob instanceof Blob) {
     if (!objectUrlCache.has(copy.id)) {
       objectUrlCache.set(copy.id, URL.createObjectURL(copy.blob));
@@ -119,17 +100,12 @@ export function hydrateTrackUrls(track) {
     if (!coverUrlCache.has(copy.id)) {
       coverUrlCache.set(copy.id, URL.createObjectURL(copy.coverBlob));
     }
-    copy.imageUrl = coverUrlCache.get(copy.id);
+    copy.imageUrl = coverUrlCache.get(copy.id) || null;
   }
   return copy;
 }
 
-/**
- * Probes the duration of a local File/Blob or remote URL via a transient Audio element.
- * @param {Blob | string} source
- * @returns {Promise<number>}
- */
-export function probeAudioDuration(source) {
+export function probeAudioDuration(source: Blob | string): Promise<number> {
   return new Promise((resolve) => {
     try {
       const isBlob = source instanceof Blob;
@@ -139,7 +115,7 @@ export function probeAudioDuration(source) {
       const audio = new Audio();
       audio.preload = 'metadata';
 
-      const cleanup = (dur) => {
+      const cleanup = (dur: number): void => {
         audio.removeAttribute('src');
         if (isBlob) URL.revokeObjectURL(srcUrl);
         resolve(Number.isFinite(dur) && dur > 0 ? dur : 0);
@@ -161,12 +137,7 @@ export function probeAudioDuration(source) {
   });
 }
 
-/**
- * Extracts "Artist - Title" metadata from standard audio filenames.
- * @param {string} filename
- * @returns {{ artist: string, title: string }}
- */
-export function parseFilenameMeta(filename) {
+export function parseFilenameMeta(filename: string): { artist: string; title: string } {
   const clean = String(filename || 'Tanpa Judul')
     .replace(/\.[^.]+$/, '')
     .replace(/_/g, ' ')
@@ -184,29 +155,16 @@ export function parseFilenameMeta(filename) {
   };
 }
 
-/**
- * Safely reads and parses a JSON value from localStorage.
- * @template T
- * @param {string} key
- * @param {T} fallback
- * @returns {T}
- */
-export function loadJSON(key, fallback) {
+export function loadJSON<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
+    return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
   }
 }
 
-/**
- * Safely serializes and writes a JSON value to localStorage.
- * @param {string} key
- * @param {unknown} value
- * @returns {boolean}
- */
-export function saveJSON(key, value) {
+export function saveJSON(key: string, value: unknown): boolean {
   try {
     localStorage.setItem(key, JSON.stringify(value));
     return true;

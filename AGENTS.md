@@ -65,3 +65,19 @@ This document defines **non-negotiable architectural and design rules** for all 
 - [ ] Primary green CTA buttons (`#30d158`) use dark text (`#000000`, `> 10:1` contrast), never white text.
 - [ ] Toast feedback renders in `role="status" aria-live="polite"`; loading states use `<Preloader />`.
 - [ ] All checks pass: `pnpm license:check`, `pnpm build`, Python `py_compile`, and YAML manual-only trigger check.
+
+---
+
+## 5. Layout Overlap Prevention, TypeScript & Android Media Notification Rules (v5.0)
+
+1. **Zero Overlap on Konsta UI v5.5 iOS**:
+   - **NEVER** apply `!my-2` or `!mt-0` to `<Block>` immediately after `<BlockTitle>` — Konsta UI's native margins prevent title clipping.
+   - Keep `<Page class="pb-52">` so scrolled content clears both the floating `PlayerBar` (`bottom-[calc(86px+env(safe-area-inset-bottom,0px))]`) and Konsta v5.5's floating Liquid Glass `Tabbar`.
+   - **NEVER** re-add a bottom-right `<Fab>` that collides with `PlayerBar` playback controls.
+   - **NEVER** render external `<iframe>`s (Spotify/YouTube) when `!appStore.isOnline`; always show a native Konsta `<Block strong inset>` offline fallback card.
+2. **100% Strict TypeScript**:
+   - All application modules in `src/` MUST be `.ts` or `<script lang="ts">` `.svelte` files (`allowJs: false`, `strict: true` in `tsconfig.json`).
+   - Run `pnpm check` (`svelte-check`) before every build.
+3. **Audiophile DSP & Native Android Media Notification**:
+   - Keep the mastering `DynamicsCompressorNode` anti-clipping limiter and `latencyHint: 'playback'` intact in `src/lib/audio/engine.svelte.ts`.
+   - Keep `XmusicMediaService.kt`, `MainActivity.kt` (`XmusicAndroidMedia` bridge), and ProGuard `@JavascriptInterface` keep rules in `scripts/optimize-android-gradle.py`.

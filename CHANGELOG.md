@@ -2,6 +2,24 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [5.0.0] — 2026-11-19 (Strict TypeScript, Pixel-Perfect Konsta UI iOS, Audiophile DSP & Native Android Media Notification)
+
+### UI/UX & Konsta UI v5.5 iOS Fixes
+- Eliminated all layout overlaps observed on Android devices: removed colliding bottom-right `<Fab>`, elevated floating `PlayerBar` cleanly above Konsta v5.5's floating Liquid Glass `Tabbar` (`bottom: 86px + safe-area`), and increased `<Page>` bottom clearance to `pb-52`.
+- Restored native Konsta UI `<BlockTitle>` spacing (removed conflicting `!my-2` overrides) so section headings never clip into cards below.
+- Balanced top-right `Navbar` icon capsule padding and moved `<Searchbar>` cleanly into `SearchView` so titles never collide.
+- Added live `isOnline` connectivity monitoring with native Konsta UI iOS offline fallback cards for Audius, Spotify Charts, YouTube, and Hub embeds — eliminating broken Android WebView error icons when offline.
+
+### Audiophile DSP & Native Android Media Notification
+- Upgraded `AudioEngine` with `latencyHint: 'playback'`, a transparent mastering `DynamicsCompressorNode` anti-clipping limiter (toggleable in `EQ Studio`), a one-tap **Reset ke Flat (Lossless)** control, and real-time `MediaSession.setPositionState`.
+- Injected native Kotlin `XmusicMediaService.kt` (`MediaSession` + `Notification.MediaStyle` + Foreground Service `mediaPlayback`) and `MainActivity.kt` (`window.XmusicAndroidMedia` JS bridge + Android 13 `POST_NOTIFICATIONS` permission + R8 ProGuard keep rules) via `scripts/optimize-android-gradle.py`.
+
+### 100% Strict TypeScript Migration
+- Replaced `jsconfig.json` with strict `tsconfig.json` (`strict: true`, `allowJs: false`, `noUnusedLocals: true`, `noUnusedParameters: true`).
+- Migrated all `src/lib/*`, `src/routes/+layout.ts`, `vite.config.ts`, and every `.svelte` component to strict TypeScript (`<script lang="ts">`) with centralized domain interfaces in `src/lib/types/music.ts`.
+- Added `pnpm check` (`svelte-check`) to both `.github/workflows/ci-verify.yml` and `.github/workflows/build-apk.yml`.
+
+
 ## [4.0.0] — 2026-11-19 (Konsta UI iOS Overhaul, pnpm, AGPL-3.0 & Reproducible Builds)
 
 ### UI/UX Major Overhaul (Konsta UI v5.5 iOS Theme)

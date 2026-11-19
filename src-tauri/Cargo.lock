@@ -4425,7 +4425,7 @@ dependencies = [
 
 [[package]]
 name = "xmusic"
-version = "4.0.0"
+version = "5.0.0"
 dependencies = [
  "serde",
  "serde_json",

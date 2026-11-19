@@ -1,23 +1,22 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script>
+<script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import {
     Badge,
-    Fab,
     Link,
     Navbar,
     Page,
-    Searchbar,
     Tabbar,
     TabbarLink,
     Toast,
     ToolbarPane
   } from 'konsta/svelte';
 
-  import { engine } from '#lib/audio/engine.svelte.js';
-  import { revokeAllTrackUrls } from '#lib/db/storage.js';
-  import { appStore } from '#lib/stores/library.svelte.js';
-  import { formatTime } from '#lib/utils/format.js';
+  import { engine } from '#lib/audio/engine.svelte';
+  import { revokeAllTrackUrls } from '#lib/db/storage';
+  import { appStore } from '#lib/stores/library.svelte';
+  import type { AppView } from '#lib/types/music';
+  import { formatTime } from '#lib/utils/format';
 
   import DynamicBar from '#lib/components/DynamicBar.svelte';
   import Icon from '#lib/components/Icon.svelte';
@@ -38,24 +37,23 @@
   import TrackModal from '#lib/components/modals/TrackModal.svelte';
   import UploadModal from '#lib/components/modals/UploadModal.svelte';
 
-  const navTitle = $derived.by(() => {
-    const titles = {
-      home: 'nys Xmusic',
-      search: 'Cari Musik',
-      library: 'Perpustakaan',
-      eq: 'EQ Studio',
-      profile: 'Profil'
-    };
-    return titles[appStore.view] || 'nys Xmusic';
-  });
+  const VIEW_TITLES: Record<AppView, string> = {
+    home: 'nys Xmusic',
+    search: 'Cari Musik',
+    library: 'Perpustakaan',
+    eq: 'EQ Studio',
+    profile: 'Profil'
+  };
 
-  function handlePopState() {
+  const navTitle = $derived(VIEW_TITLES[appStore.view]);
+
+  function handlePopState(): void {
     if (appStore.closeTopOverlay()) {
       window.history.pushState({ page: 'root' }, '');
     }
   }
 
-  function handleGlobalKeydown(event) {
+  function handleGlobalKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
       appStore.closeTopOverlay();
     }
@@ -73,7 +71,7 @@
       window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('keydown', handleGlobalKeydown);
     }
-    appStore.destroyTheme();
+    appStore.destroyListeners();
     engine.destroy();
     revokeAllTrackUrls();
   });
@@ -83,10 +81,11 @@
 
 <DynamicBar />
 
-<Page class="pb-40">
+<!-- Generous pb-52 clears both floating iOS Mini-Player and Konsta v5.5 Floating Tabbar -->
+<Page class="pb-52">
   <Navbar title={navTitle} large={appStore.view === 'home'} class="top-0 sticky z-30">
     {#snippet right()}
-      <div class="flex items-center gap-1">
+      <div class="flex items-center gap-1.5 px-1">
         {#if engine.sleepMinutes !== 0}
           <Link onclick={() => (appStore.view = 'eq')} aria-label="Sleep Timer aktif">
             <Badge class="bg-[#007aff] text-white text-xs dark:bg-[#0a84ff]">
@@ -97,18 +96,18 @@
 
         <Link
           iconOnly
-          onclick={() => appStore.toggleTheme()}
-          aria-label={appStore.isDark ? 'Ubah ke Mode Terang' : 'Ubah ke Mode Gelap'}
+          onclick={() => (appStore.uploadModalOpen = true)}
+          aria-label="Unggah lagu baru"
         >
-          <Icon name={appStore.isDark ? 'sun' : 'moon'} size={20} />
+          <Icon name="plus" size={19} />
         </Link>
 
         <Link
           iconOnly
-          onclick={() => (appStore.hubModalOpen = true)}
-          aria-label="Buka Hub Spotify dan YouTube"
+          onclick={() => appStore.toggleTheme()}
+          aria-label={appStore.isDark ? 'Ubah ke Mode Terang' : 'Ubah ke Mode Gelap'}
         >
-          <Icon name="link" size={20} />
+          <Icon name={appStore.isDark ? 'sun' : 'moon'} size={19} />
         </Link>
 
         <Link
@@ -116,20 +115,9 @@
           onclick={() => (appStore.npDrawerOpen = !appStore.npDrawerOpen)}
           aria-label="Buka antrean putar dan lirik"
         >
-          <Icon name="queue" size={20} />
+          <Icon name="queue" size={19} />
         </Link>
       </div>
-    {/snippet}
-
-    {#snippet subnavbar()}
-      {#if appStore.view === 'search'}
-        <Searchbar
-          placeholder="Cari lagu, artis, atau genre..."
-          value={appStore.searchQuery}
-          onInput={(e) => appStore.updateSearch(e.target.value)}
-          onClear={() => appStore.updateSearch('')}
-        />
-      {/if}
     {/snippet}
   </Navbar>
 
@@ -148,16 +136,6 @@
   </main>
 
   <PlayerBar />
-
-  <Fab
-    class="fixed right-4 bottom-36 z-30"
-    onclick={() => (appStore.uploadModalOpen = true)}
-    aria-label="Unggah lagu baru"
-  >
-    {#snippet icon()}
-      <Icon name="plus" size={22} />
-    {/snippet}
-  </Fab>
 
   <Tabbar labels icons class="left-0 bottom-0 fixed z-40">
     <ToolbarPane>

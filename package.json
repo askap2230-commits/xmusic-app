@@ -1,12 +1,12 @@
 {
   "name": "xmusic",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "author": "Azka Putra",
   "packageManager": "pnpm@10.12.1",
-  "description": "nys Xmusic — Offline & Streaming Music Player with Konsta UI iOS Theme, 5-Band Web Audio EQ, Synced Lyrics, and Tauri v2.12",
+  "description": "nys Xmusic — Offline & Streaming Music Player with Konsta UI iOS Theme, Strict TypeScript, Audiophile Web Audio DSP, and Native Android Media Notification",
   "engines": {
     "node": ">=22.17.0",
     "pnpm": ">=10.0.0"
@@ -18,6 +18,7 @@
     "dev": "vite dev",
     "build": "node scripts/build-frontend.mjs",
     "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "tauri": "tauri",
     "sync:icons": "python3 scripts/sync-android-icons.py",
     "optimize:android": "python3 scripts/optimize-android-gradle.py",
@@ -35,7 +36,9 @@
     "@tailwindcss/vite": "^4.1.0",
     "@tauri-apps/cli": "^2.12.2",
     "svelte": "^5.57.3",
+    "svelte-check": "^4.1.0",
     "tailwindcss": "^4.1.0",
+    "typescript": "^5.8.0",
     "vite": "^8.0.12"
   }
 }

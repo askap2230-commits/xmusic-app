@@ -3,16 +3,20 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 """
-Android Build, Size Reduction & Deterministic Reproducible Build Script for Tauri v2.12+.
+Android Build, Reproducible Packaging, R8 Optimization & Native Media Notification Setup for Tauri v2.12+.
 
 Operations:
-1. Configures AndroidManifest.xml with cleartext streaming support and round launcher icons.
-2. Enables R8 code minification (isMinifyEnabled = true), resource shrinking
-   (isShrinkResources = true), and disables Play dependenciesInfo signing block
-   (required for deterministic reproducible APKs).
-3. Enforces reproducible archive ordering and zeroed timestamps on all Gradle
-   AbstractArchiveTask outputs (isPreserveFileTimestamps = false, isReproducibleFileOrder = true).
-4. Appends parallel execution, caching, and R8 full-mode flags to gradle.properties.
+1. Configures AndroidManifest.xml with:
+   - usesCleartextTraffic="true" and round launcher icons
+   - POST_NOTIFICATIONS, FOREGROUND_SERVICE, FOREGROUND_SERVICE_MEDIA_PLAYBACK, WAKE_LOCK
+   - XmusicMediaService (<service android:foregroundServiceType="mediaPlayback">)
+2. Injects native Kotlin XmusicMediaService.kt using standard Android Framework APIs
+   (MediaSession + Notification.MediaStyle + Foreground Service) so playing audio displays a
+   real Android lockscreen and notification-shade media player with Prev/Play-Pause/Next controls.
+3. Injects MainActivity.kt WebView bridge (window.XmusicAndroidMedia) + Android 13+ notification
+   permission request, dispatching notification actions straight back into the Svelte AudioEngine.
+4. Enables R8 minification, resource shrinking, disables dependenciesInfo, and enforces
+   deterministic reproducible Gradle archives (isPreserveFileTimestamps = false, isReproducibleFileOrder = true).
 """
 from __future__ import annotations
 
@@ -21,6 +25,285 @@ import re
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 ANDROID_DIR = os.path.join(ROOT, "src-tauri", "gen", "android")
+KOTLIN_PKG_DIR = os.path.join(ANDROID_DIR, "app", "src", "main", "java", "com", "nys", "xmusic")
+
+MEDIA_SERVICE_KT = """// Copyright 2026 Azka Putra
+// SPDX-License-Identifier: AGPL-3.0-or-later
+package com.nys.xmusic
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.media.MediaMetadata
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
+import android.os.Build
+import android.os.IBinder
+
+class XmusicMediaService : Service() {
+    companion object {
+        const val CHANNEL_ID = "xmusic_playback_channel"
+        const val NOTIFICATION_ID = 4091
+        const val ACTION_UPDATE = "com.nys.xmusic.ACTION_UPDATE"
+        const val ACTION_CLEAR = "com.nys.xmusic.ACTION_CLEAR"
+        const val ACTION_PLAY_PAUSE = "com.nys.xmusic.ACTION_PLAY_PAUSE"
+        const val ACTION_NEXT = "com.nys.xmusic.ACTION_NEXT"
+        const val ACTION_PREV = "com.nys.xmusic.ACTION_PREV"
+
+        const val EXTRA_TITLE = "title"
+        const val EXTRA_ARTIST = "artist"
+        const val EXTRA_ALBUM = "album"
+        const val EXTRA_IS_PLAYING = "is_playing"
+        const val EXTRA_DURATION_MS = "duration_ms"
+        const val EXTRA_POSITION_MS = "position_ms"
+    }
+
+    private var mediaSession: MediaSession? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        ensureChannel()
+        mediaSession = MediaSession(this, "XmusicMediaSession").apply {
+            setCallback(object : MediaSession.Callback() {
+                override fun onPlay() { MainActivity.dispatchMediaAction("play") }
+                override fun onPause() { MainActivity.dispatchMediaAction("pause") }
+                override fun onSkipToNext() { MainActivity.dispatchMediaAction("next") }
+                override fun onSkipToPrevious() { MainActivity.dispatchMediaAction("prev") }
+                override fun onStop() { MainActivity.dispatchMediaAction("stop") }
+            })
+            isActive = true
+        }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_PLAY_PAUSE -> {
+                MainActivity.dispatchMediaAction("togglePlay")
+                return START_NOT_STICKY
+            }
+            ACTION_NEXT -> {
+                MainActivity.dispatchMediaAction("next")
+                return START_NOT_STICKY
+            }
+            ACTION_PREV -> {
+                MainActivity.dispatchMediaAction("prev")
+                return START_NOT_STICKY
+            }
+            ACTION_CLEAR -> {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_UPDATE -> {
+                val title = intent.getStringExtra(EXTRA_TITLE) ?: "nys Xmusic"
+                val artist = intent.getStringExtra(EXTRA_ARTIST) ?: "Xmusic"
+                val album = intent.getStringExtra(EXTRA_ALBUM) ?: "nys Xmusic"
+                val isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, false)
+                val durationMs = intent.getLongExtra(EXTRA_DURATION_MS, 0L)
+                val positionMs = intent.getLongExtra(EXTRA_POSITION_MS, 0L)
+                updateNotification(title, artist, album, isPlaying, durationMs, positionMs)
+            }
+        }
+        return START_NOT_STICKY
+    }
+
+    private fun updateNotification(
+        title: String,
+        artist: String,
+        album: String,
+        isPlaying: Boolean,
+        durationMs: Long,
+        positionMs: Long
+    ) {
+        val session = mediaSession ?: return
+        val metadata = MediaMetadata.Builder()
+            .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
+            .putString(MediaMetadata.METADATA_KEY_ALBUM, album)
+            .putLong(MediaMetadata.METADATA_KEY_DURATION, durationMs)
+            .build()
+        session.setMetadata(metadata)
+
+        val stateCode = if (isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
+        val actions = PlaybackState.ACTION_PLAY or
+            PlaybackState.ACTION_PAUSE or
+            PlaybackState.ACTION_PLAY_PAUSE or
+            PlaybackState.ACTION_SKIP_TO_NEXT or
+            PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+            PlaybackState.ACTION_STOP
+        val playbackState = PlaybackState.Builder()
+            .setActions(actions)
+            .setState(stateCode, positionMs, if (isPlaying) 1.0f else 0.0f)
+            .build()
+        session.setPlaybackState(playbackState)
+
+        val launchIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val contentPendingIntent = PendingIntent.getActivity(
+            this, 0, launchIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val prevIntent = serviceActionIntent(ACTION_PREV, 1)
+        val playPauseIntent = serviceActionIntent(ACTION_PLAY_PAUSE, 2)
+        val nextIntent = serviceActionIntent(ACTION_NEXT, 3)
+
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+
+        val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        val playPauseLabel = if (isPlaying) "Jeda" else "Putar"
+
+        val notification = builder
+            .setContentTitle(title)
+            .setContentText(artist)
+            .setSubText(album)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentIntent(contentPendingIntent)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setOngoing(isPlaying)
+            .setShowWhen(false)
+            .addAction(android.R.drawable.ic_media_previous, "Sebelumnya", prevIntent)
+            .addAction(playPauseIcon, playPauseLabel, playPauseIntent)
+            .addAction(android.R.drawable.ic_media_next, "Berikutnya", nextIntent)
+            .setStyle(
+                Notification.MediaStyle()
+                    .setMediaSession(session.sessionToken)
+                    .setShowActionsInCompactView(0, 1, 2)
+            )
+            .build()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun serviceActionIntent(action: String, requestCode: Int): PendingIntent {
+        val intent = Intent(this, XmusicMediaService::class.java).apply { this.action = action }
+        return PendingIntent.getService(
+            this,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun ensureChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getSystemService(NotificationManager::class.java)
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Pemutar Musik Xmusic",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Kontrol pemutaran audio dan layar kunci untuk nys Xmusic"
+                setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
+            manager?.createNotificationChannel(channel)
+        }
+    }
+
+    override fun onDestroy() {
+        mediaSession?.isActive = false
+        mediaSession?.release()
+        mediaSession = null
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+}
+"""
+
+MAIN_ACTIVITY_KT = """// Copyright 2026 Azka Putra
+// SPDX-License-Identifier: AGPL-3.0-or-later
+package com.nys.xmusic
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import java.lang.ref.WeakReference
+
+class MainActivity : TauriActivity() {
+    companion object {
+        private var webViewRef: WeakReference<WebView>? = null
+
+        fun dispatchMediaAction(action: String) {
+            val webView = webViewRef?.get() ?: return
+            webView.post {
+                webView.evaluateJavascript(
+                    "window.__xmusicMediaAction && window.__xmusicMediaAction('$action');",
+                    null
+                )
+            }
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
+            }
+        }
+    }
+
+    override fun onWebViewCreate(webView: WebView) {
+        super.onWebViewCreate(webView)
+        webViewRef = WeakReference(webView)
+        webView.addJavascriptInterface(AndroidMediaBridge(), "XmusicAndroidMedia")
+    }
+
+    inner class AndroidMediaBridge {
+        @JavascriptInterface
+        fun updateNowPlaying(
+            title: String,
+            artist: String,
+            album: String,
+            isPlaying: Boolean,
+            durationMs: Long,
+            positionMs: Long
+        ) {
+            val intent = Intent(this@MainActivity, XmusicMediaService::class.java).apply {
+                action = XmusicMediaService.ACTION_UPDATE
+                putExtra(XmusicMediaService.EXTRA_TITLE, title)
+                putExtra(XmusicMediaService.EXTRA_ARTIST, artist)
+                putExtra(XmusicMediaService.EXTRA_ALBUM, album)
+                putExtra(XmusicMediaService.EXTRA_IS_PLAYING, isPlaying)
+                putExtra(XmusicMediaService.EXTRA_DURATION_MS, durationMs)
+                putExtra(XmusicMediaService.EXTRA_POSITION_MS, positionMs)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        }
+
+        @JavascriptInterface
+        fun clearNotification() {
+            val intent = Intent(this@MainActivity, XmusicMediaService::class.java).apply {
+                action = XmusicMediaService.ACTION_CLEAR
+            }
+            startService(intent)
+        }
+    }
+}
+"""
 
 
 def patch_manifest() -> None:
@@ -32,16 +315,23 @@ def patch_manifest() -> None:
     with open(manifest_path, "r", encoding="utf-8") as fh:
         content = fh.read()
 
+    permissions = [
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.WAKE_LOCK",
+    ]
+    for perm in permissions:
+        tag = f'<uses-permission android:name="{perm}" />'
+        if perm not in content:
+            content = content.replace("<application", f"    {tag}\n    <application", 1)
+
     content = content.replace(
         'android:usesCleartextTraffic="${usesCleartextTraffic}"',
         'android:usesCleartextTraffic="true"',
     )
     if "android:usesCleartextTraffic" not in content:
-        content = content.replace(
-            "<application",
-            '<application android:usesCleartextTraffic="true"',
-            1,
-        )
+        content = content.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
 
     if "android:roundIcon=" not in content:
         content = content.replace(
@@ -49,9 +339,28 @@ def patch_manifest() -> None:
             'android:icon="@mipmap/ic_launcher"\n        android:roundIcon="@mipmap/ic_launcher_round"',
         )
 
+    service_decl = """        <service
+            android:name=".XmusicMediaService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />"""
+    if "XmusicMediaService" not in content:
+        content = content.replace("</application>", f"{service_decl}\n    </application>", 1)
+
     with open(manifest_path, "w", encoding="utf-8") as fh:
         fh.write(content)
-    print("[Android Optimize] Patched AndroidManifest.xml.")
+    print("[Android Optimize] Patched AndroidManifest.xml with Media Playback Service & permissions.")
+
+
+def inject_native_media_kotlin() -> None:
+    if not os.path.exists(ANDROID_DIR):
+        return
+    os.makedirs(KOTLIN_PKG_DIR, exist_ok=True)
+    with open(os.path.join(KOTLIN_PKG_DIR, "XmusicMediaService.kt"), "w", encoding="utf-8") as fh:
+        fh.write(MEDIA_SERVICE_KT)
+    with open(os.path.join(KOTLIN_PKG_DIR, "MainActivity.kt"), "w", encoding="utf-8") as fh:
+        fh.write(MAIN_ACTIVITY_KT)
+    print("[Android Optimize] Injected native Kotlin XmusicMediaService & MainActivity JS bridge.")
 
 
 def patch_build_gradle() -> None:
@@ -70,7 +379,6 @@ def patch_build_gradle() -> None:
             content,
         )
 
-    # Disable Google Play encrypted dependenciesInfo block to guarantee reproducible APKs
     if "dependenciesInfo" not in content:
         content = re.sub(
             r"(android\s*\{)",
@@ -79,7 +387,6 @@ def patch_build_gradle() -> None:
             count=1,
         )
 
-    # Enforce deterministic timestamps and file order across all Gradle archive tasks
     reproducible_block = """
 // Deterministic reproducible archive output (required for verifiable APK builds)
 tasks.withType<org.gradle.api.tasks.bundling.AbstractArchiveTask>().configureEach {
@@ -98,7 +405,6 @@ tasks.withType<org.gradle.api.tasks.bundling.AbstractArchiveTask>().configureEac
 def patch_gradle_properties() -> None:
     prop_path = os.path.join(ANDROID_DIR, "gradle.properties")
     if not os.path.exists(prop_path):
-        print(f"[Android Optimize] gradle.properties not found yet: {prop_path}")
         return
 
     with open(prop_path, "r", encoding="utf-8") as fh:
@@ -122,7 +428,29 @@ android.enableR8.fullMode=true
     print("[Android Optimize] Updated gradle.properties for fast deterministic CI builds.")
 
 
+
+def patch_proguard_rules() -> None:
+    pro_path = os.path.join(ANDROID_DIR, "app", "proguard-rules.pro")
+    if not os.path.exists(ANDROID_DIR):
+        return
+    os.makedirs(os.path.dirname(pro_path), exist_ok=True)
+    existing = open(pro_path, "r", encoding="utf-8").read() if os.path.exists(pro_path) else ""
+    rules = """
+# Keep native Android Media Notification WebView bridge under R8 full mode
+-keepattributes *Annotation*
+-keepclassmembers class com.nys.xmusic.MainActivity$AndroidMediaBridge {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keep class com.nys.xmusic.XmusicMediaService { *; }
+"""
+    if "AndroidMediaBridge" not in existing:
+        with open(pro_path, "w", encoding="utf-8") as fh:
+            fh.write(existing.rstrip() + "\n" + rules)
+    print("[Android Optimize] Added R8 keep rules for XmusicMediaService & AndroidMediaBridge.")
+
 if __name__ == "__main__":
     patch_manifest()
+    inject_native_media_kotlin()
+    patch_proguard_rules()
     patch_build_gradle()
     patch_gradle_properties()

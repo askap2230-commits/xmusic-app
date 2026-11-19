@@ -1,10 +1,39 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script>
-  /**
-   * Lightweight inline SVG icon system.
-   * Decorative by default (aria-hidden="true"); parent buttons supply accessible labels.
-   */
-  let { name, size = 18 } = $props();
+<script lang="ts">
+  export type IconName =
+    | 'home'
+    | 'search'
+    | 'library'
+    | 'eq'
+    | 'download'
+    | 'link'
+    | 'profile'
+    | 'play'
+    | 'pause'
+    | 'prev'
+    | 'next'
+    | 'shuffle'
+    | 'repeat'
+    | 'heart'
+    | 'heart-filled'
+    | 'flip'
+    | 'plus'
+    | 'close'
+    | 'edit'
+    | 'trash'
+    | 'queue'
+    | 'folder'
+    | 'volume'
+    | 'mute'
+    | 'music'
+    | 'moon'
+    | 'sun'
+    | 'wifi-off'
+    | 'upload'
+    | 'key'
+    | 'spark';
+
+  let { name, size = 18 }: { name: IconName; size?: number } = $props();
 </script>
 
 <svg
@@ -78,6 +107,14 @@
   {:else if name === 'sun'}
     <circle cx="12" cy="12" r="4" />
     <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+  {:else if name === 'wifi-off'}
+    <path d="M2 2l20 20" />
+    <path d="M8.5 16.5a5 5 0 0 1 7 0" />
+    <path d="M2 8.82a15 15 0 0 1 4.17-2.65" />
+    <path d="M10.66 5c4.01-.36 8.14.9 11.34 3.76" />
+    <path d="M16.85 11.25a10 10 0 0 1 2.22 1.68" />
+    <path d="M5 13a10 10 0 0 1 5.24-2.76" />
+    <line x1="12" y1="20" x2="12.01" y2="20" />
   {:else if name === 'upload'}
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
   {:else if name === 'key'}

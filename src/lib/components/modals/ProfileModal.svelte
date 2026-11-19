@@ -1,18 +1,18 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script>
+<script lang="ts">
   import { Block, BlockTitle, Button, Link, List, ListInput, Navbar, Page, Popup } from 'konsta/svelte';
-  import { appStore } from '#lib/stores/library.svelte.js';
+  import { appStore } from '#lib/stores/library.svelte';
   import Icon from '../Icon.svelte';
 
-  let name = $state('');
-  let handle = $state('');
-  let bio = $state('');
-  let imagePreview = $state(null);
+  let name = $state<string>('');
+  let handle = $state<string>('');
+  let bio = $state<string>('');
+  let imagePreview = $state<string | null>(null);
 
-  let spotifyClientId = $state('');
-  let spotifyClientSecret = $state('');
-  let rapidApiKey = $state('');
-  let ytApiKey = $state('');
+  let spotifyClientId = $state<string>('');
+  let spotifyClientSecret = $state<string>('');
+  let rapidApiKey = $state<string>('');
+  let ytApiKey = $state<string>('');
 
   $effect(() => {
     if (appStore.editProfileOpen) {
@@ -27,17 +27,17 @@
     }
   });
 
-  function onPhotoChange(event) {
-    const file = event.currentTarget.files?.[0];
+  function onPhotoChange(event: Event): void {
+    const file = (event.currentTarget as HTMLInputElement).files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      imagePreview = reader.result;
+      imagePreview = typeof reader.result === 'string' ? reader.result : null;
     };
     reader.readAsDataURL(file);
   }
 
-  function handleSave(event) {
+  function handleSave(event: SubmitEvent): void {
     event.preventDefault();
     appStore.saveProfileSettings(
       { name, handle, bio, image: imagePreview },
@@ -60,7 +60,7 @@
     </Navbar>
 
     <form onsubmit={handleSave}>
-      <Block class="flex justify-center !my-3">
+      <Block class="flex justify-center">
         <label class="inline-flex min-h-[44px] cursor-pointer items-center justify-center rounded-full border border-black/15 bg-black/5 px-5 text-sm font-semibold text-zinc-950 dark:border-white/20 dark:bg-white/10 dark:text-white">
           Pilih Foto Profil
           <input type="file" accept="image/*" class="sr-only" onchange={onPhotoChange} />
@@ -73,19 +73,19 @@
           label="Nama Tampilan"
           type="text"
           value={name}
-          onInput={(e) => (name = e.target.value)}
+          onInput={(e: Event) => (name = (e.target as HTMLInputElement).value)}
         />
         <ListInput
           label="Username"
           type="text"
           value={handle}
-          onInput={(e) => (handle = e.target.value)}
+          onInput={(e: Event) => (handle = (e.target as HTMLInputElement).value)}
         />
         <ListInput
           label="Bio Singkat"
           type="text"
           value={bio}
-          onInput={(e) => (bio = e.target.value)}
+          onInput={(e: Event) => (bio = (e.target as HTMLInputElement).value)}
         />
       </List>
 
@@ -96,14 +96,14 @@
           type="text"
           placeholder="Client ID dari developer.spotify.com"
           value={spotifyClientId}
-          onInput={(e) => (spotifyClientId = e.target.value)}
+          onInput={(e: Event) => (spotifyClientId = (e.target as HTMLInputElement).value)}
         />
         <ListInput
           label="Spotify Client Secret"
           type="password"
           placeholder="Client Secret Spotify"
           value={spotifyClientSecret}
-          onInput={(e) => (spotifyClientSecret = e.target.value)}
+          onInput={(e: Event) => (spotifyClientSecret = (e.target as HTMLInputElement).value)}
         />
       </List>
 
@@ -114,19 +114,24 @@
           type="password"
           placeholder="Untuk fitur konversi MP3"
           value={rapidApiKey}
-          onInput={(e) => (rapidApiKey = e.target.value)}
+          onInput={(e: Event) => (rapidApiKey = (e.target as HTMLInputElement).value)}
         />
         <ListInput
           label="YouTube Data API v3 Key"
           type="password"
           placeholder="AIzaSy..."
           value={ytApiKey}
-          onInput={(e) => (ytApiKey = e.target.value)}
+          onInput={(e: Event) => (ytApiKey = (e.target as HTMLInputElement).value)}
         />
       </List>
 
       <Block>
-        <Button type="submit" rounded large class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black">
+        <Button
+          type="submit"
+          rounded
+          large
+          class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
+        >
           Simpan Pengaturan
         </Button>
       </Block>

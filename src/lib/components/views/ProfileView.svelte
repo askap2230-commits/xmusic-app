@@ -1,5 +1,5 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script>
+<script lang="ts">
   import {
     Badge,
     Block,
@@ -11,8 +11,8 @@
     SegmentedButton,
     Toggle
   } from 'konsta/svelte';
-  import { appStore } from '#lib/stores/library.svelte.js';
-  import { getTrackInitial } from '#lib/utils/format.js';
+  import { appStore } from '#lib/stores/library.svelte';
+  import { getTrackInitial } from '#lib/utils/format';
 
   const hasSpotifyApi = $derived(
     Boolean(appStore.apiConfig.spotifyClientId && appStore.apiConfig.spotifyClientSecret)
@@ -95,6 +95,18 @@
 
 <BlockTitle>Status Integrasi & Informasi Aplikasi</BlockTitle>
 <List strong inset>
+  <ListItem title="Koneksi Jaringan" subtitle="Status deteksi real-time aplikasi">
+    {#snippet after()}
+      <Badge
+        class={appStore.isOnline
+          ? 'bg-[#248a3d] text-white font-bold dark:bg-[#30d158] dark:!text-black'
+          : 'bg-zinc-600 text-white font-bold'}
+      >
+        {appStore.isOnline ? 'Online' : 'Offline'}
+      </Badge>
+    {/snippet}
+  </ListItem>
+
   <ListItem title="Spotify Web API v1" subtitle="Deteksi sampul HD, judul, artis & durasi">
     {#snippet after()}
       <Badge

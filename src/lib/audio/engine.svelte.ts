@@ -2,79 +2,112 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Reactive Svelte 5 Runes Audio Engine powered by Web Audio API.
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript).
  *
- * Performance architecture:
- * - Throttles reactive `position` updates to ~150ms (6.6Hz) instead of 60fps RAF churn,
- *   eliminating unnecessary DOM/reactive updates on mobile WebView.
- * - Keeps FFT spectrum sampling strictly pull-based (`getSpectrum`) so the 60fps canvas
- *   visualizer only runs when the full player modal is visible and motion is allowed.
- * - Full MediaSession integration for Android lock-screen & Bluetooth headset controls.
+ * Signal Chain (Zero-Clipping Lossless-Clear DSP):
+ *   MediaElementAudioSourceNode
+ *     -> Preamp GainNode (smooth exponential/target ramp, zero zipper noise)
+ *     -> 5-Band BiquadFilterNode (60Hz, 230Hz, 910Hz, 3.6kHz, 14kHz)
+ *     -> Mastering DynamicsCompressorNode (transparent anti-clipping limiter, toggleable)
+ *     -> StereoPannerNode (L/R balance)
+ *     -> AnalyserNode (pull-based FFT visualizer)
+ *     -> AudioContext.destination (latencyHint: 'playback')
+ *
+ * Native Android Media Notification:
+ *   Synchronizes track metadata, playback state, and position to both W3C MediaSession API
+ *   and the native Android Foreground MediaStyle Service bridge (window.XmusicAndroidMedia).
  */
-import { EQ_BANDS, EQ_PRESETS } from '#lib/data/presets.js';
-import { loadJSON, saveJSON } from '#lib/db/storage.js';
+import { EQ_BANDS, EQ_PRESETS } from '#lib/data/presets';
+import { loadJSON, saveJSON } from '#lib/db/storage';
+import type { RepeatMode, Track } from '#lib/types/music';
+
+interface SavedEqState {
+  eqEnabled: boolean;
+  eqPreset: string;
+  preamp: number;
+  gains: [number, number, number, number, number];
+  pan: number;
+  limiterEnabled: boolean;
+}
+
+interface SavedPlayerPrefs {
+  volume: number;
+  shuffle: boolean;
+  repeat: RepeatMode;
+  playbackRate: number;
+  preservesPitch: boolean;
+}
 
 class AudioEngine {
-  // Core playback state
-  current = $state(null);
-  playing = $state(false);
-  position = $state(0);
-  duration = $state(0);
-  volume = $state(0.8);
-  muted = $state(false);
-  shuffle = $state(false);
-  repeat = $state('off'); // 'off' | 'all' | 'one'
-  playbackRate = $state(1.0);
-  preservesPitch = $state(true);
+  // Core reactive playback state
+  current = $state<Track | null>(null);
+  playing = $state<boolean>(false);
+  position = $state<number>(0);
+  duration = $state<number>(0);
+  volume = $state<number>(0.85);
+  muted = $state<boolean>(false);
+  shuffle = $state<boolean>(false);
+  repeat = $state<RepeatMode>('off');
+  playbackRate = $state<number>(1.0);
+  preservesPitch = $state<boolean>(true);
 
-  // 5-Band Equalizer state
-  eqEnabled = $state(true);
-  eqPreset = $state('flat');
-  preamp = $state(0);
-  gains = $state([0, 0, 0, 0, 0]);
-  pan = $state(0);
+  // Audiophile 5-Band EQ & Mastering Limiter state
+  eqEnabled = $state<boolean>(true);
+  limiterEnabled = $state<boolean>(true);
+  eqPreset = $state<string>('flat');
+  preamp = $state<number>(0);
+  gains = $state<[number, number, number, number, number]>([0, 0, 0, 0, 0]);
+  pan = $state<number>(0);
 
   // Sleep Timer state (0 = off, -1 = end of track, >0 = countdown minutes)
-  sleepMinutes = $state(0);
-  sleepRemainingSec = $state(0);
+  sleepMinutes = $state<number>(0);
+  sleepRemainingSec = $state<number>(0);
 
   // Queue & play history
-  queue = $state([]);
-  history = $state([]);
+  queue = $state<Track[]>([]);
+  history = $state<Track[]>([]);
 
-  // Internal audio graph references (non-reactive for zero overhead)
-  audioEl = null;
-  audioCtx = null;
-  sourceNode = null;
-  preampNode = null;
-  filterNodes = [];
-  pannerNode = null;
-  analyserNode = null;
-  freqData = new Uint8Array(64);
-  webAudioConnected = false;
-  corsBypassMode = false;
-  syncIntervalId = null;
-  sleepIntervalId = null;
-  onToast = null;
+  // Non-reactive DSP nodes for zero overhead
+  private audioEl: HTMLAudioElement | null = null;
+  private audioCtx: AudioContext | null = null;
+  private sourceNode: MediaElementAudioSourceNode | null = null;
+  private preampNode: GainNode | null = null;
+  private filterNodes: BiquadFilterNode[] = [];
+  private limiterNode: DynamicsCompressorNode | null = null;
+  private pannerNode: StereoPannerNode | null = null;
+  private analyserNode: AnalyserNode | null = null;
+  private freqData: Uint8Array<ArrayBuffer> = new Uint8Array(64);
+  private webAudioConnected = false;
+  private corsBypassMode = false;
+  private syncIntervalId: ReturnType<typeof setInterval> | null = null;
+  private sleepIntervalId: ReturnType<typeof setInterval> | null = null;
+  private onToast: ((message: string) => void) | null = null;
 
-  init(onToastCallback) {
+  init(onToastCallback: (message: string) => void): void {
     this.onToast = onToastCallback;
 
-    const savedEq = loadJSON('nys_eq_state', null);
+    const savedEq = loadJSON<Partial<SavedEqState> | null>('nys_eq_state', null);
     if (savedEq) {
       this.eqEnabled = savedEq.eqEnabled ?? true;
+      this.limiterEnabled = savedEq.limiterEnabled ?? true;
       this.eqPreset = savedEq.eqPreset || 'flat';
       this.preamp = Number(savedEq.preamp) || 0;
       if (Array.isArray(savedEq.gains) && savedEq.gains.length === 5) {
-        this.gains = savedEq.gains.map(Number);
+        this.gains = [
+          Number(savedEq.gains[0]) || 0,
+          Number(savedEq.gains[1]) || 0,
+          Number(savedEq.gains[2]) || 0,
+          Number(savedEq.gains[3]) || 0,
+          Number(savedEq.gains[4]) || 0
+        ];
       }
       this.pan = Number(savedEq.pan) || 0;
     }
 
-    const savedPlayer = loadJSON('nys_player_prefs', null);
+    const savedPlayer = loadJSON<Partial<SavedPlayerPrefs> | null>('nys_player_prefs', null);
     if (savedPlayer) {
-      this.volume = savedPlayer.volume ?? 0.8;
-      this.shuffle = !!savedPlayer.shuffle;
+      this.volume = savedPlayer.volume ?? 0.85;
+      this.shuffle = Boolean(savedPlayer.shuffle);
       this.repeat = savedPlayer.repeat || 'off';
       this.playbackRate = savedPlayer.playbackRate || 1.0;
       this.preservesPitch = savedPlayer.preservesPitch ?? true;
@@ -94,20 +127,24 @@ class AudioEngine {
       }
       this.startPositionSync();
       this.updateMediaSessionState();
+      this.syncNativeAndroidNotification();
     });
 
     this.audioEl.addEventListener('pause', () => {
       this.playing = false;
       this.stopPositionSync();
       this.updateMediaSessionState();
+      this.syncNativeAndroidNotification();
     });
 
     this.audioEl.addEventListener('loadedmetadata', () => {
-      if (Number.isFinite(this.audioEl.duration) && this.audioEl.duration > 0) {
+      if (this.audioEl && Number.isFinite(this.audioEl.duration) && this.audioEl.duration > 0) {
         this.duration = this.audioEl.duration;
         if (this.current) this.current.dur = this.audioEl.duration;
       }
       this.applyPlaybackRate();
+      this.updateMediaSessionPosition();
+      this.syncNativeAndroidNotification();
     });
 
     this.audioEl.addEventListener('ended', () => {
@@ -115,10 +152,11 @@ class AudioEngine {
       if (this.sleepMinutes === -1) {
         this.setSleepTimer(0);
         this.playing = false;
+        this.syncNativeAndroidNotification();
         this.toast('Sleep Timer: Pemutaran dihentikan di akhir lagu.');
         return;
       }
-      if (this.repeat === 'one') {
+      if (this.repeat === 'one' && this.audioEl) {
         this.audioEl.currentTime = 0;
         this.audioEl.play().catch(() => {});
       } else {
@@ -127,8 +165,8 @@ class AudioEngine {
     });
 
     this.audioEl.addEventListener('error', () => {
-      // Retry without crossOrigin attribute if a third-party stream lacks CORS headers
       if (
+        this.audioEl &&
         this.audioEl.crossOrigin === 'anonymous' &&
         this.current?.url &&
         !this.current.url.startsWith('blob:')
@@ -138,16 +176,18 @@ class AudioEngine {
         this.audioEl.removeAttribute('crossorigin');
         this.audioEl.src = this.current.url;
         this.audioEl.currentTime = resumePos;
-        this.audioEl.play().catch((err) => this.toast(`Gagal memutar stream: ${err.message}`));
+        this.audioEl.play().catch((err: Error) => this.toast(`Gagal memutar stream: ${err.message}`));
       }
     });
 
     this.setupMediaSession();
+    this.registerAndroidNotificationBridge();
   }
 
-  destroy() {
+  destroy(): void {
     this.stopPositionSync();
-    clearInterval(this.sleepIntervalId);
+    if (this.sleepIntervalId) clearInterval(this.sleepIntervalId);
+    window.XmusicAndroidMedia?.clearNotification();
     if (this.audioEl) {
       this.audioEl.pause();
       this.audioEl.removeAttribute('src');
@@ -158,28 +198,35 @@ class AudioEngine {
     }
   }
 
-  toast(message) {
+  private toast(message: string): void {
     if (this.onToast) this.onToast(message);
   }
 
-  ensureWebAudio() {
+  private ensureWebAudio(): void {
     if (this.webAudioConnected || !this.audioEl) return;
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
 
-      this.audioCtx = new AudioCtx();
+      // 'playback' latencyHint uses larger hardware buffers for glitch-free, lossless-grade clarity on Android
+      this.audioCtx = new AudioCtx({ latencyHint: 'playback' });
       this.sourceNode = this.audioCtx.createMediaElementSource(this.audioEl);
       this.preampNode = this.audioCtx.createGain();
 
       this.filterNodes = EQ_BANDS.map((band, idx) => {
-        const filter = this.audioCtx.createBiquadFilter();
+        const filter = this.audioCtx!.createBiquadFilter();
         filter.type = band.type;
         filter.frequency.value = band.freq;
-        filter.Q.value = 1.1;
-        filter.gain.value = this.eqEnabled ? this.gains[idx] || 0 : 0;
+        filter.Q.value = band.type === 'peaking' ? 1.15 : 0.707;
+        filter.gain.value = this.eqEnabled ? this.gains[idx] : 0;
         return filter;
       });
+
+      // Transparent mastering limiter prevents digital clipping when EQ bands are boosted
+      this.limiterNode = this.audioCtx.createDynamicsCompressor();
+      this.limiterNode.knee.value = 6;
+      this.limiterNode.attack.value = 0.003;
+      this.limiterNode.release.value = 0.15;
 
       this.pannerNode = this.audioCtx.createStereoPanner
         ? this.audioCtx.createStereoPanner()
@@ -190,8 +237,8 @@ class AudioEngine {
       this.analyserNode.smoothingTimeConstant = 0.78;
       this.freqData = new Uint8Array(this.analyserNode.frequencyBinCount);
 
-      // Signal chain: Source -> Preamp -> Filter[0..4] -> Panner -> Analyser -> Destination
-      let node = this.sourceNode;
+      // Signal chain: Source -> Preamp -> Filter[0..4] -> Limiter -> Panner -> Analyser -> Destination
+      let node: AudioNode = this.sourceNode;
       node.connect(this.preampNode);
       node = this.preampNode;
 
@@ -199,10 +246,15 @@ class AudioEngine {
         node.connect(filter);
         node = filter;
       }
+
+      node.connect(this.limiterNode);
+      node = this.limiterNode;
+
       if (this.pannerNode) {
         node.connect(this.pannerNode);
         node = this.pannerNode;
       }
+
       node.connect(this.analyserNode);
       this.analyserNode.connect(this.audioCtx.destination);
 
@@ -213,15 +265,20 @@ class AudioEngine {
     }
   }
 
-  syncEqNodes() {
+  private syncEqNodes(): void {
     saveJSON('nys_eq_state', {
       eqEnabled: this.eqEnabled,
+      limiterEnabled: this.limiterEnabled,
       eqPreset: this.eqPreset,
       preamp: this.preamp,
       gains: [...this.gains],
       pan: this.pan
     });
-    if (!this.webAudioConnected || !this.audioCtx) return;
+
+    if (!this.webAudioConnected || !this.audioCtx || !this.preampNode) return;
+    if (this.audioCtx.state === 'suspended' && this.playing) {
+      this.audioCtx.resume().catch(() => {});
+    }
 
     const now = this.audioCtx.currentTime;
     const preampDb = this.eqEnabled ? this.preamp : 0;
@@ -229,48 +286,77 @@ class AudioEngine {
     this.preampNode.gain.setTargetAtTime(linearGain, now, 0.015);
 
     this.filterNodes.forEach((filter, idx) => {
-      const gain = this.eqEnabled ? this.gains[idx] || 0 : 0;
+      const gain = this.eqEnabled ? this.gains[idx] : 0;
       filter.gain.setTargetAtTime(gain, now, 0.015);
     });
+
+    if (this.limiterNode) {
+      // Active limiter: -1 dB ceiling at 12:1 ratio; bypassed: 0 dB threshold at 1:1 ratio
+      this.limiterNode.threshold.setTargetAtTime(this.limiterEnabled ? -1.0 : 0.0, now, 0.015);
+      this.limiterNode.ratio.setTargetAtTime(this.limiterEnabled ? 12.0 : 1.0, now, 0.015);
+    }
 
     if (this.pannerNode) {
       this.pannerNode.pan.setTargetAtTime(this.pan, now, 0.015);
     }
   }
 
-  setPreset(key) {
+  setPreset(key: string): void {
     const preset = EQ_PRESETS[key];
     if (!preset) return;
     this.eqPreset = key;
     this.preamp = preset.preamp;
-    this.gains = [...preset.gains];
+    this.gains = [...preset.gains] as [number, number, number, number, number];
     this.syncEqNodes();
   }
 
-  setBandGain(index, value) {
+  resetEq(): void {
+    this.setPreset('flat');
+    this.setPan(0);
+    this.setSpeed(1.0);
+    this.preservesPitch = true;
+    this.applyPlaybackRate();
+    this.savePrefs();
+    this.toast('Semua pengaturan audio direset ke Flat (Lossless).');
+  }
+
+  setBandGain(index: number, value: number | string): void {
     const clamped = Math.max(-12, Math.min(12, Number(value) || 0));
-    this.gains[index] = clamped;
+    const next = [...this.gains] as [number, number, number, number, number];
+    next[index] = clamped;
+    this.gains = next;
     this.eqPreset = 'custom';
     this.syncEqNodes();
   }
 
-  setPreamp(value) {
+  setPreamp(value: number | string): void {
     this.preamp = Math.max(-12, Math.min(12, Number(value) || 0));
     this.eqPreset = 'custom';
     this.syncEqNodes();
   }
 
-  setPan(value) {
+  setPan(value: number | string): void {
     this.pan = Math.max(-1, Math.min(1, Number(value) || 0));
     this.syncEqNodes();
   }
 
-  toggleEq() {
+  toggleEq(): void {
     this.eqEnabled = !this.eqEnabled;
     this.syncEqNodes();
+    this.toast(this.eqEnabled ? 'Equalizer 5-Band Aktif' : 'Equalizer Bypass (Direct)');
   }
 
-  savePrefs() {
+  toggleLimiter(): void {
+    this.limiterEnabled = !this.limiterEnabled;
+    this.syncEqNodes();
+    this.toast(
+      this.limiterEnabled
+        ? 'Limiter Anti-Distorsi Aktif (Suara Jernih Bebas Clipping)'
+        : 'Limiter Dinonaktifkan'
+    );
+  }
+
+  private savePrefs(): void {
     saveJSON('nys_player_prefs', {
       volume: this.volume,
       shuffle: this.shuffle,
@@ -280,7 +366,7 @@ class AudioEngine {
     });
   }
 
-  setVolume(value) {
+  setVolume(value: number | string): void {
     const clamped = Math.max(0, Math.min(1, Number(value) || 0));
     this.volume = clamped;
     this.muted = clamped === 0;
@@ -291,45 +377,47 @@ class AudioEngine {
     this.savePrefs();
   }
 
-  toggleMute() {
+  toggleMute(): void {
     if (!this.audioEl) return;
     this.muted = !this.muted;
     this.audioEl.muted = this.muted;
   }
 
-  setSpeed(rate) {
+  setSpeed(rate: number): void {
     this.playbackRate = rate;
     this.applyPlaybackRate();
     this.savePrefs();
+    this.updateMediaSessionPosition();
   }
 
-  togglePreservesPitch() {
+  togglePreservesPitch(): void {
     this.preservesPitch = !this.preservesPitch;
     this.applyPlaybackRate();
     this.savePrefs();
   }
 
-  applyPlaybackRate() {
+  private applyPlaybackRate(): void {
     if (!this.audioEl) return;
     this.audioEl.playbackRate = this.playbackRate;
-    if ('preservesPitch' in this.audioEl) {
-      this.audioEl.preservesPitch = this.preservesPitch;
-    } else if ('webkitPreservesPitch' in this.audioEl) {
-      this.audioEl.webkitPreservesPitch = this.preservesPitch;
+    const el = this.audioEl as HTMLAudioElement & { webkitPreservesPitch?: boolean };
+    if ('preservesPitch' in el) {
+      el.preservesPitch = this.preservesPitch;
+    } else if ('webkitPreservesPitch' in el) {
+      el.webkitPreservesPitch = this.preservesPitch;
     }
   }
 
-  toggleShuffle() {
+  toggleShuffle(): void {
     this.shuffle = !this.shuffle;
     this.savePrefs();
     this.toast(this.shuffle ? 'Mode Acak (Shuffle) Aktif' : 'Mode Acak Dimatikan');
   }
 
-  cycleRepeat() {
-    const order = ['off', 'all', 'one'];
+  cycleRepeat(): void {
+    const order: RepeatMode[] = ['off', 'all', 'one'];
     this.repeat = order[(order.indexOf(this.repeat) + 1) % order.length];
     this.savePrefs();
-    const labels = {
+    const labels: Record<RepeatMode, string> = {
       off: 'Ulangi: Mati',
       all: 'Ulangi: Semua Antrean',
       one: 'Ulangi: Satu Lagu (1)'
@@ -337,8 +425,8 @@ class AudioEngine {
     this.toast(labels[this.repeat]);
   }
 
-  setSleepTimer(minutes) {
-    clearInterval(this.sleepIntervalId);
+  setSleepTimer(minutes: number): void {
+    if (this.sleepIntervalId) clearInterval(this.sleepIntervalId);
     this.sleepMinutes = minutes;
     if (minutes <= 0) {
       this.sleepRemainingSec = 0;
@@ -356,7 +444,7 @@ class AudioEngine {
         this.audioEl.volume = this.volume * (this.sleepRemainingSec / 5);
       }
       if (this.sleepRemainingSec <= 0) {
-        clearInterval(this.sleepIntervalId);
+        if (this.sleepIntervalId) clearInterval(this.sleepIntervalId);
         this.sleepMinutes = 0;
         this.sleepRemainingSec = 0;
         this.pause();
@@ -366,7 +454,7 @@ class AudioEngine {
     }, 1000);
   }
 
-  playTrack(track, customQueue = null) {
+  playTrack(track: Track | null, customQueue: Track[] | null = null): void {
     if (!track) return;
     if (Array.isArray(customQueue) && customQueue.length > 0) {
       this.queue = [...customQueue];
@@ -380,6 +468,8 @@ class AudioEngine {
       this.position = 0;
       this.duration = track.dur || 0;
       this.recordHistory(track);
+      this.updateMediaSessionMeta();
+      this.syncNativeAndroidNotification();
       return;
     }
 
@@ -394,22 +484,31 @@ class AudioEngine {
     }
 
     this.ensureWebAudio();
+    if (this.audioCtx?.state === 'suspended') {
+      this.audioCtx.resume().catch(() => {});
+    }
+
     this.current = track;
     this.position = 0;
     this.duration = track.dur || 0;
     this.corsBypassMode = false;
-    this.audioEl.crossOrigin = 'anonymous';
-    this.audioEl.src = track.url;
-    this.audioEl.load();
-    this.applyPlaybackRate();
-    this.audioEl.play().catch((err) => {
-      this.toast(`Gagal memutar: ${err.message}`);
-    });
+
+    if (this.audioEl) {
+      this.audioEl.crossOrigin = 'anonymous';
+      this.audioEl.src = track.url;
+      this.audioEl.load();
+      this.applyPlaybackRate();
+      this.audioEl.play().catch((err: Error) => {
+        this.toast(`Gagal memutar: ${err.message}`);
+      });
+    }
+
     this.recordHistory(track);
     this.updateMediaSessionMeta();
+    this.syncNativeAndroidNotification();
   }
 
-  togglePlay() {
+  togglePlay(): void {
     if (!this.current) {
       if (this.queue.length > 0) this.playTrack(this.queue[0]);
       return;
@@ -417,32 +516,37 @@ class AudioEngine {
     if (this.current.videoId || this.current.spotifyId) return;
     if (this.playing) {
       this.pause();
-    } else {
+    } else if (this.audioEl) {
       this.ensureWebAudio();
-      this.audioEl.play().catch((err) => this.toast(`Gagal memutar: ${err.message}`));
+      if (this.audioCtx?.state === 'suspended') {
+        this.audioCtx.resume().catch(() => {});
+      }
+      this.audioEl.play().catch((err: Error) => this.toast(`Gagal memutar: ${err.message}`));
     }
   }
 
-  pause() {
+  pause(): void {
     if (this.audioEl) this.audioEl.pause();
   }
 
-  seekTo(fraction) {
+  seekTo(fraction: number): void {
     if (!this.audioEl || !this.current) return;
     const total = this.duration || this.audioEl.duration || 0;
     if (!total) return;
     const clamped = Math.max(0, Math.min(1, fraction));
     this.audioEl.currentTime = clamped * total;
     this.position = this.audioEl.currentTime;
+    this.updateMediaSessionPosition();
+    this.syncNativeAndroidNotification();
   }
 
-  seekBySeconds(deltaSec) {
+  seekBySeconds(deltaSec: number): void {
     const total = this.duration || this.audioEl?.duration || 0;
     if (!total) return;
     this.seekTo((this.position + deltaSec) / total);
   }
 
-  next(fromEnded = false) {
+  next(fromEnded = false): void {
     const playable = this.queue.filter((t) => !t.videoId && !t.spotifyId);
     if (!playable.length) return;
     const idx = playable.findIndex((t) => t.id === this.current?.id);
@@ -457,15 +561,17 @@ class AudioEngine {
     if (idx + 1 >= playable.length && fromEnded && this.repeat === 'off') {
       this.playing = false;
       this.position = 0;
+      this.syncNativeAndroidNotification();
       return;
     }
     this.playTrack(playable[(idx + 1) % playable.length]);
   }
 
-  prev() {
+  prev(): void {
     if (this.audioEl && this.position > 3) {
       this.audioEl.currentTime = 0;
       this.position = 0;
+      this.updateMediaSessionPosition();
       return;
     }
     const playable = this.queue.filter((t) => !t.videoId && !t.spotifyId);
@@ -474,8 +580,8 @@ class AudioEngine {
     this.playTrack(playable[(idx - 1 + playable.length) % playable.length]);
   }
 
-  recordHistory(track) {
-    const snapshot = {
+  private recordHistory(track: Track): void {
+    const snapshot: Track = {
       id: track.id,
       title: track.title,
       artist: track.artist,
@@ -492,9 +598,8 @@ class AudioEngine {
     saveJSON('nys_history', this.history);
   }
 
-  startPositionSync() {
+  private startPositionSync(): void {
     this.stopPositionSync();
-    // 150ms interval provides smooth progress & LRC sync without 60fps Svelte reactivity overhead
     this.syncIntervalId = setInterval(() => {
       if (!this.playing || !this.audioEl) return;
       this.position = this.audioEl.currentTime || 0;
@@ -504,18 +609,15 @@ class AudioEngine {
     }, 150);
   }
 
-  stopPositionSync() {
+  private stopPositionSync(): void {
     if (this.syncIntervalId !== null) {
       clearInterval(this.syncIntervalId);
       this.syncIntervalId = null;
     }
   }
 
-  /**
-   * Samples real-time FFT spectrum magnitudes (0..1) for the Canvas visualizer.
-   */
-  getSpectrum(numBars = 28, nowMs = performance.now()) {
-    const bars = new Array(numBars).fill(0);
+  getSpectrum(numBars = 28, nowMs = performance.now()): number[] {
+    const bars: number[] = new Array<number>(numBars).fill(0);
     if (
       this.analyserNode &&
       this.playing &&
@@ -546,8 +648,44 @@ class AudioEngine {
     return bars;
   }
 
-  setupMediaSession() {
-    if (!('mediaSession' in navigator)) return;
+  private registerAndroidNotificationBridge(): void {
+    if (typeof window === 'undefined') return;
+    window.__xmusicMediaAction = (action) => {
+      if (action === 'togglePlay') this.togglePlay();
+      else if (action === 'play') {
+        if (!this.playing) this.togglePlay();
+      } else if (action === 'pause') this.pause();
+      else if (action === 'next') this.next(false);
+      else if (action === 'prev') this.prev();
+      else if (action === 'stop') {
+        this.pause();
+        window.XmusicAndroidMedia?.clearNotification();
+      }
+    };
+  }
+
+  private syncNativeAndroidNotification(): void {
+    if (typeof window === 'undefined' || !window.XmusicAndroidMedia) return;
+    if (!this.current) {
+      window.XmusicAndroidMedia.clearNotification();
+      return;
+    }
+    try {
+      window.XmusicAndroidMedia.updateNowPlaying(
+        this.current.title || 'nys Xmusic',
+        this.current.artist || 'Xmusic',
+        this.current.album || 'nys Xmusic',
+        this.playing,
+        Math.round((this.duration || 0) * 1000),
+        Math.round((this.position || 0) * 1000)
+      );
+    } catch {
+      // Ignore if native bridge is unavailable
+    }
+  }
+
+  private setupMediaSession(): void {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
     navigator.mediaSession.setActionHandler('play', () => this.togglePlay());
     navigator.mediaSession.setActionHandler('pause', () => this.pause());
     navigator.mediaSession.setActionHandler('previoustrack', () => this.prev());
@@ -556,12 +694,13 @@ class AudioEngine {
       if (details.seekTime != null && this.audioEl) {
         this.audioEl.currentTime = details.seekTime;
         this.position = details.seekTime;
+        this.updateMediaSessionPosition();
       }
     });
   }
 
-  updateMediaSessionMeta() {
-    if (!('mediaSession' in navigator) || !this.current) return;
+  private updateMediaSessionMeta(): void {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator) || !this.current) return;
     const t = this.current;
     navigator.mediaSession.metadata = new MediaMetadata({
       title: t.title || 'nys Xmusic',
@@ -571,9 +710,31 @@ class AudioEngine {
     });
   }
 
-  updateMediaSessionState() {
-    if (!('mediaSession' in navigator)) return;
+  private updateMediaSessionState(): void {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
     navigator.mediaSession.playbackState = this.playing ? 'playing' : 'paused';
+    this.updateMediaSessionPosition();
+  }
+
+  private updateMediaSessionPosition(): void {
+    if (
+      typeof navigator === 'undefined' ||
+      !('mediaSession' in navigator) ||
+      typeof navigator.mediaSession.setPositionState !== 'function'
+    ) {
+      return;
+    }
+    if (this.duration > 0 && Number.isFinite(this.duration)) {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: this.duration,
+          playbackRate: this.playbackRate,
+          position: Math.min(this.position, this.duration)
+        });
+      } catch {
+        // Ignore out-of-range position errors during track switches
+      }
+    }
   }
 }
 

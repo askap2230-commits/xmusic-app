@@ -1,9 +1,9 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script>
+<script lang="ts">
   import { Progressbar } from 'konsta/svelte';
-  import { engine } from '#lib/audio/engine.svelte.js';
-  import { appStore } from '#lib/stores/library.svelte.js';
-  import { formatTime, getTrackInitial } from '#lib/utils/format.js';
+  import { engine } from '#lib/audio/engine.svelte';
+  import { appStore } from '#lib/stores/library.svelte';
+  import { formatTime, getTrackInitial } from '#lib/utils/format';
   import Icon from './Icon.svelte';
 
   const progressFraction = $derived(
@@ -11,8 +11,9 @@
   );
 </script>
 
+<!-- Elevated cleanly above Konsta v5.5 Floating iOS 26 Tabbar (zero overlap) -->
 <footer
-  class="fixed right-2 left-2 bottom-[calc(58px+env(safe-area-inset-bottom,0px))] z-30 mx-auto max-w-4xl overflow-hidden rounded-2xl border border-black/10 bg-white/95 shadow-xl dark:border-white/12 dark:bg-[#1c1c1e]/95 dark:shadow-2xl"
+  class="fixed right-3 left-3 bottom-[calc(86px+env(safe-area-inset-bottom,0px))] z-30 mx-auto max-w-4xl overflow-hidden rounded-[22px] border border-black/10 bg-white/95 shadow-xl dark:border-white/12 dark:bg-[#1c1c1e]/95 dark:shadow-2xl"
   aria-label="Pemutar audio mini"
 >
   <Progressbar progress={progressFraction} class="!h-0.5" />
@@ -26,7 +27,7 @@
       aria-label={engine.current ? `Buka detail ${engine.current.title}` : 'Belum ada lagu diputar'}
     >
       <span
-        class="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-xl text-sm font-bold text-white"
+        class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl text-sm font-bold text-white"
         style={engine.current?.imageUrl
           ? ''
           : `background: linear-gradient(135deg, ${engine.current?.c1 || '#3f3f46'}, ${engine.current?.c2 || '#18181b'})`}
@@ -57,38 +58,29 @@
     <div class="flex items-center gap-1">
       <button
         type="button"
-        class="hidden h-11 w-11 place-items-center rounded-full text-zinc-700 hover:bg-black/5 sm:grid dark:text-zinc-200 dark:hover:bg-white/10"
+        class="hidden h-10 w-10 place-items-center rounded-full text-zinc-700 hover:bg-black/5 sm:grid dark:text-zinc-200 dark:hover:bg-white/10"
         aria-label="Lagu sebelumnya"
         onclick={() => engine.prev()}
       >
-        <Icon name="prev" size={18} />
+        <Icon name="prev" size={17} />
       </button>
 
       <button
         type="button"
-        class="grid h-11 w-11 place-items-center rounded-full bg-zinc-950 text-white active:scale-95 dark:bg-white dark:text-black"
+        class="grid h-10 w-10 place-items-center rounded-full bg-zinc-950 text-white active:scale-95 dark:bg-white dark:text-black"
         aria-label={engine.playing ? 'Jeda' : 'Putar'}
         onclick={() => engine.togglePlay()}
       >
-        <Icon name={engine.playing ? 'pause' : 'play'} size={18} />
+        <Icon name={engine.playing ? 'pause' : 'play'} size={17} />
       </button>
 
       <button
         type="button"
-        class="grid h-11 w-11 place-items-center rounded-full text-zinc-700 hover:bg-black/5 dark:text-zinc-200 dark:hover:bg-white/10"
+        class="grid h-10 w-10 place-items-center rounded-full text-zinc-700 hover:bg-black/5 dark:text-zinc-200 dark:hover:bg-white/10"
         aria-label="Lagu berikutnya"
         onclick={() => engine.next(false)}
       >
-        <Icon name="next" size={18} />
-      </button>
-
-      <button
-        type="button"
-        class="hidden h-11 w-11 place-items-center rounded-full text-zinc-700 hover:bg-black/5 md:grid dark:text-zinc-200 dark:hover:bg-white/10"
-        aria-label="Buka antrean putar"
-        onclick={() => (appStore.npDrawerOpen = !appStore.npDrawerOpen)}
-      >
-        <Icon name="queue" size={18} />
+        <Icon name="next" size={17} />
       </button>
     </div>
   </div>

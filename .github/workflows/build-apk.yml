@@ -111,7 +111,7 @@ jobs:
             -ignore ".svelte-kit/**" \
             -ignore "src-tauri/target/**" \
             -ignore "src-tauri/gen/**" \
-            src-tauri/src scripts vite.config.js static/sw.js
+            src-tauri/src src/lib scripts vite.config.ts static/sw.js
           python3 scripts/license-manager.py check
 
       - name: Setup Java 21 LTS (Temurin)
@@ -171,6 +171,7 @@ jobs:
       - name: Install Dependencies & Build Frontend (pnpm)
         run: |
           pnpm install
+          pnpm check
           pnpm build
 
       - name: Initialize Android Project, Sync Icons & Enforce Reproducible Gradle

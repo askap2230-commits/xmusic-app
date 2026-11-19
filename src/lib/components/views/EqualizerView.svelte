@@ -1,5 +1,5 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
-<script>
+<script lang="ts">
   import {
     Block,
     BlockTitle,
@@ -10,23 +10,37 @@
     Range,
     Toggle
   } from 'konsta/svelte';
-  import { engine } from '#lib/audio/engine.svelte.js';
-  import { EQ_BANDS, EQ_PRESETS, SLEEP_OPTIONS, SPEED_OPTIONS } from '#lib/data/presets.js';
-  import { formatTime } from '#lib/utils/format.js';
+  import { engine } from '#lib/audio/engine.svelte';
+  import { EQ_BANDS, EQ_PRESETS, SLEEP_OPTIONS, SPEED_OPTIONS } from '#lib/data/presets';
+  import { formatTime } from '#lib/utils/format';
 </script>
 
-<BlockTitle>5-Band Web Audio Equalizer</BlockTitle>
+<BlockTitle>5-Band Web Audio Equalizer & Mastering DSP</BlockTitle>
 <List strong inset>
   <ListItem
     label
     title="Aktifkan Equalizer"
-    subtitle="BiquadFilterNode real-time tanpa distorsi"
+    subtitle="BiquadFilterNode real-time 5-band"
   >
     {#snippet after()}
       <Toggle
         component="div"
         checked={engine.eqEnabled}
         onChange={() => engine.toggleEq()}
+      />
+    {/snippet}
+  </ListItem>
+
+  <ListItem
+    label
+    title="Limiter Anti-Distorsi (Lossless-Clear)"
+    subtitle="Mencegah clipping saat Bass/Preamp dinaikkan"
+  >
+    {#snippet after()}
+      <Toggle
+        component="div"
+        checked={engine.limiterEnabled}
+        onChange={() => engine.toggleLimiter()}
       />
     {/snippet}
   </ListItem>
@@ -45,7 +59,7 @@
     {/each}
   </div>
 
-  <div class="grid grid-cols-6 gap-2 rounded-2xl border border-black/10 bg-zinc-100 dark:border-white/10 dark:bg-black/40 px-2 py-4">
+  <div class="grid grid-cols-6 gap-1.5 rounded-2xl border border-black/10 bg-zinc-100 px-2 py-4 dark:border-white/10 dark:bg-black/40">
     <div class="flex flex-col items-center gap-1.5">
       <span class="text-[11px] font-bold text-[#007aff] dark:text-[#64d2ff]">
         {engine.preamp > 0 ? `+${engine.preamp}` : engine.preamp} dB
@@ -58,7 +72,7 @@
         step="0.5"
         aria-label="Preamp Master Gain dalam desibel"
         value={engine.preamp}
-        oninput={(e) => engine.setPreamp(e.currentTarget.value)}
+        oninput={(e: Event) => engine.setPreamp((e.currentTarget as HTMLInputElement).value)}
       />
       <span class="text-[11px] font-semibold text-zinc-950 dark:text-white">Preamp</span>
       <span class="text-center text-[10px] text-zinc-600 dark:text-zinc-300">Master</span>
@@ -77,12 +91,18 @@
           step="0.5"
           aria-label="Frekuensi {band.label} ({band.sub})"
           value={engine.gains[idx]}
-          oninput={(e) => engine.setBandGain(idx, e.currentTarget.value)}
+          oninput={(e: Event) => engine.setBandGain(idx, (e.currentTarget as HTMLInputElement).value)}
         />
         <span class="text-[11px] font-semibold text-zinc-950 dark:text-white">{band.label}</span>
         <span class="text-center text-[10px] text-zinc-600 dark:text-zinc-300">{band.sub}</span>
       </div>
     {/each}
+  </div>
+
+  <div class="flex justify-end">
+    <Button tonal rounded small inline onclick={() => engine.resetEq()}>
+      Reset Semua ke Flat (Lossless)
+    </Button>
   </div>
 </Block>
 
@@ -98,16 +118,18 @@
   />
   <ListItem>
     {#snippet inner()}
-      <div class="flex w-full items-center gap-3">
-        <span class="text-xs font-semibold text-zinc-600 dark:text-zinc-300">L</span>
-        <Range
-          min={-1}
-          max={1}
-          step={0.05}
-          value={engine.pan}
-          onInput={(e) => engine.setPan(e.target.value)}
-        />
-        <span class="text-xs font-semibold text-zinc-600 dark:text-zinc-300">R</span>
+      <div class="flex w-full items-center gap-3 pr-1">
+        <span class="shrink-0 text-xs font-semibold text-zinc-600 dark:text-zinc-300">L</span>
+        <div class="flex-1">
+          <Range
+            min={-1}
+            max={1}
+            step={0.05}
+            value={engine.pan}
+            onInput={(e: Event) => engine.setPan((e.target as HTMLInputElement).value)}
+          />
+        </div>
+        <span class="shrink-0 text-xs font-semibold text-zinc-600 dark:text-zinc-300">R</span>
         <Button clear small inline onclick={() => engine.setPan(0)}>Reset</Button>
       </div>
     {/snippet}

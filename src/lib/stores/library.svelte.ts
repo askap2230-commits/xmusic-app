@@ -1,11 +1,7 @@
 // Copyright 2026 Azka Putra
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-/**
- * Centralized Svelte 5 Runes application store for Xmusic.
- * Coordinates library tracks, playlists, favorites, search, profile, modals, and toasts.
- */
-import { engine } from '#lib/audio/engine.svelte.js';
+import { engine } from '#lib/audio/engine.svelte';
 import {
   fetchSearch,
   fetchSyncedLyrics,
@@ -14,8 +10,8 @@ import {
   fetchYtTrending,
   getApiConfig,
   saveApiConfig
-} from '#lib/api/services.js';
-import { generateDemoSynthBlob } from '#lib/data/presets.js';
+} from '#lib/api/services';
+import { generateDemoSynthBlob } from '#lib/data/presets';
 import {
   deleteLocalTrack,
   getAllLocalTracks,
@@ -25,130 +21,96 @@ import {
   probeAudioDuration,
   saveJSON,
   saveLocalTrack
-} from '#lib/db/storage.js';
+} from '#lib/db/storage';
+import type {
+  ApiConfig,
+  AppView,
+  DrawerTab,
+  Playlist,
+  RuntimeInfo,
+  ThemeMode,
+  Track,
+  UserProfile
+} from '#lib/types/music';
 
 class AppStore {
   // Theme mode ('system' | 'light' | 'dark')
-  themeMode = $state('system');
-  systemPrefersDark = $state(true);
-  themeMediaQuery = null;
-  themeMediaHandler = null;
+  themeMode = $state<ThemeMode>('system');
+  systemPrefersDark = $state<boolean>(true);
+  private themeMediaQuery: MediaQueryList | null = null;
+  private themeMediaHandler: ((event: MediaQueryListEvent) => void) | null = null;
+
+  // Live network connectivity state (prevents broken Android WebView error iframes when offline)
+  isOnline = $state<boolean>(true);
+  private onlineHandler: (() => void) | null = null;
+  private offlineHandler: (() => void) | null = null;
 
   // Navigation & filtering
-  view = $state('home'); // 'home' | 'search' | 'library' | 'eq' | 'profile'
-  libFilter = $state('local');
-  searchQuery = $state('');
-  searching = $state(false);
-  loadingHome = $state(true);
+  view = $state<AppView>('home');
+  libFilter = $state<string>('local');
+  searchQuery = $state<string>('');
+  searching = $state<boolean>(false);
+  loadingHome = $state<boolean>(true);
 
   // Collections
-  localTracks = $state([]);
-  trendingTracks = $state([]);
-  ytTracks = $state([]);
-  searchResults = $state([]);
-  likedIds = $state([]);
-  playlists = $state([]);
+  localTracks = $state<Track[]>([]);
+  trendingTracks = $state<Track[]>([]);
+  ytTracks = $state<Track[]>([]);
+  searchResults = $state<Track[]>([]);
+  likedIds = $state<string[]>([]);
+  playlists = $state<Playlist[]>([]);
 
   // Runtime & profile
-  runtimeInfo = $state({
+  runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '4.0.0',
+    version: '5.0.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
   });
 
-  userProfile = $state({
+  userProfile = $state<UserProfile>({
     name: 'Nys',
     handle: '@nysxmusic',
     bio: 'Bikin playlist buat jalan pulang.',
     image: null
   });
 
-  apiConfig = $state(getApiConfig());
+  apiConfig = $state<ApiConfig>(getApiConfig());
 
   // Overlay & modal visibility
-  npDrawerOpen = $state(false);
-  npTab = $state('queue');
-  trackModalOpen = $state(false);
-  modalTrack = $state(null);
-  modalFlipped = $state(false);
-  flippedGridIds = $state(new Set());
-  fetchingLyrics = $state(false);
+  npDrawerOpen = $state<boolean>(false);
+  npTab = $state<DrawerTab>('queue');
+  trackModalOpen = $state<boolean>(false);
+  modalTrack = $state<Track | null>(null);
+  modalFlipped = $state<boolean>(false);
+  flippedGridIds = $state<Set<string>>(new Set());
+  fetchingLyrics = $state<boolean>(false);
 
-  uploadModalOpen = $state(false);
-  hubModalOpen = $state(false);
-  dlModalOpen = $state(false);
-  dlPrefillUrl = $state('');
-  editProfileOpen = $state(false);
-  editTrackOpen = $state(false);
-  editingTrack = $state(null);
-  playlistModalOpen = $state(false);
-  targetTrackForPlaylist = $state(null);
-  dynamicBarDismissed = $state(false);
+  uploadModalOpen = $state<boolean>(false);
+  hubModalOpen = $state<boolean>(false);
+  dlModalOpen = $state<boolean>(false);
+  dlPrefillUrl = $state<string>('');
+  editProfileOpen = $state<boolean>(false);
+  editTrackOpen = $state<boolean>(false);
+  editingTrack = $state<Track | null>(null);
+  playlistModalOpen = $state<boolean>(false);
+  targetTrackForPlaylist = $state<Track | null>(null);
+  dynamicBarDismissed = $state<boolean>(false);
 
   // Accessible live-region toast
-  toastMsg = $state('');
-  toastTimer = null;
-  searchDebounceId = null;
+  toastMsg = $state<string>('');
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
+  private searchDebounceId: ReturnType<typeof setTimeout> | null = null;
 
-  get isDark() {
+  get isDark(): boolean {
     if (this.themeMode === 'dark') return true;
     if (this.themeMode === 'light') return false;
     return this.systemPrefersDark;
   }
 
-  initTheme() {
-    if (typeof window === 'undefined') return;
-    const saved = localStorage.getItem('nys_theme_mode');
-    if (saved === 'light' || saved === 'dark' || saved === 'system') {
-      this.themeMode = saved;
-    }
-    this.themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    this.systemPrefersDark = this.themeMediaQuery.matches;
-    this.themeMediaHandler = (event) => {
-      this.systemPrefersDark = event.matches;
-      this.syncDocumentTheme();
-    };
-    this.themeMediaQuery.addEventListener('change', this.themeMediaHandler);
-    this.syncDocumentTheme();
-  }
-
-  destroyTheme() {
-    if (this.themeMediaQuery && this.themeMediaHandler) {
-      this.themeMediaQuery.removeEventListener('change', this.themeMediaHandler);
-    }
-  }
-
-  syncDocumentTheme() {
-    if (typeof document === 'undefined') return;
-    const dark = this.isDark;
-    document.documentElement.classList.toggle('dark', dark);
-    const meta = document.getElementById('theme-color-meta');
-    if (meta) meta.setAttribute('content', dark ? '#000000' : '#f2f2f7');
-  }
-
-  setThemeMode(mode) {
-    if (mode !== 'light' && mode !== 'dark' && mode !== 'system') return;
-    this.themeMode = mode;
-    try {
-      localStorage.setItem('nys_theme_mode', mode);
-    } catch {}
-    this.syncDocumentTheme();
-    const labels = {
-      light: 'Mode Terang diaktifkan',
-      dark: 'Mode Gelap diaktifkan',
-      system: 'Tema mengikuti sistem perangkat'
-    };
-    this.showToast(labels[mode]);
-  }
-
-  toggleTheme() {
-    this.setThemeMode(this.isDark ? 'light' : 'dark');
-  }
-
-  get allTracks() {
-    const map = new Map();
+  get allTracks(): Track[] {
+    const map = new Map<string, Track>();
     for (const track of [
       ...this.localTracks,
       ...this.searchResults,
@@ -160,7 +122,7 @@ class AppStore {
     return [...map.values()];
   }
 
-  get filteredLibrary() {
+  get filteredLibrary(): Track[] {
     if (this.libFilter === 'local') return this.localTracks;
     if (this.libFilter === 'liked') {
       return this.allTracks.filter((t) => this.likedIds.includes(t.id));
@@ -173,24 +135,94 @@ class AppStore {
     return this.localTracks;
   }
 
-  get activeModalTrack() {
+  get activeModalTrack(): Track | null {
     if (!this.modalTrack) return null;
     return engine.current?.id === this.modalTrack.id ? engine.current : this.modalTrack;
   }
 
-  showToast = (message) => {
+  initTheme(): void {
+    if (typeof window === 'undefined') return;
+    const saved = localStorage.getItem('nys_theme_mode');
+    if (saved === 'light' || saved === 'dark' || saved === 'system') {
+      this.themeMode = saved;
+    }
+    this.themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    this.systemPrefersDark = this.themeMediaQuery.matches;
+    this.themeMediaHandler = (event: MediaQueryListEvent) => {
+      this.systemPrefersDark = event.matches;
+      this.syncDocumentTheme();
+    };
+    this.themeMediaQuery.addEventListener('change', this.themeMediaHandler);
+    this.syncDocumentTheme();
+  }
+
+  initConnectivity(): void {
+    if (typeof window === 'undefined') return;
+    this.isOnline = navigator.onLine;
+    this.onlineHandler = () => {
+      this.isOnline = true;
+      this.showToast('Koneksi internet kembali terhubung.');
+      void this.refreshOnlineFeeds();
+    };
+    this.offlineHandler = () => {
+      this.isOnline = false;
+      this.showToast('Mode Offline aktif — koleksi lokal tetap siap diputar.');
+    };
+    window.addEventListener('online', this.onlineHandler);
+    window.addEventListener('offline', this.offlineHandler);
+  }
+
+  destroyListeners(): void {
+    if (this.themeMediaQuery && this.themeMediaHandler) {
+      this.themeMediaQuery.removeEventListener('change', this.themeMediaHandler);
+    }
+    if (typeof window !== 'undefined') {
+      if (this.onlineHandler) window.removeEventListener('online', this.onlineHandler);
+      if (this.offlineHandler) window.removeEventListener('offline', this.offlineHandler);
+    }
+  }
+
+  syncDocumentTheme(): void {
+    if (typeof document === 'undefined') return;
+    const dark = this.isDark;
+    document.documentElement.classList.toggle('dark', dark);
+    const meta = document.getElementById('theme-color-meta');
+    if (meta) meta.setAttribute('content', dark ? '#000000' : '#f2f2f7');
+  }
+
+  setThemeMode(mode: ThemeMode): void {
+    this.themeMode = mode;
+    try {
+      localStorage.setItem('nys_theme_mode', mode);
+    } catch {
+      // Ignore storage quota errors
+    }
+    this.syncDocumentTheme();
+    const labels: Record<ThemeMode, string> = {
+      light: 'Mode Terang diaktifkan',
+      dark: 'Mode Gelap diaktifkan',
+      system: 'Tema mengikuti sistem perangkat'
+    };
+    this.showToast(labels[mode]);
+  }
+
+  toggleTheme(): void {
+    this.setThemeMode(this.isDark ? 'light' : 'dark');
+  }
+
+  showToast = (message: string): void => {
     this.toastMsg = message;
-    clearTimeout(this.toastTimer);
+    if (this.toastTimer) clearTimeout(this.toastTimer);
     this.toastTimer = setTimeout(() => {
       this.toastMsg = '';
     }, 2800);
   };
 
-  isLiked(id) {
+  isLiked(id: string): boolean {
     return this.likedIds.includes(id);
   }
 
-  toggleLike(track) {
+  toggleLike(track: Track | null): void {
     if (!track) return;
     if (this.likedIds.includes(track.id)) {
       this.likedIds = this.likedIds.filter((id) => id !== track.id);
@@ -202,29 +234,46 @@ class AppStore {
     saveJSON('nys_liked_ids', this.likedIds);
   }
 
-  async refreshLocalTracks() {
+  async refreshLocalTracks(): Promise<void> {
     this.localTracks = await getAllLocalTracks();
     if (engine.queue.length === 0 && this.localTracks.length > 0) {
       engine.queue = [...this.localTracks, ...this.trendingTracks];
     }
   }
 
-  async bootstrap() {
+  async refreshOnlineFeeds(): Promise<void> {
+    if (!this.isOnline) {
+      this.loadingHome = false;
+      return;
+    }
+    this.loadingHome = true;
+    const [trending, yt] = await Promise.all([fetchTrending(32), fetchYtTrending('ID')]);
+    this.trendingTracks = trending;
+    this.ytTracks = yt;
+    this.loadingHome = false;
+    if (engine.queue.length === 0) {
+      engine.queue = [...this.localTracks, ...trending];
+    }
+  }
+
+  async bootstrap(): Promise<void> {
     this.initTheme();
+    this.initConnectivity();
     engine.init(this.showToast);
-    this.likedIds = loadJSON('nys_liked_ids', []);
-    this.playlists = loadJSON('nys_playlists', [
+
+    this.likedIds = loadJSON<string[]>('nys_liked_ids', []);
+    this.playlists = loadJSON<Playlist[]>('nys_playlists', [
       { id: 'pl_default_chill', name: 'Jalan Pulang', trackIds: [], createdAt: Date.now() }
     ]);
-    engine.history = loadJSON('nys_history', []);
+    engine.history = loadJSON<Track[]>('nys_history', []);
 
-    const savedProfile = loadJSON('nys_profile', null);
+    const savedProfile = loadJSON<UserProfile | null>('nys_profile', null);
     if (savedProfile) this.userProfile = savedProfile;
 
-    if (window.__TAURI_INTERNALS__) {
+    if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        const info = await invoke('get_runtime_info');
+        const info = await invoke<RuntimeInfo>('get_runtime_info');
         if (info) this.runtimeInfo = info;
       } catch {
         // Running outside Tauri shell
@@ -238,22 +287,19 @@ class AppStore {
       console.warn('[IndexedDB Init Warning]', err);
     }
 
-    const [trending, yt] = await Promise.all([fetchTrending(32), fetchYtTrending('ID')]);
-    this.trendingTracks = trending;
-    this.ytTracks = yt;
-    this.loadingHome = false;
+    await this.refreshOnlineFeeds();
 
-    if (engine.queue.length === 0) {
-      engine.queue = [...this.localTracks, ...trending];
-    }
-
-    if ('serviceWorker' in navigator) {
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
     }
   }
 
-  async autoFetchLyricsForTrack(track) {
+  async autoFetchLyricsForTrack(track: Track | null): Promise<void> {
     if (!track || this.fetchingLyrics) return;
+    if (!this.isOnline) {
+      this.showToast('Mode Offline: tidak dapat mengambil lirik dari LRCLIB.');
+      return;
+    }
     this.fetchingLyrics = true;
     const lrc = await fetchSyncedLyrics(track.title, track.artist, track.dur);
     this.fetchingLyrics = false;
@@ -272,18 +318,18 @@ class AppStore {
     }
   }
 
-  async createBuiltInSynthDemo() {
-    this.showToast('Menyintesis lagu demo stereo 44.1kHz...');
+  async createBuiltInSynthDemo(): Promise<void> {
+    this.showToast('Menyintesis lagu demo lossless 44.1kHz...');
     try {
       const wavBlob = await generateDemoSynthBlob(24);
-      const demoTrack = {
+      const demoTrack: Track = {
         id: 'local_demo_synthwave',
         title: 'Midnight Drive (Built-in Synth)',
         artist: 'nys Xmusic Studio',
-        album: 'Offline Synth Engine',
+        album: 'Offline Lossless Synth',
         blob: wavBlob,
         dur: 24,
-        c1: '#0284c7',
+        c1: '#007aff',
         c2: '#1e1b4b',
         imageUrl: null,
         source: 'local',
@@ -291,7 +337,7 @@ class AppStore {
         lyrics: [
           '[00:00.00] nys Xmusic Built-in Procedural Synthwave',
           '[00:04.00] Ketuk dua kali kartu untuk membalik dan melihat lirik sinkron',
-          '[00:08.50] Buka Studio Equalizer untuk mengatur 5-Band Web Audio EQ',
+          '[00:08.50] Buka EQ Studio untuk mengatur 5-Band Web Audio EQ dan Limiter',
           '[00:13.00] Lirik berjalan otomatis mengikuti irama dan detik lagu',
           '[00:18.00] Ketuk baris lirik mana saja untuk melompat ke detik tersebut',
           '[00:21.50] Siap digunakan kapan saja 100% offline'
@@ -307,45 +353,46 @@ class AppStore {
       }
       this.showToast('Lagu demo siap diputar. Ketuk 2x kartu untuk melihat lirik.');
     } catch (err) {
-      this.showToast(`Gagal membuat lagu demo: ${err.message}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.showToast(`Gagal membuat lagu demo: ${msg}`);
     }
   }
 
-  openTrackModal(track, startFlipped = false) {
+  openTrackModal(track: Track, startFlipped = false): void {
     this.modalTrack = track;
     this.modalFlipped = startFlipped;
     this.trackModalOpen = true;
     this.dynamicBarDismissed = false;
     if (startFlipped && !track.lyrics) {
-      this.autoFetchLyricsForTrack(track);
+      void this.autoFetchLyricsForTrack(track);
     }
   }
 
-  closeTrackModal() {
+  closeTrackModal(): void {
     this.trackModalOpen = false;
     this.modalFlipped = false;
   }
 
-  toggleModalFlip() {
+  toggleModalFlip(): void {
     this.modalFlipped = !this.modalFlipped;
     const active = this.activeModalTrack;
     if (this.modalFlipped && active && !active.lyrics) {
-      this.autoFetchLyricsForTrack(active);
+      void this.autoFetchLyricsForTrack(active);
     }
   }
 
-  toggleGridFlip(track) {
+  toggleGridFlip(track: Track): void {
     const next = new Set(this.flippedGridIds);
     if (next.has(track.id)) {
       next.delete(track.id);
     } else {
       next.add(track.id);
-      if (!track.lyrics) this.autoFetchLyricsForTrack(track);
+      if (!track.lyrics) void this.autoFetchLyricsForTrack(track);
     }
     this.flippedGridIds = next;
   }
 
-  async importLocalFiles(files, coverFile = null) {
+  async importLocalFiles(files: FileList | File[], coverFile: File | null = null): Promise<boolean> {
     const audioFiles = [...files].filter(
       (f) => f.type.startsWith('audio/') || /\.(mp3|m4a|wav|ogg|flac|aac|opus)$/i.test(f.name)
     );
@@ -357,7 +404,7 @@ class AppStore {
     for (const file of audioFiles) {
       const meta = parseFilenameMeta(file.name);
       const dur = await probeAudioDuration(file);
-      const newTrack = {
+      const newTrack: Track = {
         id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         title: meta.title,
         artist: meta.artist,
@@ -382,8 +429,8 @@ class AppStore {
     return true;
   }
 
-  async importStreamUrl({ url, title, artist }) {
-    const cleanUrl = String(url || '').trim();
+  async importStreamUrl(payload: { url: string; title: string; artist: string }): Promise<boolean> {
+    const cleanUrl = String(payload.url || '').trim();
     if (!cleanUrl) {
       this.showToast('Masukkan URL audio terlebih dahulu.');
       return false;
@@ -391,8 +438,8 @@ class AppStore {
     const dur = await probeAudioDuration(cleanUrl);
     await saveLocalTrack({
       id: `local_${Date.now()}`,
-      title: String(title || '').trim() || 'Audio Stream URL',
-      artist: String(artist || '').trim() || 'External Stream',
+      title: String(payload.title || '').trim() || 'Audio Stream URL',
+      artist: String(payload.artist || '').trim() || 'External Stream',
       album: 'URL Import',
       url: cleanUrl,
       dur,
@@ -410,25 +457,30 @@ class AppStore {
     return true;
   }
 
-  async removeTrack(track) {
+  async removeTrack(track: Track): Promise<void> {
     await deleteLocalTrack(track.id);
     await this.refreshLocalTracks();
     this.showToast(`"${track.title}" dihapus dari penyimpanan.`);
   }
 
-  openEditTrack(track) {
+  openEditTrack(track: Track): void {
     this.editingTrack = track;
     this.editTrackOpen = true;
   }
 
-  async saveEditedTrack({ title, artist, album, lyrics }) {
+  async saveEditedTrack(payload: {
+    title: string;
+    artist: string;
+    album: string;
+    lyrics: string;
+  }): Promise<void> {
     if (!this.editingTrack) return;
-    const updated = {
+    const updated: Track = {
       ...this.editingTrack,
-      title: title.trim() || this.editingTrack.title,
-      artist: artist.trim() || this.editingTrack.artist,
-      album: album.trim() || this.editingTrack.album,
-      lyrics
+      title: payload.title.trim() || this.editingTrack.title,
+      artist: payload.artist.trim() || this.editingTrack.artist,
+      album: payload.album.trim() || this.editingTrack.album,
+      lyrics: payload.lyrics
     };
     if (updated.source === 'local') {
       await saveLocalTrack(updated);
@@ -440,13 +492,13 @@ class AppStore {
     this.showToast('Metadata dan lirik lagu diperbarui.');
   }
 
-  createPlaylist(name) {
+  createPlaylist(name: string): boolean {
     const trimmed = String(name || '').trim();
     if (!trimmed) {
       this.showToast('Masukkan nama playlist.');
       return false;
     }
-    const playlist = {
+    const playlist: Playlist = {
       id: `pl_${Date.now()}`,
       name: trimmed,
       trackIds: this.targetTrackForPlaylist ? [this.targetTrackForPlaylist.id] : [],
@@ -460,7 +512,7 @@ class AppStore {
     return true;
   }
 
-  toggleTrackInPlaylist(playlistId, track) {
+  toggleTrackInPlaylist(playlistId: string, track: Track | null): void {
     if (!track) return;
     this.playlists = this.playlists.map((pl) => {
       if (pl.id !== playlistId) return pl;
@@ -474,10 +526,10 @@ class AppStore {
     saveJSON('nys_playlists', this.playlists);
   }
 
-  updateSearch(query) {
+  updateSearch(query: string): void {
     this.searchQuery = query;
     if (this.view !== 'search') this.view = 'search';
-    clearTimeout(this.searchDebounceId);
+    if (this.searchDebounceId) clearTimeout(this.searchDebounceId);
 
     if (!query.trim()) {
       this.searchResults = [];
@@ -487,7 +539,6 @@ class AppStore {
 
     this.searching = true;
     this.searchDebounceId = setTimeout(async () => {
-      const [audius, youtube] = await Promise.all([fetchSearch(query), fetchYtSearch(query)]);
       const qLow = query.toLowerCase();
       const localMatch = this.localTracks.filter(
         (t) =>
@@ -495,12 +546,18 @@ class AppStore {
           t.artist?.toLowerCase().includes(qLow) ||
           t.album?.toLowerCase().includes(qLow)
       );
+      if (!this.isOnline) {
+        this.searchResults = localMatch;
+        this.searching = false;
+        return;
+      }
+      const [audius, youtube] = await Promise.all([fetchSearch(query), fetchYtSearch(query)]);
       this.searchResults = [...localMatch, ...youtube, ...audius];
       this.searching = false;
-    }, 340);
+    }, 320);
   }
 
-  saveProfileSettings(profile, nextApiConfig) {
+  saveProfileSettings(profile: UserProfile, nextApiConfig: Partial<ApiConfig>): void {
     this.userProfile = {
       name: profile.name.trim() || 'Nys',
       handle: profile.handle.trim() || '@nysxmusic',
@@ -513,12 +570,12 @@ class AppStore {
     this.showToast('Profil dan konfigurasi API berhasil disimpan.');
   }
 
-  openDownloaderWithUrl(url = '') {
+  openDownloaderWithUrl(url = ''): void {
     this.dlPrefillUrl = url;
     this.dlModalOpen = true;
   }
 
-  closeTopOverlay() {
+  closeTopOverlay(): boolean {
     if (this.trackModalOpen) { this.closeTrackModal(); return true; }
     if (this.uploadModalOpen) { this.uploadModalOpen = false; return true; }
     if (this.hubModalOpen) { this.hubModalOpen = false; return true; }

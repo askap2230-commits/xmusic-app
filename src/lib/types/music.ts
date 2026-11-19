@@ -1,0 +1,143 @@
+// Copyright 2026 Azka Putra
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+export type TrackSource = 'local' | 'audius' | 'youtube' | 'spotify';
+export type RepeatMode = 'off' | 'all' | 'one';
+export type ThemeMode = 'system' | 'light' | 'dark';
+export type AppView = 'home' | 'search' | 'library' | 'eq' | 'profile';
+export type DrawerTab = 'queue' | 'lyrics';
+
+export interface Track {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  dur: number;
+  source: TrackSource;
+  c1?: string;
+  c2?: string;
+  imageUrl?: string | null;
+  artistPhoto?: string | null;
+  url?: string;
+  blob?: Blob;
+  coverBlob?: Blob | null;
+  lyrics?: string;
+  createdAt?: number;
+  playedAt?: number;
+  videoId?: string;
+  spotifyId?: string;
+  spotifyType?: 'track' | 'album' | 'playlist' | 'artist' | 'episode';
+}
+
+export interface Playlist {
+  id: string;
+  name: string;
+  trackIds: string[];
+  createdAt: number;
+}
+
+export interface UserProfile {
+  name: string;
+  handle: string;
+  bio: string;
+  image: string | null;
+}
+
+export interface ApiConfig {
+  rapidApiKey: string;
+  rapidApiHost: string;
+  ytApiKey: string;
+  spotifyClientId: string;
+  spotifyClientSecret: string;
+  audiusHost: string;
+}
+
+export interface RuntimeInfo {
+  app_name: string;
+  version: string;
+  engine: string;
+  platform: string;
+  arch: string;
+}
+
+export interface EqBand {
+  freq: number;
+  label: string;
+  sub: string;
+  type: BiquadFilterType;
+}
+
+export interface EqPreset {
+  name: string;
+  preamp: number;
+  gains: [number, number, number, number, number];
+}
+
+export interface CategoryItem {
+  label: string;
+  sub: string;
+  accent: string;
+  bg: string;
+  q: string;
+}
+
+export interface SpotifyChart {
+  id: string;
+  title: string;
+}
+
+export interface SleepOption {
+  label: string;
+  minutes: number;
+}
+
+export interface ParsedLyricLine {
+  time: number | null;
+  text: string;
+  synced: boolean;
+}
+
+export interface SpotifyEmbedRef {
+  type: 'track' | 'album' | 'playlist' | 'artist' | 'episode';
+  id: string;
+}
+
+export interface HubMeta {
+  via: string;
+  title: string;
+  artist: string;
+  album: string;
+  dur: number;
+  imageUrl: string | null;
+  previewUrl?: string | null;
+}
+
+export interface DownloadResult {
+  ok: boolean;
+  link?: string;
+  title?: string;
+  duration?: number;
+  msg?: string;
+}
+
+export interface AndroidMediaBridge {
+  updateNowPlaying(
+    title: string,
+    artist: string,
+    album: string,
+    isPlaying: boolean,
+    durationMs: number,
+    positionMs: number
+  ): void;
+  clearNotification(): void;
+}
+
+declare global {
+  interface Window {
+    __TAURI_INTERNALS__?: unknown;
+    XmusicAndroidMedia?: AndroidMediaBridge;
+    __xmusicMediaAction?: (action: 'togglePlay' | 'play' | 'pause' | 'next' | 'prev' | 'stop') => void;
+    webkitAudioContext?: typeof AudioContext;
+    webkitOfflineAudioContext?: typeof OfflineAudioContext;
+  }
+}

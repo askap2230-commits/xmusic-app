@@ -56,12 +56,13 @@ jobs:
             -ignore ".svelte-kit/**" \
             -ignore "src-tauri/target/**" \
             -ignore "src-tauri/gen/**" \
-            src-tauri/src scripts vite.config.js static/sw.js
+            src-tauri/src src/lib scripts vite.config.ts static/sw.js
           python3 scripts/license-manager.py check
 
       - name: Build Production Frontend Bundle (pnpm)
         run: |
           pnpm install
+          pnpm check
           pnpm build
 
       - name: Validate Python Scripts
