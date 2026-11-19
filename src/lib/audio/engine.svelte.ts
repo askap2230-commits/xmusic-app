@@ -43,6 +43,8 @@ class AudioEngine {
   // Core reactive playback state
   current = $state<Track | null>(null);
   playing = $state<boolean>(false);
+  resolvingAudio = $state<boolean>(false);
+  audioResolveFailed = $state<boolean>(false);
   position = $state<number>(0);
   duration = $state<number>(0);
   volume = $state<number>(0.85);
@@ -496,6 +498,8 @@ class AudioEngine {
       this.audioCtx.resume().catch(() => {});
     }
 
+    this.resolvingAudio = false;
+    this.audioResolveFailed = false;
     this.current = track;
     this.position = 0;
     this.duration = track.dur || 0;
@@ -516,10 +520,26 @@ class AudioEngine {
     this.syncNativeAndroidNotification();
   }
 
+  retryYoutubeAudio(): void {
+    if (this.current?.videoId) {
+      void this.resolveAndPlayYoutubeAudio(this.current);
+    }
+  }
+
   private async resolveAndPlayYoutubeAudio(track: Track): Promise<void> {
     if (!track.videoId) return;
+    this.resolvingAudio = true;
+    this.audioResolveFailed = false;
     const streamUrl = await resolveYoutubeAudioStream(track.videoId);
-    if (!streamUrl || this.current?.id !== track.id) return;
+    if (this.current?.id !== track.id) return;
+    this.resolvingAudio = false;
+
+    if (!streamUrl) {
+      this.audioResolveFailed = true;
+      this.toast('Server audio publik sedang sibuk. Ketuk Coba Lagi atau Mode Video.');
+      return;
+    }
+
     const upgraded: Track = { ...track, url: streamUrl };
     this.current = upgraded;
     this.ensureWebAudio();
@@ -532,9 +552,9 @@ class AudioEngine {
       this.audioEl.load();
       this.applyPlaybackRate();
       this.audioEl.play().catch(() => {
-        // If direct stream fails, TrackModal still provides the YouTube embed fallback
         if (this.current?.id === track.id) {
           this.current = { ...track, url: undefined };
+          this.audioResolveFailed = true;
         }
       });
     }
@@ -570,6 +590,8 @@ class AudioEngine {
       this.audioEl.load();
     }
     this.playing = false;
+    this.resolvingAudio = false;
+    this.audioResolveFailed = false;
     this.current = null;
     this.position = 0;
     this.duration = 0;

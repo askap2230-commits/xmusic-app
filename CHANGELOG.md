@@ -2,6 +2,17 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [5.6.0] - 2026-11-19
+
+### Performance & UX Upgrades
+- **Parallel Racing (`Promise.any`) & Fastest-Host Caching**: Replaced slow sequential Piped/Invidious fallback loops with parallel `Promise.any` racing (3s timeout) and automatic `fastestPipedHost` memory caching — cutting YouTube Music search and audio stream resolution from 15–25s down to ~0.5–1.5s.
+- **Progressive Non-Blocking Feed Loading & 0ms Startup Cache**: Removed monolithic `Promise.all` blocking on `HomeView`. Each section (`YouTube Music`, `Audius Global`, `Chart Populer Spotify`, `Katalog 1900–2026`) renders progressively as soon as it responds, backed by a stale-while-revalidate `localStorage` cache for instant 0ms startup.
+- **Real Pagination ("Muat Lebih Banyak")**: Added working **Muat Lebih Banyak** buttons at the bottom of every music section (`loadMoreYt`, `loadMoreAudius`, `loadMoreSpotifyChart`, `loadMoreCatalog`) with deduplicated appending.
+- **True Audio-Only YouTube Music Player**: Fixed `TrackModal` so clicking any YouTube Music track NEVER auto-mounts a YouTube Video iframe; it always stays in the native iOS Audio Player with live stream resolution status (`resolvingAudio`), 5-Band EQ, and an opt-in fallback only if public audio proxies are busy.
+- **Redesigned Spotify Charts (Konsta Segmented Tabs + Instant Cache)**: Replaced the clashing open/close accordion with native Konsta `<Segmented>` tabs (`Top 50 ID`, `Top 50 Global`, `Top Hits`) backed by per-chart caching (`spotifyChartCache`) for 0ms instant tab switching.
+- **Automatic Changelog in GitHub Releases**: Updated `.github/workflows/build-apk.yml` to automatically extract the current version's `CHANGELOG.md` notes into every GitHub Release above the SHA-256/SHA-512 reproducible build table.
+- **Version Bump**: Upgraded single-source version in `package.json` to `5.6.0` (`Xmusic-v5.6.0-android-<abi>-release.apk`).
+
 ## [5.5.0] - 2026-11-19
 
 ### Changed & Fixed

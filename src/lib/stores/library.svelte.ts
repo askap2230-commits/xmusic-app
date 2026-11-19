@@ -66,12 +66,25 @@ class AppStore {
   showSuggestions = $state<boolean>(false);
   searchSuggestions = $state<SearchSuggestion[]>([]);
   recentSearches = $state<string[]>([]);
-  loadingHome = $state<boolean>(true);
+  loadingHome = $state<boolean>(false);
+  ytLoading = $state<boolean>(false);
+  audiusLoading = $state<boolean>(false);
+  catalogLoading = $state<boolean>(false);
+  ytLoadingMore = $state<boolean>(false);
+  audiusLoadingMore = $state<boolean>(false);
+  catalogLoadingMore = $state<boolean>(false);
   refreshing = $state<boolean>(false);
   refreshSeed = $state<number>(0);
-  activeSpotifyChartTitle = $state<string>('');
-  spotifyChartTracks = $state<Track[]>([]);
+  private ytPage = 0;
+  private audiusOffset = 0;
+  private catalogPage = 0;
+
+  // Cached Spotify Chart tabs (zero open/close clash, 0ms instant tab switching)
+  activeSpotifyChartTitle = $state<string>('Top 50 Indonesia');
+  spotifyChartCache = $state<Record<string, Track[]>>({});
+  private spotifyChartPages: Record<string, number> = {};
   loadingSpotifyChart = $state<boolean>(false);
+  spotifyChartLoadingMore = $state<boolean>(false);
 
   // Collections
   localTracks = $state<Track[]>([]);
@@ -85,7 +98,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '5.5.0',
+    version: '5.6.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
@@ -140,6 +153,10 @@ class AppStore {
       engine.history,
       this.refreshSeed
     );
+  }
+
+  get spotifyChartTracks(): Track[] {
+    return this.spotifyChartCache[this.activeSpotifyChartTitle] || [];
   }
 
   get rankedYtFeed(): Track[] {
@@ -315,66 +332,165 @@ class AppStore {
     }
   }
 
+  private mergeUniqueTracks(existing: Track[], incoming: Track[]): Track[] {
+    const seen = new Set(existing.map((t) => t.id));
+    const merged = [...existing];
+    for (const track of incoming) {
+      if (track?.id && !seen.has(track.id)) {
+        seen.add(track.id);
+        merged.push(track);
+      }
+    }
+    return merged;
+  }
+
+  /**
+   * Progressive non-blocking feed refresh: each source renders immediately as soon as it responds,
+   * never stalling the UI behind a slow server.
+   */
   async refreshOnlineFeeds(manual = false): Promise<void> {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       this.isOnline = false;
       this.networkReachable = false;
-      this.loadingHome = false;
+      this.ytLoading = false;
+      this.audiusLoading = false;
+      this.catalogLoading = false;
       this.refreshing = false;
       if (manual) this.showToast('Mode Offline: tidak dapat menyegarkan feed online.');
       return;
     }
+
     if (manual) {
       this.refreshSeed += 1;
       this.refreshing = true;
-    } else {
-      this.loadingHome = true;
+    }
+    this.ytPage = this.refreshSeed;
+    this.audiusOffset = manual ? (this.refreshSeed % 4) * 12 : 0;
+    this.catalogPage = this.refreshSeed;
+
+    this.ytLoading = this.ytTracks.length === 0 || manual;
+    this.audiusLoading = this.trendingTracks.length === 0 || manual;
+    this.catalogLoading = this.catalogTrending.length === 0 || manual;
+
+    const ytTask = fetchYtTrending(this.algoConfig.region, this.ytPage).then((yt) => {
+      if (yt.length > 0) {
+        this.ytTracks = yt;
+        this.networkReachable = true;
+        saveJSON('nys_cache_yt', yt.slice(0, 12));
+        if (engine.queue.length === 0) engine.queue = [...this.localTracks, ...yt];
+      }
+      this.ytLoading = false;
+      return yt.length;
+    });
+
+    const audiusTask = fetchTrending(12, this.audiusOffset).then((audius) => {
+      if (audius.length > 0) {
+        this.trendingTracks = audius;
+        this.networkReachable = true;
+        saveJSON('nys_cache_audius', audius.slice(0, 12));
+        if (engine.queue.length === 0) engine.queue = [...this.localTracks, ...audius];
+      }
+      this.audiusLoading = false;
+      return audius.length;
+    });
+
+    const catalogTask = fetchRegionalViralFeed(this.algoConfig, 12, this.catalogPage).then((cat) => {
+      if (cat.length > 0) {
+        this.catalogTrending = cat;
+        this.networkReachable = true;
+        saveJSON('nys_cache_catalog', cat.slice(0, 12));
+      }
+      this.catalogLoading = false;
+      return cat.length;
+    });
+
+    // Also lazily warm the active Spotify Chart tab if not cached yet
+    if (!this.spotifyChartCache[this.activeSpotifyChartTitle]?.length) {
+      void this.selectSpotifyChart(this.activeSpotifyChartTitle);
     }
 
-    const [yt, trending, catalog] = await Promise.all([
-      fetchYtTrending(this.algoConfig.region, this.refreshSeed),
-      fetchTrending(20),
-      fetchRegionalViralFeed(this.algoConfig, 18, this.refreshSeed)
-    ]);
-
-    this.ytTracks = yt;
-    this.trendingTracks = trending;
-    this.catalogTrending = catalog;
-    this.networkReachable = yt.length > 0 || trending.length > 0 || catalog.length > 0;
-    this.loadingHome = false;
+    const [ytCount, audiusCount, catCount] = await Promise.all([ytTask, audiusTask, catalogTask]);
+    this.networkReachable =
+      ytCount > 0 ||
+      audiusCount > 0 ||
+      catCount > 0 ||
+      this.ytTracks.length > 0 ||
+      this.trendingTracks.length > 0 ||
+      this.catalogTrending.length > 0;
     this.refreshing = false;
 
-    if (engine.queue.length === 0) {
-      engine.queue = [...this.localTracks, ...yt, ...trending, ...catalog];
-    }
     if (manual) {
       this.showToast(
         this.networkReachable
           ? `Algoritma & daftar musik ${this.activeRegionOption.label} berhasil disegarkan.`
-          : 'Server streaming belum merespons. Coba beberapa saat lagi.'
+          : 'Server streaming sedang sibuk. Coba lagi sebentar lagi.'
       );
     }
   }
 
-  async openSpotifyChart(title: string): Promise<void> {
-    if (this.activeSpotifyChartTitle === title && this.spotifyChartTracks.length > 0) {
-      this.activeSpotifyChartTitle = '';
-      this.spotifyChartTracks = [];
+  async loadMoreYt(): Promise<void> {
+    if (this.ytLoadingMore || !this.isOnline) return;
+    this.ytLoadingMore = true;
+    this.ytPage += 1;
+    const more = await fetchYtTrending(this.algoConfig.region, this.ytPage);
+    this.ytTracks = this.mergeUniqueTracks(this.ytTracks, more);
+    this.ytLoadingMore = false;
+    if (more.length === 0) this.showToast('Belum ada lagu YouTube Music tambahan.');
+  }
+
+  async loadMoreAudius(): Promise<void> {
+    if (this.audiusLoadingMore || !this.isOnline) return;
+    this.audiusLoadingMore = true;
+    this.audiusOffset += 12;
+    const more = await fetchTrending(12, this.audiusOffset);
+    this.trendingTracks = this.mergeUniqueTracks(this.trendingTracks, more);
+    this.audiusLoadingMore = false;
+    if (more.length === 0) this.showToast('Semua lagu Audius trending sudah dimuat.');
+  }
+
+  async loadMoreCatalog(): Promise<void> {
+    if (this.catalogLoadingMore || !this.isOnline) return;
+    this.catalogLoadingMore = true;
+    this.catalogPage += 1;
+    const more = await fetchRegionalViralFeed(this.algoConfig, 12, this.catalogPage);
+    this.catalogTrending = this.mergeUniqueTracks(this.catalogTrending, more);
+    this.catalogLoadingMore = false;
+    if (more.length === 0) this.showToast('Belum ada katalog tambahan.');
+  }
+
+  async selectSpotifyChart(title: string): Promise<void> {
+    this.activeSpotifyChartTitle = title;
+    if (this.spotifyChartCache[title]?.length > 0) {
+      // Instant 0ms switch from cache (zero re-loading!)
       return;
     }
     if (!this.isOnline) {
       this.showToast('Mode Offline: tidak dapat memuat Chart Spotify.');
       return;
     }
-    this.activeSpotifyChartTitle = title;
     this.loadingSpotifyChart = true;
-    this.spotifyChartTracks = [];
-    const tracks = await fetchSpotifyChartTracks(title);
-    this.spotifyChartTracks = tracks;
-    this.loadingSpotifyChart = false;
-    if (tracks.length === 0) {
-      this.showToast(`Gagal memuat ${title}. Coba segarkan koneksi.`);
+    this.spotifyChartPages[title] = 0;
+    const tracks = await fetchSpotifyChartTracks(title, 0);
+    if (tracks.length > 0) {
+      this.spotifyChartCache = { ...this.spotifyChartCache, [title]: tracks };
     }
+    this.loadingSpotifyChart = false;
+  }
+
+  async loadMoreSpotifyChart(): Promise<void> {
+    const title = this.activeSpotifyChartTitle;
+    if (this.spotifyChartLoadingMore || !this.isOnline || !title) return;
+    this.spotifyChartLoadingMore = true;
+    const nextPage = (this.spotifyChartPages[title] || 0) + 1;
+    this.spotifyChartPages[title] = nextPage;
+    const more = await fetchSpotifyChartTracks(title, nextPage);
+    const existing = this.spotifyChartCache[title] || [];
+    this.spotifyChartCache = {
+      ...this.spotifyChartCache,
+      [title]: this.mergeUniqueTracks(existing, more)
+    };
+    this.spotifyChartLoadingMore = false;
+    if (more.length === 0) this.showToast('Semua lagu chart ini sudah dimuat.');
   }
 
   async bootstrap(): Promise<void> {
@@ -411,7 +527,19 @@ class AppStore {
       console.warn('[IndexedDB Init Warning]', err);
     }
 
-    await this.refreshOnlineFeeds();
+    // Stale-while-revalidate: hydrate last cached feeds in 0ms for instant startup
+    const cachedYt = loadJSON<Track[]>('nys_cache_yt', []);
+    const cachedAudius = loadJSON<Track[]>('nys_cache_audius', []);
+    const cachedCatalog = loadJSON<Track[]>('nys_cache_catalog', []);
+    if (cachedYt.length > 0) this.ytTracks = cachedYt;
+    if (cachedAudius.length > 0) this.trendingTracks = cachedAudius;
+    if (cachedCatalog.length > 0) this.catalogTrending = cachedCatalog;
+    if (cachedYt.length > 0 || cachedAudius.length > 0 || cachedCatalog.length > 0) {
+      this.networkReachable = true;
+    }
+
+    // Fire progressive non-blocking online refresh in background
+    void this.refreshOnlineFeeds(false);
 
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});

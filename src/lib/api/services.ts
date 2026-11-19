@@ -301,8 +301,8 @@ export async function audiusFetch(path: string): Promise<Track[]> {
   return [];
 }
 
-export async function fetchTrending(limit = 32): Promise<Track[]> {
-  return audiusFetch(`/tracks/trending?limit=${limit}`);
+export async function fetchTrending(limit = 16, offset = 0): Promise<Track[]> {
+  return audiusFetch(`/tracks/trending?limit=${limit}&offset=${offset}`);
 }
 
 export async function fetchSearch(query: string, limit = 30): Promise<Track[]> {
@@ -340,19 +340,28 @@ const DEFAULT_PIPED_INSTANCES: string[] = [
   'https://pipedapi.leptons.xyz'
 ];
 
+let fastestPipedHost: string | null = null;
 let invidiousCache: { hosts: string[]; fetchedAt: number } = { hosts: [], fetchedAt: 0 };
 const ytAudioStreamCache = new Map<string, string>();
 
 function getPipedCandidates(): string[] {
   const custom = (getApiConfig().pipedInstance || '').trim().replace(/\/$/, '');
-  return custom ? [custom, ...DEFAULT_PIPED_INSTANCES.filter((h) => h !== custom)] : DEFAULT_PIPED_INSTANCES;
+  const list: string[] = [];
+  if (custom) list.push(custom);
+  if (fastestPipedHost && !list.includes(fastestPipedHost)) list.push(fastestPipedHost);
+  for (const h of DEFAULT_PIPED_INSTANCES) {
+    if (!list.includes(h)) list.push(h);
+  }
+  return list;
 }
 
-async function fetchWithTimeout(url: string, timeoutMs = 4500): Promise<Response> {
+async function fetchJsonWithTimeout<T>(url: string, timeoutMs = 3000): Promise<T> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()) as T;
   } finally {
     clearTimeout(id);
   }
@@ -363,17 +372,16 @@ async function getHealthyInvidiousInstances(): Promise<string[]> {
     return invidiousCache.hosts;
   }
   try {
-    const res = await fetchWithTimeout('https://api.invidious.io/instances.json?sort_by=health', 4000);
-    if (res.ok) {
-      const list = (await res.json()) as Array<[string, { type?: string; api?: boolean; uri?: string }]>;
-      const hosts = list
-        .filter((entry) => entry?.[1]?.type === 'https' && entry?.[1]?.api && entry?.[1]?.uri)
-        .map((entry) => String(entry[1].uri).replace(/\/$/, ''))
-        .slice(0, 5);
-      if (hosts.length > 0) {
-        invidiousCache = { hosts, fetchedAt: Date.now() };
-        return hosts;
-      }
+    const list = await fetchJsonWithTimeout<
+      Array<[string, { type?: string; api?: boolean; uri?: string }]>
+    >('https://api.invidious.io/instances.json?sort_by=health', 2800);
+    const hosts = list
+      .filter((entry) => entry?.[1]?.type === 'https' && entry?.[1]?.api && entry?.[1]?.uri)
+      .map((entry) => String(entry[1].uri).replace(/\/$/, ''))
+      .slice(0, 4);
+    if (hosts.length > 0) {
+      invidiousCache = { hosts, fetchedAt: Date.now() };
+      return hosts;
     }
   } catch {
     // Ignore directory fetch failure
@@ -391,7 +399,6 @@ function isValidMusicSong(
   isShort = false
 ): boolean {
   if (isLive || isShort) return false;
-  // Strictly enforce standard song duration (60s to 12m) — blocks livestreams (0s), Shorts (<60s), and long VODs
   if (!Number.isFinite(durationSec) || durationSec < 60 || durationSec > 720) return false;
   if (NON_MUSIC_REGEX.test(title)) return false;
   return true;
@@ -399,40 +406,52 @@ function isValidMusicSong(
 
 const REGIONAL_YTMUSIC_QUERIES: Record<string, string[]> = {
   ID: [
-    'top hits indonesia 2025 2026',
-    'lagu pop indonesia viral terbaru',
-    'indie pop indonesia terbaik',
-    'lagu indonesia populer 2000an 2020an'
+    'lagu pop indonesia hits 2025 2026',
+    'tulus bernadya mahalini lyodra',
+    'sheila on 7 dewa 19 noah',
+    'indie pop indonesia hindia feby putri',
+    'lagu galau indonesia terpopuler',
+    'pop akustik indonesia terbaru'
   ],
   US: [
-    'billboard hot 100 songs 2025 2026',
-    'top pop hits global 2026',
-    'viral english songs 2025',
-    'best modern pop rnb hits'
+    'top pop hits 2025 2026',
+    'the weeknd taylor swift bruno mars',
+    'billboard hot 100 songs',
+    'indie pop rnb hits',
+    'coldplay imagine dragons maroon 5',
+    'classic rock pop hits'
   ],
   JP: [
     'top jpop songs 2025 2026',
-    'anime opening hits japan',
+    'yoasobi kenshi yonezu ado',
     'japanese city pop classics',
-    'viral japan music 2025'
+    'anime opening theme songs',
+    'official hige dandism back number',
+    'jrock pop hits japan'
   ],
   KR: [
     'top kpop songs 2025 2026',
-    'viral kpop hits korea',
+    'bts blackpink newjeans aespa',
+    'iu seventeen stray kids',
     'kdrama ost best songs',
-    'korean pop trending'
+    'korean rnb indie hits',
+    'viral kpop chart korea'
   ],
   GB: [
     'uk top 40 songs 2025 2026',
+    'dua lipa ed sheeran adele',
+    'arctic monkeys oasis coldplay',
     'british indie pop hits',
-    'uk chart pop music',
-    'london viral hits 2025'
+    'uk chart trending songs',
+    'london pop rnb hits'
   ],
   GLOBAL: [
     'global top 50 songs 2025 2026',
     'worldwide viral pop hits',
-    'international chart hits 2026',
-    'most played songs 2025'
+    'international chart hits',
+    'best pop dance rnb songs',
+    'acoustic chill global hits',
+    'timeless global classics'
   ]
 };
 
@@ -511,153 +530,149 @@ function invidiousItemToTrack(item: InvidiousItem): Track | null {
 }
 
 /**
- * Resolves a direct high-bitrate audio stream URL for a YouTube videoId via FOSS Piped/Invidious APIs
- * (enables native Web Audio 5-Band EQ + Android Lockscreen Media Notification with zero API key).
+ * Races all candidate Piped instances in parallel (Promise.any) so the fastest healthy server wins in <1s.
+ */
+async function racePipedMusicSearch(query: string, limit = 18): Promise<Track[]> {
+  const hosts = getPipedCandidates();
+  const attempts = hosts.map(async (host) => {
+    const data = await fetchJsonWithTimeout<{ items?: PipedItem[] }>(
+      `${host}/search?q=${encodeURIComponent(query)}&filter=music_songs`,
+      3000
+    );
+    const tracks = (data.items || [])
+      .map(pipedItemToTrack)
+      .filter((t): t is Track => Boolean(t))
+      .slice(0, limit);
+    if (tracks.length === 0) throw new Error('empty');
+    fastestPipedHost = host;
+    return tracks;
+  });
+
+  try {
+    return await Promise.any(attempts);
+  } catch {
+    return [];
+  }
+}
+
+async function raceInvidiousMusicSearch(query: string, limit = 16): Promise<Track[]> {
+  const hosts = await getHealthyInvidiousInstances();
+  if (hosts.length === 0) return [];
+  const attempts = hosts.map(async (host) => {
+    const data = await fetchJsonWithTimeout<InvidiousItem[]>(
+      `${host}/api/v1/search?q=${encodeURIComponent(query + ' official audio')}&type=video`,
+      3000
+    );
+    const tracks = (data || [])
+      .map(invidiousItemToTrack)
+      .filter((t): t is Track => Boolean(t))
+      .slice(0, limit);
+    if (tracks.length === 0) throw new Error('empty');
+    return tracks;
+  });
+
+  try {
+    return await Promise.any(attempts);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Resolves a direct high-bitrate audio stream URL in parallel (Promise.any) via FOSS Piped & Invidious.
  */
 export async function resolveYoutubeAudioStream(videoId: string): Promise<string | null> {
   if (!videoId || (typeof navigator !== 'undefined' && !navigator.onLine)) return null;
   const cached = ytAudioStreamCache.get(videoId);
   if (cached) return cached;
 
-  for (const host of getPipedCandidates().slice(0, 4)) {
-    try {
-      const res = await fetchWithTimeout(`${host}/streams/${encodeURIComponent(videoId)}`, 4200);
-      if (!res.ok) continue;
-      const data = (await res.json()) as {
-        audioStreams?: Array<{ url?: string; mimeType?: string; bitrate?: number }>;
-      };
-      const streams = (data.audioStreams || []).filter((s) => Boolean(s.url));
-      if (streams.length === 0) continue;
-      // Prefer M4A/MP4 audio for universal Android WebView compatibility, highest bitrate first
-      streams.sort((a, b) => {
-        const aM4a = String(a.mimeType || '').includes('mp4') ? 1 : 0;
-        const bM4a = String(b.mimeType || '').includes('mp4') ? 1 : 0;
-        if (aM4a !== bM4a) return bM4a - aM4a;
-        return (Number(b.bitrate) || 0) - (Number(a.bitrate) || 0);
-      });
-      const bestUrl = streams[0].url;
-      if (bestUrl) {
-        ytAudioStreamCache.set(videoId, bestUrl);
-        return bestUrl;
-      }
-    } catch {
-      // Failover to next Piped instance
-    }
+  const pipedAttempts = getPipedCandidates().map(async (host) => {
+    const data = await fetchJsonWithTimeout<{
+      audioStreams?: Array<{ url?: string; mimeType?: string; bitrate?: number }>;
+    }>(`${host}/streams/${encodeURIComponent(videoId)}`, 3200);
+    const streams = (data.audioStreams || []).filter((s) => Boolean(s.url));
+    if (streams.length === 0) throw new Error('no-audio');
+    streams.sort((a, b) => {
+      const aM4a = String(a.mimeType || '').includes('mp4') ? 1 : 0;
+      const bM4a = String(b.mimeType || '').includes('mp4') ? 1 : 0;
+      if (aM4a !== bM4a) return bM4a - aM4a;
+      return (Number(b.bitrate) || 0) - (Number(a.bitrate) || 0);
+    });
+    const bestUrl = streams[0].url;
+    if (!bestUrl) throw new Error('no-url');
+    fastestPipedHost = host;
+    return bestUrl;
+  });
+
+  try {
+    const url = await Promise.any(pipedAttempts);
+    ytAudioStreamCache.set(videoId, url);
+    return url;
+  } catch {
+    // Fallback to parallel Invidious audio-only adaptive formats
   }
 
   const invHosts = await getHealthyInvidiousInstances();
-  for (const host of invHosts.slice(0, 3)) {
-    try {
-      const res = await fetchWithTimeout(`${host}/api/v1/videos/${encodeURIComponent(videoId)}`, 4200);
-      if (!res.ok) continue;
-      const data = (await res.json()) as {
+  if (invHosts.length > 0) {
+    const invAttempts = invHosts.map(async (host) => {
+      const data = await fetchJsonWithTimeout<{
         adaptiveFormats?: Array<{ url?: string; type?: string; bitrate?: string | number }>;
-      };
+      }>(`${host}/api/v1/videos/${encodeURIComponent(videoId)}`, 3200);
       const audioOnly = (data.adaptiveFormats || []).filter(
         (f) => f.url && String(f.type || '').startsWith('audio/')
       );
-      if (audioOnly.length === 0) continue;
+      if (audioOnly.length === 0) throw new Error('no-audio');
       audioOnly.sort((a, b) => (Number(b.bitrate) || 0) - (Number(a.bitrate) || 0));
       const bestUrl = audioOnly[0].url;
-      if (bestUrl) {
-        ytAudioStreamCache.set(videoId, bestUrl);
-        return bestUrl;
-      }
+      if (!bestUrl) throw new Error('no-url');
+      return bestUrl;
+    });
+    try {
+      const url = await Promise.any(invAttempts);
+      ytAudioStreamCache.set(videoId, url);
+      return url;
     } catch {
-      // Failover to next Invidious instance
+      return null;
     }
   }
   return null;
 }
 
 /**
- * Fetches regional trending YouTube Music (uses optional YouTube API key if set, otherwise FOSS Piped/Invidious zero-API-key).
+ * Fetches regional pure YouTube Music songs (parallel Piped music_songs race + Invidious fallback).
+ * Supports page/seed pagination for instant Load More and Refresh!
  */
-export async function fetchYtTrending(region = 'ID', refreshSeed = 0): Promise<Track[]> {
+export async function fetchYtTrending(region = 'ID', page = 0): Promise<Track[]> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
   const { ytApiKey } = getApiConfig();
   const regionKey = REGIONAL_YTMUSIC_QUERIES[region] ? region : 'ID';
   const safeStore = /^[A-Z]{2}$/.test(region) ? region : 'ID';
 
-  if (ytApiKey) {
+  if (ytApiKey && page === 0) {
     try {
-      const res = await fetchWithTimeout(
+      const data = await fetchJsonWithTimeout<{ items?: unknown[] }>(
         `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&videoCategoryId=10&regionCode=${safeStore}&maxResults=24&key=${ytApiKey}`,
-        5000
+        3500
       );
-      if (res.ok) {
-        const data = (await res.json()) as { items?: unknown[] };
-        const items = (data.items || [])
-          .map(ytToTrack)
-          .filter((t) => !NON_MUSIC_REGEX.test(t.title));
-        if (items.length > 0) return items;
-      }
+      const items = (data.items || [])
+        .map(ytToTrack)
+        .filter((t) => !NON_MUSIC_REGEX.test(t.title));
+      if (items.length > 0) return items;
     } catch {
-      // Fall through to FOSS YouTube Music (filter=music_songs)
+      // Fall through to FOSS parallel race
     }
   }
 
-  // Strictly query YouTube Music songs (filter=music_songs) — zero vlogs, zero livestreams, zero Shorts
   const pool = REGIONAL_YTMUSIC_QUERIES[regionKey];
-  const query = pool[Math.abs(refreshSeed) % pool.length];
+  const query = pool[Math.abs(page) % pool.length];
 
-  for (const host of getPipedCandidates().slice(0, 4)) {
-    try {
-      const res = await fetchWithTimeout(
-        `${host}/search?q=${encodeURIComponent(query)}&filter=music_songs`,
-        4200
-      );
-      if (!res.ok) continue;
-      const data = (await res.json()) as { items?: PipedItem[] };
-      const tracks = (data.items || [])
-        .map(pipedItemToTrack)
-        .filter((t): t is Track => Boolean(t))
-        .slice(0, 18);
-      if (tracks.length > 0) return tracks;
-    } catch {
-      // Failover to next Piped instance
-    }
-  }
-
-  // Strict music-only Invidious fallback (excludes livestreams, Shorts, and non-music videos)
-  const invHosts = await getHealthyInvidiousInstances();
-  for (const host of invHosts.slice(0, 3)) {
-    try {
-      const res = await fetchWithTimeout(
-        `${host}/api/v1/search?q=${encodeURIComponent(query + ' official audio')}&type=video`,
-        4200
-      );
-      if (!res.ok) continue;
-      const data = (await res.json()) as InvidiousItem[];
-      const tracks = (data || [])
-        .map(invidiousItemToTrack)
-        .filter((t): t is Track => Boolean(t))
-        .slice(0, 18);
-      if (tracks.length > 0) return tracks;
-    } catch {
-      // Failover to next Invidious instance
-    }
-  }
-  return [];
+  const piped = await racePipedMusicSearch(query, 18);
+  if (piped.length > 0) return piped;
+  return raceInvidiousMusicSearch(query, 16);
 }
 
 /**
- * Fetches native playable full-length tracks for a Spotify Chart using YouTube Music FOSS (zero broken WebView iframe).
- */
-export async function fetchSpotifyChartTracks(chartTitle: string): Promise<Track[]> {
-  const queryMap: Record<string, string> = {
-    'Top 50 Indonesia': 'top 50 indonesia spotify hits 2025 2026',
-    'Top 50 Global': 'top 50 global spotify hits 2025 2026',
-    "Today's Top Hits": 'todays top hits pop 2025 2026'
-  };
-  const q = queryMap[chartTitle] || `${chartTitle} songs`;
-  const ytSongs = await fetchYtSearch(q);
-  if (ytSongs.length > 0) return ytSongs.slice(0, 12);
-  return fetchPublicCatalogSearch(q, 12);
-}
-
-/**
- * Searches full-length YouTube Music tracks (uses optional YouTube API key if set, otherwise FOSS Piped/Invidious zero-API-key).
+ * Searches pure YouTube Music songs (parallel Piped music_songs race + Invidious fallback).
  */
 export async function fetchYtSearch(query: string): Promise<Track[]> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
@@ -667,57 +682,50 @@ export async function fetchYtSearch(query: string): Promise<Track[]> {
 
   if (ytApiKey) {
     try {
-      const res = await fetchWithTimeout(
+      const data = await fetchJsonWithTimeout<{ items?: unknown[] }>(
         `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=20&q=${encodeURIComponent(clean)}&key=${ytApiKey}`,
-        5000
+        3500
       );
-      if (res.ok) {
-        const data = (await res.json()) as { items?: unknown[] };
-        const items = (data.items || []).map(ytToTrack);
-        if (items.length > 0) return items;
-      }
+      const items = (data.items || [])
+        .map(ytToTrack)
+        .filter((t) => !NON_MUSIC_REGEX.test(t.title));
+      if (items.length > 0) return items;
     } catch {
-      // Fall through to FOSS Piped/Invidious
+      // Fall through to FOSS parallel race
     }
   }
 
-  for (const host of getPipedCandidates().slice(0, 4)) {
-    try {
-      const res = await fetchWithTimeout(
-        `${host}/search?q=${encodeURIComponent(clean)}&filter=music_songs`,
-        4200
-      );
-      if (!res.ok) continue;
-      const data = (await res.json()) as { items?: PipedItem[] };
-      const tracks = (data.items || [])
-        .map(pipedItemToTrack)
-        .filter((t): t is Track => Boolean(t))
-        .slice(0, 20);
-      if (tracks.length > 0) return tracks;
-    } catch {
-      // Failover to next Piped instance
-    }
-  }
+  const piped = await racePipedMusicSearch(clean, 20);
+  if (piped.length > 0) return piped;
+  return raceInvidiousMusicSearch(clean, 16);
+}
 
-  const invHosts = await getHealthyInvidiousInstances();
-  for (const host of invHosts.slice(0, 3)) {
-    try {
-      const res = await fetchWithTimeout(
-        `${host}/api/v1/search?q=${encodeURIComponent(clean + ' audio')}&type=video`,
-        4200
-      );
-      if (!res.ok) continue;
-      const data = (await res.json()) as InvidiousItem[];
-      const tracks = (data || [])
-        .map(invidiousItemToTrack)
-        .filter((t): t is Track => Boolean(t))
-        .slice(0, 18);
-      if (tracks.length > 0) return tracks;
-    } catch {
-      // Failover to next Invidious instance
-    }
-  }
-  return [];
+/**
+ * Fetches native playable full-length tracks for Spotify Charts (with page support for Load More).
+ */
+export async function fetchSpotifyChartTracks(chartTitle: string, page = 0): Promise<Track[]> {
+  const queryPools: Record<string, string[]> = {
+    'Top 50 Indonesia': [
+      'top 50 indonesia hits 2025 2026',
+      'viral pop indonesia mahalini bernadya tulus',
+      'lagu indonesia terpopuler 2026'
+    ],
+    'Top 50 Global': [
+      'top 50 global hits 2025 2026',
+      'the weeknd bruno mars lady gaga billie eilish',
+      'global viral pop chart 2026'
+    ],
+    "Today's Top Hits": [
+      'todays top hits pop 2025 2026',
+      'sabrina carpenter sza kendrick dua lipa',
+      'new pop music releases 2026'
+    ]
+  };
+  const pool = queryPools[chartTitle] || [`${chartTitle} songs`];
+  const q = pool[Math.abs(page) % pool.length];
+  const ytSongs = await fetchYtSearch(q);
+  if (ytSongs.length > 0) return ytSongs.slice(0, 14);
+  return fetchPublicCatalogSearch(q, 14);
 }
 
 export function extractYouTubeId(url: string): string {

@@ -1,6 +1,6 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
-  import { Block, Button, Card, Link, Navbar, Page, Popup, Range } from 'konsta/svelte';
+  import { Block, Button, Card, Link, Navbar, Page, Popup, Preloader, Range } from 'konsta/svelte';
   import { engine } from '#lib/audio/engine.svelte.ts';
   import { parseLrcLyrics } from '#lib/api/services.ts';
   import { EQ_PRESETS } from '#lib/data/presets.ts';
@@ -11,6 +11,7 @@
   let vizCanvas = $state<HTMLCanvasElement | null>(null);
   let lyricsScrollEl = $state<HTMLDivElement | null>(null);
   let imgFailed = $state<boolean>(false);
+  let showVideoFallback = $state<boolean>(false);
 
   const track = $derived(appStore.activeModalTrack);
   const parsedLyrics = $derived(track ? parseLrcLyrics(track.lyrics || '') : []);
@@ -21,8 +22,9 @@
   );
 
   $effect(() => {
-    void track?.imageUrl;
+    void track?.id;
     imgFailed = false;
+    showVideoFallback = false;
   });
 
   $effect(() => {
@@ -35,7 +37,7 @@
     }
   });
 
-  // Throttled 30fps visualizer confined to its own clean strip (zero overlap with controls, 0% CPU when paused)
+  // Throttled 30fps visualizer confined to its own clean strip (0% CPU when paused)
   $effect(() => {
     if (!appStore.trackModalOpen || !vizCanvas || !engine.playing || appStore.modalFlipped) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -92,7 +94,6 @@
 >
   {#if track}
     <Page>
-      <!-- Single comfortable iOS glass button per side: never cramped or merged -->
       <Navbar title={appStore.modalFlipped ? 'Lirik Sinkron' : 'Sedang Diputar'}>
         {#snippet left()}
           <Link iconOnly onclick={() => appStore.toggleModalFlip()} aria-label="Balik kartu lirik">
@@ -114,32 +115,23 @@
             class:is-flipped={appStore.modalFlipped}
             ondblclick={handleDoubleTap}
           >
-            <!-- FRONT FACE -->
+            <!-- FRONT FACE (PURE AUDIO PLAYER UI — NEVER AUTO-MOUNTS YOUTUBE VIDEO) -->
             <div class="xmusic-flip-face" aria-hidden={appStore.modalFlipped}>
               <Card
                 contentWrapPadding="p-5"
                 class="!m-0 rounded-3xl border border-black/10 shadow-xl dark:border-white/10"
               >
                 <div class="flex flex-col">
-                  {#if track.videoId && !track.url}
-                    {#if appStore.isOnline && appStore.networkReachable}
-                      <div class="mb-4 aspect-video w-full overflow-hidden rounded-2xl bg-black">
-                        <iframe
-                          title={track.title}
-                          class="h-full w-full border-0"
-                          src="https://www.youtube.com/embed/{track.videoId}?autoplay=1&playsinline=1&rel=0"
-                          allow="autoplay; encrypted-media; picture-in-picture"
-                          allowfullscreen
-                        ></iframe>
-                      </div>
-                    {:else}
-                      <div class="mb-4 flex flex-col items-center gap-2 rounded-2xl border border-black/10 bg-black/5 p-6 text-center dark:border-white/10 dark:bg-white/5">
-                        <Icon name="wifi-off" size={28} />
-                        <p class="text-xs text-black/60 dark:text-white/65">
-                          Video YouTube memerlukan koneksi internet.
-                        </p>
-                      </div>
-                    {/if}
+                  {#if showVideoFallback && track.videoId && appStore.isOnline}
+                    <div class="mb-4 aspect-video w-full overflow-hidden rounded-2xl bg-black">
+                      <iframe
+                        title={track.title}
+                        class="h-full w-full border-0"
+                        src="https://www.youtube.com/embed/{track.videoId}?autoplay=1&playsinline=1&rel=0"
+                        allow="autoplay; encrypted-media; picture-in-picture"
+                        allowfullscreen
+                      ></iframe>
+                    </div>
                   {:else if track.spotifyId}
                     <div class="mb-4 flex flex-col items-center gap-3 rounded-2xl border border-black/10 bg-black/5 p-5 text-center dark:border-white/10 dark:bg-white/5">
                       {#if track.imageUrl && !imgFailed}
@@ -151,7 +143,7 @@
                         />
                       {/if}
                       <p class="text-xs text-black/65 dark:text-white/65">
-                        Putar audio penuh lagu Spotify ini langsung di pemutar Xmusic tanpa halaman web.
+                        Putar audio penuh lagu Spotify ini langsung di pemutar Xmusic.
                       </p>
                       <Button
                         rounded
@@ -194,6 +186,28 @@
                     </div>
                   {/if}
 
+                  <!-- Audio stream resolving status (audio-only YouTube Music) -->
+                  {#if engine.resolvingAudio && engine.current?.id === track.id}
+                    <div class="mb-3 flex items-center justify-center gap-2 rounded-xl bg-[#007aff]/10 px-3 py-2 text-xs font-medium text-[#007aff] dark:bg-[#0a84ff]/15 dark:text-[#64d2ff]" role="status">
+                      <Preloader class="w-4 h-4" />
+                      <span>Menghubungkan stream audio YouTube Music...</span>
+                    </div>
+                  {:else if engine.audioResolveFailed && track.videoId && !showVideoFallback && engine.current?.id === track.id}
+                    <div class="mb-3 flex flex-col items-center gap-2 rounded-xl bg-[#ff9f0a]/15 px-3 py-2.5 text-center">
+                      <span class="text-xs font-medium text-black/80 dark:text-white/85">
+                        Server proxy audio sedang sibuk untuk lagu ini.
+                      </span>
+                      <div class="flex flex-wrap justify-center gap-2">
+                        <Button tonal rounded small inline onclick={() => engine.retryYoutubeAudio()}>
+                          Coba Audio Lagi
+                        </Button>
+                        <Button tonal rounded small inline onclick={() => (showVideoFallback = true)}>
+                          Mode Video Cadangan
+                        </Button>
+                      </div>
+                    </div>
+                  {/if}
+
                   <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0 flex-1">
                       <h2 class="truncate text-lg font-bold text-black dark:text-white">{track.title}</h2>
@@ -212,7 +226,7 @@
                     </button>
                   </div>
 
-                  {#if (!track.videoId || Boolean(track.url)) && !track.spotifyId}
+                  {#if !showVideoFallback && !track.spotifyId}
                     <div class="mt-4 space-y-1">
                       <Range
                         min={0}
@@ -300,7 +314,6 @@
                     </div>
                   {/if}
 
-                  <!-- Well-spaced native Konsta UI action grid -->
                   <div class="mt-5 grid grid-cols-2 gap-2">
                     <Button tonal rounded small onclick={() => appStore.toggleModalFlip()}>
                       Lirik Sinkron
@@ -346,7 +359,7 @@
                         class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
                         onclick={() => appStore.findFullVersion(track)}
                       >
-                        Cari Versi Penuh (YouTube / Audius)
+                        Cari Versi Penuh (YouTube Music)
                       </Button>
                     </div>
                   {/if}
@@ -354,9 +367,9 @@
                   {#if track.videoId}
                     <div class="mt-2">
                       <Button
+                        tonal
                         rounded
                         small
-                        class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
                         onclick={() => {
                           appStore.closeTrackModal();
                           appStore.openDownloaderWithUrl(`https://youtu.be/${track.videoId}`);

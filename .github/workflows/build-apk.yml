@@ -249,8 +249,16 @@ jobs:
           PNPM_VER=$(pnpm -v)
           JAVA_VER=$(java -version 2>&1 | head -n 1)
 
+          CHANGELOG_BODY=$(python3 -c 'import re, sys; ver = sys.argv[1]; text = open("CHANGELOG.md", encoding="utf-8").read(); m = re.search(rf"## \[{re.escape(ver)}\][^\n]*\n(.*?)(?=\n## \[|\Z)", text, re.S) or re.search(r"## \[[^\]]+\][^\n]*\n(.*?)(?=\n## \[|\Z)", text, re.S); print(m.group(1).strip() if m else "Pembaruan stabilitas, performa, dan perbaikan bug.")' "$APP_VERSION")
+
           cat <<EOF > release-notes.md
-          ### nys Xmusic ${TAG_NAME} — Deterministic Reproducible Release (${ABI_LABEL})
+          ### nys Xmusic ${TAG_NAME} — What's New
+
+          ${CHANGELOG_BODY}
+
+          ---
+
+          ### Deterministic Reproducible Build Verification (${ABI_LABEL})
 
           | Property | Verified Value |
           | :--- | :--- |
