@@ -468,11 +468,16 @@ fn collect_audio_candidates(data: &Value) -> Vec<String> {
         }
         mp4s.sort_by(|a, b| b.0.cmp(&a.0));
         webms.sort_by(|a, b| b.0.cmp(&a.0));
-        if let Some((_, best_mp4)) = mp4s.into_iter().next() {
-            out.push(best_mp4);
+        // Push up to 2 MP4 AAC and 2 WebM Opus candidates so if one edge server returns 403, the backup succeeds
+        for (_, mp4_url) in mp4s.into_iter().take(2) {
+            if !out.iter().any(|u| u == &mp4_url) {
+                out.push(mp4_url);
+            }
         }
-        if let Some((_, best_webm)) = webms.into_iter().next() {
-            out.push(best_webm);
+        for (_, webm_url) in webms.into_iter().take(2) {
+            if !out.iter().any(|u| u == &webm_url) {
+                out.push(webm_url);
+            }
         }
     }
 
@@ -503,6 +508,22 @@ fn collect_audio_candidates(data: &Value) -> Vec<String> {
 }
 
 async fn verify_stream_playable(client: &reqwest::Client, url: &str, ua: &str) -> bool {
+    if url.contains(".m3u8") || url.contains("/manifest/hls") {
+        let mut req = client
+            .get(url)
+            .header("User-Agent", ua)
+            .timeout(Duration::from_secs(3));
+        if url.contains("googlevideo.com") && ua.starts_with("Mozilla/") {
+            req = req
+                .header("Origin", "https://www.youtube.com")
+                .header("Referer", "https://www.youtube.com/");
+        }
+        return match req.send().await {
+            Ok(r) => r.status().is_success(),
+            Err(_) => false,
+        };
+    }
+
     let mut req = client
         .get(url)
         .header("User-Agent", ua)
@@ -522,11 +543,73 @@ async fn verify_stream_playable(client: &reqwest::Client, url: &str, ua: &str) -
     }
 }
 
+async fn try_innertube_client(
+    client: &reqwest::Client,
+    client_name_id: &str,
+    client_ver: &str,
+    ua: &str,
+    visitor_data: Option<&str>,
+    body: Value,
+) -> Option<YtmResolvedAudio> {
+    let mut req = client
+        .post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
+        .header("User-Agent", ua)
+        .header("X-YouTube-Client-Name", client_name_id)
+        .header("X-YouTube-Client-Version", client_ver)
+        .header("X-Goog-Api-Format-Version", "2");
+    if let Some(vd) = visitor_data {
+        if !vd.is_empty() {
+            req = req.header("X-Goog-Visitor-Id", vd);
+        }
+    }
+    let res = req.json(&body).send().await.ok()?;
+    if !res.status().is_success() {
+        return None;
+    }
+    let data = res.json::<Value>().await.ok()?;
+    for url in collect_audio_candidates(&data) {
+        if verify_stream_playable(client, &url, ua).await {
+            return Some(YtmResolvedAudio {
+                url,
+                user_agent: ua.to_string(),
+            });
+        }
+    }
+    None
+}
+
+async fn fetch_fresh_visitor_data(client: &reqwest::Client) -> Option<String> {
+    let payload = json!({
+        "context": {
+            "client": {
+                "clientName": "WEB_REMIX",
+                "clientVersion": "1.20261101.01.00",
+                "hl": "en",
+                "gl": "US"
+            }
+        }
+    });
+    let res = client
+        .post("https://music.youtube.com/youtubei/v1/guide?prettyPrint=false")
+        .header("Origin", "https://music.youtube.com")
+        .header("Referer", "https://music.youtube.com/")
+        .timeout(Duration::from_millis(1800))
+        .json(&payload)
+        .send()
+        .await
+        .ok()?;
+    let data = res.json::<Value>().await.ok()?;
+    data.pointer("/responseContext/visitorData")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
 /// Resolves and Range-verifies (HTTP 200/206) a direct HTTPS audio stream directly from the user's device IP.
 /// Client chain verified Nov 2026:
 /// 1. VISIONOS 1.02 / 1.03 (Apple RealityDevice17,1, visionOS 26.5.23O471, Safari 26.0 — no PO token, whole-song)
 /// 2. ANDROID sdkless 20.10.38 (no androidSdkVersion field — no PO token)
 /// 3. ANDROID_VR 1.65.10 (Oculus Quest 3, androidSdkVersion 32)
+/// 4. IOS 20.10.4 (iPhone16,2, iOS 18.3.2.22D82)
 #[tauri::command]
 async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>, String> {
     let vid = video_id.trim();
@@ -542,31 +625,91 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>,
     let visionos_ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
     let android_ua = "com.google.android.youtube/20.10.38 (Linux; U; Android 15) gzip";
     let android_vr_ua = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip";
+    let ios_ua = "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)";
 
-    let clients = [
-        (
-            "101",
-            "1.02",
-            visionos_ua,
-            json!({
-                "context": {
-                    "client": {
-                        "clientName": "VISIONOS",
-                        "clientVersion": "1.02",
-                        "userAgent": visionos_ua,
-                        "osName": "visionOS",
-                        "osVersion": "26.5.23O471",
-                        "deviceMake": "Apple",
-                        "deviceModel": "RealityDevice17,1",
-                        "hl": "en",
-                        "gl": "US"
-                    }
-                },
-                "videoId": vid,
-                "contentCheckOk": true,
-                "racyCheckOk": true
-            }),
-        ),
+    let body_visionos_102 = json!({
+        "context": {
+            "client": {
+                "clientName": "VISIONOS",
+                "clientVersion": "1.02",
+                "userAgent": visionos_ua,
+                "osName": "visionOS",
+                "osVersion": "26.5.23O471",
+                "deviceMake": "Apple",
+                "deviceModel": "RealityDevice17,1",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "videoId": vid,
+        "contentCheckOk": true,
+        "racyCheckOk": true
+    });
+
+    let body_android_sdkless = json!({
+        "context": {
+            "client": {
+                "clientName": "ANDROID",
+                "clientVersion": "20.10.38",
+                "userAgent": android_ua,
+                "osName": "Android",
+                "osVersion": "15",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "videoId": vid,
+        "contentCheckOk": true,
+        "racyCheckOk": true
+    });
+
+    let body_android_vr = json!({
+        "context": {
+            "client": {
+                "clientName": "ANDROID_VR",
+                "clientVersion": "1.65.10",
+                "userAgent": android_vr_ua,
+                "deviceMake": "Oculus",
+                "deviceModel": "Quest 3",
+                "osName": "Android",
+                "osVersion": "12L",
+                "androidSdkVersion": 32,
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "videoId": vid,
+        "contentCheckOk": true,
+        "racyCheckOk": true
+    });
+
+    // Wave 1: Parallel fast probe across the 3 primary no-PO-token clients simultaneously (~400-800ms total)
+    let h1 = tauri::async_runtime::spawn({
+        let c = client.clone();
+        async move { try_innertube_client(&c, "101", "1.02", visionos_ua, None, body_visionos_102).await }
+    });
+    let h2 = tauri::async_runtime::spawn({
+        let c = client.clone();
+        async move { try_innertube_client(&c, "3", "20.10.38", android_ua, None, body_android_sdkless).await }
+    });
+    let h3 = tauri::async_runtime::spawn({
+        let c = client.clone();
+        async move { try_innertube_client(&c, "28", "1.65.10", android_vr_ua, None, body_android_vr).await }
+    });
+
+    let r1 = h1.await.ok().flatten();
+    let r2 = h2.await.ok().flatten();
+    let r3 = h3.await.ok().flatten();
+
+    if let Some(found) = r1.or(r2).or(r3) {
+        return Ok(Some(found));
+    }
+
+    // Wave 2: Fetch fresh visitorData and try VISIONOS 1.03, ANDROID_VR with visitorData, and IOS 20.10.4
+    let visitor_data = fetch_fresh_visitor_data(&client).await;
+    let vd_ref = visitor_data.as_deref();
+
+    let fallback_clients = [
         (
             "101",
             "1.03",
@@ -581,27 +724,7 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>,
                         "osVersion": "26.5.23O471",
                         "deviceMake": "Apple",
                         "deviceModel": "RealityDevice17,1",
-                        "hl": "en",
-                        "gl": "US"
-                    }
-                },
-                "videoId": vid,
-                "contentCheckOk": true,
-                "racyCheckOk": true
-            }),
-        ),
-        (
-            "3",
-            "20.10.38",
-            android_ua,
-            json!({
-                "context": {
-                    "client": {
-                        "clientName": "ANDROID",
-                        "clientVersion": "20.10.38",
-                        "userAgent": android_ua,
-                        "osName": "Android",
-                        "osVersion": "15",
+                        "visitorData": vd_ref.unwrap_or(""),
                         "hl": "en",
                         "gl": "US"
                     }
@@ -626,6 +749,31 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>,
                         "osName": "Android",
                         "osVersion": "12L",
                         "androidSdkVersion": 32,
+                        "visitorData": vd_ref.unwrap_or(""),
+                        "hl": "en",
+                        "gl": "US"
+                    }
+                },
+                "videoId": vid,
+                "contentCheckOk": true,
+                "racyCheckOk": true
+            }),
+        ),
+        (
+            "5",
+            "20.10.4",
+            ios_ua,
+            json!({
+                "context": {
+                    "client": {
+                        "clientName": "IOS",
+                        "clientVersion": "20.10.4",
+                        "userAgent": ios_ua,
+                        "deviceMake": "Apple",
+                        "deviceModel": "iPhone16,2",
+                        "osName": "iPhone",
+                        "osVersion": "18.3.2.22D82",
+                        "visitorData": vd_ref.unwrap_or(""),
                         "hl": "en",
                         "gl": "US"
                     }
@@ -637,29 +785,9 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>,
         ),
     ];
 
-    for (client_name_id, client_ver, ua, body) in clients {
-        let attempt = client
-            .post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
-            .header("User-Agent", ua)
-            .header("X-YouTube-Client-Name", client_name_id)
-            .header("X-YouTube-Client-Version", client_ver)
-            .json(&body)
-            .send()
-            .await;
-
-        if let Ok(res) = attempt {
-            if res.status().is_success() {
-                if let Ok(data) = res.json::<Value>().await {
-                    for url in collect_audio_candidates(&data) {
-                        if verify_stream_playable(&client, &url, ua).await {
-                            return Ok(Some(YtmResolvedAudio {
-                                url,
-                                user_agent: ua.to_string(),
-                            }));
-                        }
-                    }
-                }
-            }
+    for (cid, cver, ua, body) in fallback_clients {
+        if let Some(found) = try_innertube_client(&client, cid, cver, ua, vd_ref, body).await {
+            return Ok(Some(found));
         }
     }
 

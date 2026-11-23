@@ -110,7 +110,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '6.19.0',
+    version: '6.21.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
@@ -1033,6 +1033,13 @@ class AppStore {
       engine.playTrack(suggestion.track, this.allTracks);
     }
     this.updateSearch(suggestion.query, true);
+    if (suggestion.kind === 'public' && this.isOnline) {
+      void fetchYtSearch(suggestion.query).then((ytTracks) => {
+        if (ytTracks.length > 0) {
+          engine.prewarmTracks(ytTracks, 2);
+        }
+      });
+    }
   }
 
   updateSearch(query: string, immediate = false): void {
@@ -1116,7 +1123,10 @@ class AppStore {
       const ytTask = fetchYtSearch(cleanQuery).then((res) => {
         ytList = res;
         publish();
-        if (res.length > 0) this.searching = false;
+        if (res.length > 0) {
+          this.searching = false;
+          engine.prewarmTracks(res, 2);
+        }
       });
 
       const audiusTask = fetchSearch(cleanQuery, 18).then((res) => {

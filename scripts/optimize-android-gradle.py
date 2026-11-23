@@ -845,10 +845,10 @@ class MainActivity : TauriActivity() {
     }
 
     private fun keepWebViewAudioAliveIfPlaying() {
-        if (!XmusicMediaService.isPlayingNow) return
+        if (!XmusicMediaService.isPlayingNow && !XmusicMediaService.isNativePlaying) return
         val wv = webViewRef?.get() ?: return
         val keepAlive = Runnable {
-            if (!XmusicMediaService.isPlayingNow) return@Runnable
+            if (!XmusicMediaService.isPlayingNow && !XmusicMediaService.isNativePlaying) return@Runnable
             try {
                 wv.dispatchWindowVisibilityChanged(View.VISIBLE)
                 wv.onResume()
@@ -858,6 +858,7 @@ class MainActivity : TauriActivity() {
         }
         wv.post(keepAlive)
         wv.postDelayed(keepAlive, 250L)
+        wv.postDelayed(keepAlive, 900L)
     }
 
     override fun onDestroy() {

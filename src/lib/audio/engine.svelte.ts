@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.18.0).
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.21.0).
  *
  * Signal Chain (Zero-Clipping Lossless-Clear DSP):
  *   MediaElementAudioSourceNode
@@ -13,7 +13,7 @@
  *     -> AnalyserNode (pull-based FFT visualizer)
  *     -> AudioContext.destination (latencyHint: 'playback')
  *
- * Stability Guarantees (v6.18.0):
+ * Stability Guarantees (v6.21.0):
  *   - Monotonic playSessionId eliminates async race conditions and phantom restarts after pause.
  *   - Transition guard suppresses spurious pause/play flicker during track switches.
  *   - Idempotent resume() + automatic self-healing recovery prevents stuck Play buttons on all sources.
@@ -1087,20 +1087,26 @@ class AudioEngine {
       this.playResolvedStream(stream, this.current, sessionId, livePos);
     });
 
-    // On Android, give the fast Range-verified Rust InnerTube resolver a 1200ms head-start so we launch
-    // directly into XmusicMediaService's native MediaPlayer without ever mounting YouTube IFrame!
+    // On Android, await the verified direct stream (Rust InnerTube + Piped/Invidious fallback) up to 4800ms
+    // so playback launches straight into XmusicMediaService's native Media3 ExoPlayer (100% immune to
+    // backgrounding, app switching, and screen off) without prematurely falling into WebView IFrame!
     if (this.canUseNativeAndroidPlayer()) {
       const winner = await Promise.race([
         directPromise,
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2200))
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 4800))
       ]);
       if (
-        winner?.url ||
         sessionId !== this.playSessionId ||
         this.userPaused ||
         this.current?.id !== trackId ||
         this.usingNativeAndroid
       ) {
+        return;
+      }
+      if (winner?.url) {
+        this.clearYtWatchdog();
+        this.current = { ...track, url: winner.url };
+        this.playResolvedStream(winner, this.current, sessionId, resumeAt);
         return;
       }
       this.usingYtBridge = true;
@@ -1639,6 +1645,39 @@ class AudioEngine {
       }
       this.clearBgResumeTimers();
       const sessionId = this.playSessionId;
+
+      // Proactive background handoff on Android: if a searched YouTube Music track was playing in
+      // WebView (ytBridge or directAudioEl), immediately hand it off to XmusicMediaService's native
+      // Media3 ExoPlayer when the user switches apps or turns off the screen!
+      if (this.canUseNativeAndroidPlayer() && this.current) {
+        const snap = this.current;
+        const resumePos = this.usingYtBridge
+          ? Math.max(this.position, this.ytBridge.getCurrentTime())
+          : Math.max(this.position, this.activeEl?.currentTime || 0);
+        if (snap.videoId) {
+          const cached = ytPreloader.getCachedStream(snap.videoId);
+          if (cached?.url) {
+            this.current = { ...snap, url: cached.url };
+            this.playNativeAndroidUrl(cached, this.current, sessionId, resumePos);
+            return;
+          }
+          void ytPreloader.resolveNow(snap.videoId, true).then((stream) => {
+            if (
+              stream?.url &&
+              sessionId === this.playSessionId &&
+              !this.userPaused &&
+              !this.usingNativeAndroid &&
+              this.current?.id === snap.id
+            ) {
+              this.current = { ...snap, url: stream.url };
+              this.playNativeAndroidUrl(stream, this.current, sessionId, Math.max(resumePos, this.position));
+            }
+          });
+        } else if (snap.url && !snap.url.startsWith('blob:') && !snap.url.startsWith('data:')) {
+          this.playNativeAndroidUrl({ url: snap.url }, snap, sessionId, resumePos);
+          return;
+        }
+      }
       // Keep audio playing seamlessly across Android WebView visibility transitions / screen off
       for (const delayMs of [200, 650, 1400]) {
         const timer = setTimeout(() => {
@@ -1730,10 +1769,21 @@ class AudioEngine {
         if (vid) {
           ytPreloader.invalidate(vid);
           const sessionId = ++this.playSessionId;
-          this.usingYtBridge = true;
+          const cleanTrack: Track = { ...this.current, url: undefined };
+          this.current = cleanTrack;
           this.resolvingAudio = true;
-          this.current = { ...this.current, url: undefined };
-          void this.startYoutubeAudioBridge(this.current, sessionId, resumePos);
+          void ytPreloader.resolveNow(vid, true).then((freshStream) => {
+            if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== cleanTrack.id) {
+              return;
+            }
+            if (freshStream?.url && this.canUseNativeAndroidPlayer()) {
+              this.current = { ...cleanTrack, url: freshStream.url };
+              this.playNativeAndroidUrl(freshStream, this.current, sessionId, resumePos);
+            } else {
+              this.usingYtBridge = true;
+              void this.startYoutubeAudioBridge(cleanTrack, sessionId, resumePos);
+            }
+          });
         } else {
           this.playing = false;
         }

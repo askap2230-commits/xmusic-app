@@ -84,6 +84,7 @@
             subtitle={sug.subtitle}
             titleWrapClass="min-w-0 flex-1"
             class="cursor-pointer overflow-hidden"
+            onpointerdown={() => sug.track && engine.prewarmTrack(sug.track)}
             onclick={() => appStore.applySuggestion(sug)}
           >
             {#snippet media()}
