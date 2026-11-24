@@ -13,7 +13,6 @@
   let lyricsScrollEl = $state<HTMLDivElement | null>(null);
   let imgFailed = $state<boolean>(false);
   let showVideoFallback = $state<boolean>(false);
-  let artTransitionKey = $state<number>(0);
   let manualScrollUntil = 0;
 
   function pauseAutoScroll(): void {
@@ -33,7 +32,6 @@
     void active?.id;
     imgFailed = false;
     showVideoFallback = false;
-    artTransitionKey += 1;
     if (appStore.trackModalOpen && appStore.modalFlipped && active && !active.lyrics) {
       void appStore.autoFetchLyricsForTrack(active);
     }
@@ -141,7 +139,7 @@
               >
                 <div class="relative flex min-h-[540px] flex-col justify-between overflow-hidden bg-zinc-950 text-white">
                   <!-- Full-Card Cover Artwork Layer (fills 100% of card with smooth crossfade/scale transition) -->
-                  {#key artTransitionKey}
+                  {#key track.id}
                     <div
                       class="xmusic-art-transition pointer-events-none absolute inset-0"
                       style={track.imageUrl && !imgFailed

@@ -110,7 +110,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '6.24.0',
+    version: '6.25.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'

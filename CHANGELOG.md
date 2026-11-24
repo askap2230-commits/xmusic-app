@@ -2,6 +2,11 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.25.0] - 2026-11-24
+
+### Fixed (Eliminate Svelte 5 `effect_update_depth_exceeded` "Internal Error" on Launch)
+- **Fix Loop Reaktivitas `$effect` pada Sampul Pemutar (`src/lib/components/modals/TrackModal.svelte`)**: Menghapus mutasi `artTransitionKey += 1` di dalam `$effect` (yang sebelumnya memicu error runtime Svelte 5 `effect_update_depth_exceeded` / layar putih *"Internal Error"* saat komponen dimuat) dan menggantinya langsung dengan `{#key track.id}` yang murni deklaratif tanpa efek samping state.
+
 ## [6.24.0] - 2026-11-24
 
 ### Improved (Full-Bleed Cover Artwork Overlay & Smooth Crossfade Transitions Across All Tracks)
