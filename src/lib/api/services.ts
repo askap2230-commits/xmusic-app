@@ -843,10 +843,14 @@ export async function fetchYtSearch(query: string): Promise<Track[]> {
     }
   }
 
-  const nativeSongs = await nativeYtmSearch(clean, 'ID');
+  const pipedPromise = racePipedMusicSearch(clean, 20);
+  const nativeSongs = await Promise.race([
+    nativeYtmSearch(clean, 'ID'),
+    new Promise<Track[]>((resolve) => setTimeout(() => resolve([]), 2200))
+  ]);
   if (nativeSongs.length > 0) return nativeSongs;
 
-  const piped = await racePipedMusicSearch(clean, 20);
+  const piped = await pipedPromise;
   if (piped.length > 0) return piped;
   return raceInvidiousMusicSearch(clean, 16);
 }

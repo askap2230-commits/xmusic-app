@@ -2,6 +2,13 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.29.0] - 2026-11-24
+
+### Fixed (Zero-Spinner Instant Playback & Uninterrupted Foreground-to-Background Handoff)
+- **Eliminasi Total Spinner Loading pada Tombol Putar (`src/lib/audio/engine.svelte.ts`)**: Menghapus penguncian `this.buffering = true` pada jalur awal pemutaran YouTube Music, `startYoutubeAudioBridge()`, dan `playNativeAndroidUrl()` sehingga tombol kontrol pemutar langsung aktif dan responsif tanpa ikon loading berputar.
+- **Transisi Handoff Mulus Tanpa Putus (`engine.svelte.ts`)**: Ketika `YT.Player` sudah lebih dulu memutar lagu di layar depan (`foreground`), pemutar tidak lagi diputus paksa di tengah lagu saat resolver `ExoPlayer` selesai — melainkan menyimpan stream di `ytPreloader` dan menyerahkannya secara mulus ke `ExoPlayer` native `XmusicMediaService` tepat saat pengguna berpindah aplikasi atau mematikan layar HP.
+- **Pencarian YouTube Music Paralel Cepat (`src/lib/api/services.ts`)**: Menjalankan `racePipedMusicSearch()` secara paralel dengan `nativeYtmSearch()` (batas tunggu 2.2 detik) agar pencarian lagu dan auto-upgrade lagu penuh selesai dalam `<1 detik`.
+
 ## [6.28.0] - 2026-11-24
 
 ### Fixed (100% Universal Track Playback Reliability — Multi-Candidate Stream Failover & Smart Audio Fallback)

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.28.0).
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.29.0).
  *
  * Signal Chain (Zero-Clipping Lossless-Clear DSP):
  *   MediaElementAudioSourceNode
@@ -13,7 +13,7 @@
  *     -> AnalyserNode (pull-based FFT visualizer)
  *     -> AudioContext.destination (latencyHint: 'playback')
  *
- * Stability Guarantees (v6.28.0):
+ * Stability Guarantees (v6.29.0):
  *   - Monotonic playSessionId eliminates async race conditions and phantom restarts after pause.
  *   - Transition guard suppresses spurious pause/play flicker during track switches.
  *   - Idempotent resume() + automatic self-healing recovery prevents stuck Play buttons on all sources.
@@ -167,7 +167,7 @@ class AudioEngine {
       this.corsBypassMode = true;
       this.resolvingAudio = false;
       this.audioResolveFailed = false;
-      this.buffering = true;
+      this.buffering = false;
     } finally {
       this.isTransitioning = false;
     }
@@ -982,12 +982,11 @@ class AudioEngine {
         return;
       }
 
-      // Path B: Start immediately without blocking banner (`resolvingAudio = false`);
-      // race parallel Rust InnerTube/Piped ExoPlayer + YouTube IFrame Bridge simultaneously at 0ms!
+      // Path B: Start immediately with zero spinner lock; race Rust InnerTube/Piped + YT Bridge at 0ms!
       this.usingDirectAudio = false;
       this.usingYtBridge = true;
       this.resolvingAudio = false;
-      this.buffering = true;
+      this.buffering = false;
       this.syncNativeAndroidNotification();
       void this.startYoutubeSmartPlayback(track, sessionId, 0);
       return;
@@ -1162,7 +1161,9 @@ class AudioEngine {
       }
     }, 2500);
 
-    // 3. Upgrade to native Android Media3 ExoPlayer (or directAudioEl on web) the instant direct stream resolves
+    // 3. If audio hasn't started yet, launch native Android ExoPlayer immediately;
+    // if YT Bridge is already playing smoothly in foreground, keep it uninterrupted and let
+    // setupBackgroundPlaybackGuard hand off the cached stream to ExoPlayer on app-switch/screen-off!
     void directPromise.then((stream) => {
       if (
         !stream?.url ||
@@ -1174,11 +1175,14 @@ class AudioEngine {
       ) {
         return;
       }
+      this.clearYtWatchdog();
+      this.resolvingAudio = false;
+      if (this.playing && this.usingYtBridge && typeof document !== 'undefined' && !document.hidden) {
+        return;
+      }
       const livePos = this.usingYtBridge
         ? Math.max(resumeAt, this.ytBridge.getCurrentTime(), this.position)
         : resumeAt;
-      this.clearYtWatchdog();
-      this.resolvingAudio = false;
       this.current = { ...track, url: stream.url };
       this.playResolvedStream(stream, this.current, sessionId, livePos);
     });
@@ -1213,7 +1217,7 @@ class AudioEngine {
     }
     if (ok) {
       this.resolvingAudio = false;
-      if (!this.playing) this.buffering = true;
+      this.buffering = false;
     } else {
       this.usingYtBridge = false;
       await this.resolveAndPlayYoutubeAudio(track, sessionId, resumeAt);
