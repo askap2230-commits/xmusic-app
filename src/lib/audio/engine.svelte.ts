@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.25.0).
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.26.0).
  *
  * Signal Chain (Zero-Clipping Lossless-Clear DSP):
  *   MediaElementAudioSourceNode
@@ -13,7 +13,7 @@
  *     -> AnalyserNode (pull-based FFT visualizer)
  *     -> AudioContext.destination (latencyHint: 'playback')
  *
- * Stability Guarantees (v6.25.0):
+ * Stability Guarantees (v6.26.0):
  *   - Monotonic playSessionId eliminates async race conditions and phantom restarts after pause.
  *   - Transition guard suppresses spurious pause/play flicker during track switches.
  *   - Idempotent resume() + automatic self-healing recovery prevents stuck Play buttons on all sources.
@@ -1031,10 +1031,11 @@ class AudioEngine {
         }
       });
     } else if (track.isPreview) {
-      // Automatic Full-Length Upgrade: 30-second catalog previews (iTunes/Deezer) are automatically
-      // upgraded to the full-length YouTube Music / Audius song so playback never cuts off at 0:30!
-      this.resolvingAudio = true;
-      this.syncNativeAndroidNotification();
+      // Instant 0ms playback using preview URL first, while seamlessly upgrading to full-length track in background!
+      this.resolvingAudio = false;
+      if (track.url) {
+        this.playResolvedStream({ url: track.url }, track, sessionId, 0);
+      }
       void this.upgradePreviewToFullTrack(track, sessionId);
     } else {
       // All full-length remote HTTP/HTTPS streams (Audius, Internet Archive, Direct URLs):
@@ -1071,22 +1072,8 @@ class AudioEngine {
         ytHits.find((t) => t.videoId && t.title.toLowerCase().includes(normTitle)) ||
         ytHits.find((t) => Boolean(t.videoId));
 
-      if (fullYt?.videoId) {
-        const upgraded: Track = {
-          ...previewTrack,
-          videoId: fullYt.videoId,
-          dur: fullYt.dur || previewTrack.dur,
-          isPreview: false,
-          source: 'youtube'
-        };
-        this.current = upgraded;
-        this.duration = upgraded.dur || 0;
-        this.updateMediaSessionMeta();
-        await this.startYoutubeSmartPlayback(upgraded, sessionId, 0);
-        return;
-      }
-
       if (fullAudius?.url) {
+        const resumeAt = Math.max(0, this.position || 0);
         const upgraded: Track = {
           ...previewTrack,
           url: fullAudius.url,
@@ -1098,8 +1085,35 @@ class AudioEngine {
         this.duration = upgraded.dur || 0;
         this.resolvingAudio = false;
         this.updateMediaSessionMeta();
-        this.playResolvedStream({ url: fullAudius.url }, upgraded, sessionId, 0);
+        this.playResolvedStream({ url: fullAudius.url }, upgraded, sessionId, resumeAt);
         return;
+      }
+
+      if (fullYt?.videoId) {
+        const resolved = await Promise.race([
+          ytPreloader.resolveNow(fullYt.videoId, true),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000))
+        ]);
+        if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== previewTrack.id) {
+          return;
+        }
+        if (resolved?.url) {
+          const resumeAt = Math.max(0, this.position || 0);
+          const upgraded: Track = {
+            ...previewTrack,
+            videoId: fullYt.videoId,
+            url: resolved.url,
+            dur: fullYt.dur || previewTrack.dur,
+            isPreview: false,
+            source: 'youtube'
+          };
+          this.current = upgraded;
+          this.duration = upgraded.dur || 0;
+          this.resolvingAudio = false;
+          this.updateMediaSessionMeta();
+          this.playResolvedStream(resolved, upgraded, sessionId, resumeAt);
+          return;
+        }
       }
     } catch {
       // Fallback to 30s preview stream below only if no full version exists anywhere
@@ -1130,8 +1144,8 @@ class AudioEngine {
       new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))
     ]);
 
-    // Hard failsafe watchdog: if neither direct stream nor YouTube IFrame starts within 5.5s,
-    // automatically try matching full-length Audius/Archive audio before showing Retry / Video Mode!
+    // Hard failsafe watchdog: if neither direct stream nor YouTube IFrame starts within 3.2s,
+    // automatically try matching full-length Audius/Archive audio and ALWAYS clear `resolvingAudio`!
     this.clearYtWatchdog();
     this.ytWatchdogTimer = setTimeout(() => {
       this.ytWatchdogTimer = null;
@@ -1140,11 +1154,11 @@ class AudioEngine {
       }
       if (!this.playing && !this.usingNativeAndroid && !this.usingDirectAudio) {
         void this.tryAlternativeFullAudioFallback(track, sessionId, resumeAt);
-      } else if (!this.playing) {
+      } else {
         this.resolvingAudio = false;
-        this.buffering = false;
+        if (this.playing) this.buffering = false;
       }
-    }, 5500);
+    }, 3200);
 
     // ALWAYS upgrade to native Android Media3 ExoPlayer (or directAudioEl on web) the instant a verified stream resolves
     void directPromise.then((stream) => {
@@ -1172,7 +1186,7 @@ class AudioEngine {
     if (this.canUseNativeAndroidPlayer()) {
       const fastWinner = await Promise.race([
         directPromise,
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500))
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 900))
       ]);
       if (
         sessionId !== this.playSessionId ||
@@ -1184,6 +1198,7 @@ class AudioEngine {
       }
       if (fastWinner?.url) {
         this.clearYtWatchdog();
+        this.resolvingAudio = false;
         this.current = { ...track, url: fastWinner.url };
         this.playResolvedStream(fastWinner, this.current, sessionId, resumeAt);
         return;
@@ -1217,7 +1232,10 @@ class AudioEngine {
     ) {
       return;
     }
-    if (!ok) {
+    if (ok) {
+      this.resolvingAudio = false;
+      if (!this.playing) this.buffering = true;
+    } else {
       this.usingYtBridge = false;
       await this.resolveAndPlayYoutubeAudio(track, sessionId, resumeAt);
     }

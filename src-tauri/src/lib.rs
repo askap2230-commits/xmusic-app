@@ -576,6 +576,14 @@ async fn try_innertube_client(
             });
         }
     }
+    // If playabilityStatus was OK and YouTube returned a direct HTTPS stream URL, return the top candidate
+    // even if HEAD/Range bytes=0-1 probe was filtered by mobile ISP/CDN edge (ExoPlayer handles full GET directly)
+    if let Some(first_url) = candidates.into_iter().next() {
+        return Some(YtmResolvedAudio {
+            url: first_url,
+            user_agent: ua.to_string(),
+        });
+    }
     None
 }
 

@@ -2,6 +2,12 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.26.0] - 2026-11-24
+
+### Fixed (Instant Search Playback & Zero Stuck "Menghubungkan stream audio YouTube Music..." Banner)
+- **Eliminasi Total Banner Macet `resolvingAudio` (`src/lib/audio/engine.svelte.ts`)**: `startYoutubeAudioBridge()` kini langsung mematikan status `resolvingAudio` begitu pemutar jembatan siap, mempercepat batas tunggu head-start ke `900ms`, menurunkan watchdog fallback otomatis ke `3.2 detik`, serta memutar lagu pratinjau `0ms` secara instan sambil melakukan upgrade mulus di latar belakang ke versi lagu penuh Audius/YouTube Music tanpa menghentikan UI.
+- **Fallback Kandidat Stream Langsung di Rust (`src-tauri/src/lib.rs`)**: `ytm_resolve_audio` kini tetap mengembalikan kandidat URL audio HTTPS teratas apabila `playabilityStatus` bernilai `OK` meskipun probe `Range: bytes=0-1` diblokir oleh ISP seluler, sehingga `ExoPlayer` native Android dapat langsung memutar stream tanpa tertahan.
+
 ## [6.25.0] - 2026-11-24
 
 ### Fixed (Eliminate Svelte 5 `effect_update_depth_exceeded` "Internal Error" on Launch)
