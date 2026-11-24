@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.21.0).
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.22.0).
  *
  * Signal Chain (Zero-Clipping Lossless-Clear DSP):
  *   MediaElementAudioSourceNode
@@ -13,13 +13,14 @@
  *     -> AnalyserNode (pull-based FFT visualizer)
  *     -> AudioContext.destination (latencyHint: 'playback')
  *
- * Stability Guarantees (v6.21.0):
+ * Stability Guarantees (v6.22.0):
  *   - Monotonic playSessionId eliminates async race conditions and phantom restarts after pause.
  *   - Transition guard suppresses spurious pause/play flicker during track switches.
  *   - Idempotent resume() + automatic self-healing recovery prevents stuck Play buttons on all sources.
  *   - Deduplicated native Android notification sync (WebView owns AudioFocus, zero ping-pong loop).
  */
 import { YtAudioBridge } from './ytPlayerBridge.ts';
+import { fetchArchiveAudioSearch, fetchSearch } from '#lib/api/services.ts';
 import { ytPreloader } from './ytPreloader.ts';
 import { EQ_BANDS, EQ_PRESETS } from '#lib/data/presets.ts';
 import { loadJSON, saveJSON } from '#lib/db/storage.ts';
@@ -184,6 +185,14 @@ class AudioEngine {
         effVol
       );
       this.startPositionSync();
+      setTimeout(() => {
+        if (sessionId === this.playSessionId && this.usingNativeAndroid && this.buffering) {
+          const st = this.syncFromNativeAndroidState();
+          if (st?.playing) {
+            this.buffering = false;
+          }
+        }
+      }, 3500);
     } catch {
       this.usingNativeAndroid = false;
       this.playDirectUrl(stream.url, track, sessionId, resumeAt);
@@ -466,6 +475,7 @@ class AudioEngine {
       },
       onError: () => {
         if (!this.usingYtBridge || !this.current?.videoId || this.isTransitioning) return;
+        if (this.usingNativeAndroid || this.usingDirectAudio) return;
         // Fallback to direct InnerTube/Piped stream resolver if uploader blocked IFrame playback
         this.usingYtBridge = false;
         this.buffering = false;
@@ -1042,32 +1052,29 @@ class AudioEngine {
     const trackId = track.id;
 
     // Kick off direct stream resolution immediately (reuses any in-flight pointerdown prefetch!)
-    const directPromise = ytPreloader.resolveNow(videoId, true);
+    // Cap total wait at 5000ms so a hung network call can NEVER trap the UI spinner forever.
+    const directPromise = Promise.race([
+      ytPreloader.resolveNow(videoId, true),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))
+    ]);
 
-    // Watchdog: surface retry if neither native stream nor IFrame started within 5.5s
+    // Hard failsafe watchdog: if neither direct stream nor YouTube IFrame starts within 5.5s,
+    // automatically try matching full-length Audius/Archive audio before showing Retry / Video Mode!
     this.clearYtWatchdog();
     this.ytWatchdogTimer = setTimeout(() => {
       this.ytWatchdogTimer = null;
-      if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== trackId || this.playing) {
+      if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== trackId) {
         return;
       }
-      if (this.resolvingAudio) {
-        void directPromise.then((stream) => {
-          if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== trackId || this.playing) {
-            return;
-          }
-          if (stream?.url) {
-            this.current = { ...track, url: stream.url };
-            this.playResolvedStream(stream, this.current, sessionId, resumeAt);
-          } else {
-            this.resolvingAudio = false;
-            this.audioResolveFailed = true;
-          }
-        });
+      if (!this.playing && !this.usingNativeAndroid && !this.usingDirectAudio) {
+        void this.tryAlternativeFullAudioFallback(track, sessionId, resumeAt);
+      } else if (!this.playing) {
+        this.resolvingAudio = false;
+        this.buffering = false;
       }
     }, 5500);
 
-    // ALWAYS upgrade to native Android MediaPlayer (or directAudioEl on web) whenever a verified stream resolves
+    // ALWAYS upgrade to native Android Media3 ExoPlayer (or directAudioEl on web) the instant a verified stream resolves
     void directPromise.then((stream) => {
       if (
         !stream?.url ||
@@ -1087,13 +1094,13 @@ class AudioEngine {
       this.playResolvedStream(stream, this.current, sessionId, livePos);
     });
 
-    // On Android, await the verified direct stream (Rust InnerTube + Piped/Invidious fallback) up to 4800ms
-    // so playback launches straight into XmusicMediaService's native Media3 ExoPlayer (100% immune to
-    // backgrounding, app switching, and screen off) without prematurely falling into WebView IFrame!
+    // Give the fast parallel Rust InnerTube resolver a 1500ms head-start on Android so fast hits launch
+    // straight into XmusicMediaService's native ExoPlayer; if slower, start YouTube IFrame Bridge in parallel
+    // so audio starts immediately while ExoPlayer upgrades seamlessly in background!
     if (this.canUseNativeAndroidPlayer()) {
-      const winner = await Promise.race([
+      const fastWinner = await Promise.race([
         directPromise,
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 4800))
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500))
       ]);
       if (
         sessionId !== this.playSessionId ||
@@ -1103,10 +1110,10 @@ class AudioEngine {
       ) {
         return;
       }
-      if (winner?.url) {
+      if (fastWinner?.url) {
         this.clearYtWatchdog();
-        this.current = { ...track, url: winner.url };
-        this.playResolvedStream(winner, this.current, sessionId, resumeAt);
+        this.current = { ...track, url: fastWinner.url };
+        this.playResolvedStream(fastWinner, this.current, sessionId, resumeAt);
         return;
       }
       this.usingYtBridge = true;
@@ -1133,13 +1140,14 @@ class AudioEngine {
       this.userPaused ||
       this.current?.id !== track.id ||
       this.playing ||
-      this.usingDirectAudio
+      this.usingDirectAudio ||
+      this.usingNativeAndroid
     ) {
       return;
     }
     if (!ok) {
       this.usingYtBridge = false;
-      void this.resolveAndPlayYoutubeAudio(track, sessionId, resumeAt);
+      await this.resolveAndPlayYoutubeAudio(track, sessionId, resumeAt);
     }
   }
 
@@ -1183,19 +1191,71 @@ class AudioEngine {
     if (!track.videoId) return;
     this.resolvingAudio = true;
     this.audioResolveFailed = false;
-    const stream = await ytPreloader.resolveNow(track.videoId, true);
+    const stream = await Promise.race([
+      ytPreloader.resolveNow(track.videoId, true),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))
+    ]);
     if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== track.id) return;
     this.clearYtWatchdog();
     this.resolvingAudio = false;
 
     if (!stream?.url) {
-      this.audioResolveFailed = true;
-      this.toast('Stream audio sedang sibuk. Ketuk Coba Lagi atau Mode Video.');
+      await this.tryAlternativeFullAudioFallback(track, sessionId, resumeAt);
       return;
     }
 
     this.current = { ...track, url: stream.url };
     this.playResolvedStream(stream, this.current, sessionId, resumeAt);
+  }
+
+  private async tryAlternativeFullAudioFallback(
+    track: Track,
+    sessionId: number,
+    resumeAt = 0
+  ): Promise<void> {
+    if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== track.id) return;
+    if (this.playing || this.usingNativeAndroid || this.usingDirectAudio) return;
+
+    try {
+      const cleanTitle = (track.title || '').replace(/\(.*?\)|\[.*?\]/g, '').trim();
+      const cleanArtist = (track.artist || '').replace(/YouTube Music/gi, '').trim();
+      const query = `${cleanTitle} ${cleanArtist}`.trim();
+      if (query) {
+        const [audiusHits, archiveHits] = await Promise.all([
+          fetchSearch(query, 6).catch(() => [] as Track[]),
+          fetchArchiveAudioSearch(query, 3).catch(() => [] as Track[])
+        ]);
+        if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== track.id) return;
+        if (this.playing || this.usingNativeAndroid || this.usingDirectAudio) return;
+
+        const normTitle = cleanTitle.toLowerCase();
+        const bestMatch =
+          [...audiusHits, ...archiveHits].find(
+            (c) => c.url && !c.isPreview && c.title.toLowerCase().includes(normTitle)
+          ) ||
+          [...audiusHits, ...archiveHits].find((c) => Boolean(c.url && !c.isPreview));
+
+        if (bestMatch?.url) {
+          this.usingYtBridge = false;
+          this.ytBridge.stop();
+          this.resolvingAudio = false;
+          this.audioResolveFailed = false;
+          this.current = { ...track, url: bestMatch.url };
+          this.playResolvedStream({ url: bestMatch.url }, this.current, sessionId, resumeAt);
+          this.toast('Memutar via sumber audio penuh alternatif.');
+          return;
+        }
+      }
+    } catch {
+      // Fall through to clean error banner
+    }
+
+    if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== track.id) return;
+    this.usingYtBridge = false;
+    this.resolvingAudio = false;
+    this.buffering = false;
+    this.audioResolveFailed = true;
+    this.toast('Stream audio sedang sibuk. Ketuk Coba Lagi atau Mode Video.');
   }
 
   /**

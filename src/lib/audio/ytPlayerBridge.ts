@@ -185,7 +185,8 @@ export class YtAudioBridge {
           modestbranding: 1,
           playsinline: 1,
           rel: 0,
-          enablejsapi: 1
+          enablejsapi: 1,
+          widget_referrer: 'https://www.youtube.com/'
         };
         if (startSeconds > 1) {
           playerVars.start = Math.floor(startSeconds);
@@ -203,6 +204,11 @@ export class YtAudioBridge {
               clearTimeout(timer);
               this.ready = true;
               this.player = event.target;
+              const iframeEl = document.querySelector<HTMLIFrameElement>('#xmusic-yt-audio-host iframe');
+              if (iframeEl) {
+                iframeEl.setAttribute('allow', 'autoplay; encrypted-media');
+                iframeEl.referrerPolicy = 'strict-origin-when-cross-origin';
+              }
               resolve(event.target);
             },
             onStateChange: (event) => {

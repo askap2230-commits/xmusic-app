@@ -2,6 +2,13 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.22.0] - 2026-11-24
+
+### Fixed (Eliminate Infinite "Menghubungkan stream audio YouTube Music..." Spinner on Android)
+- **Resolusi Stream InnerTube Paralel 2-Gelombang + Piped Native di Rust (`src-tauri/src/lib.rs`)**: `ytm_resolve_audio` kini menjalankan Gelombang 1 (`VISIONOS 1.02`, `ANDROID` sdkless `20.10.38`, `ANDROID_VR 1.65.10`) dan Gelombang 2 (`VISIONOS 1.03` + `visitorData`, `IOS 20.10.4`, serta Piped native fallback) secara paralel dengan timeout ketat 2–3 detik agar resolusi tidak pernah menggantung.
+- **Perbaikan Host `YT.Player` Offscreen & Referrer Policy di Android WebView (`src/routes/+page.svelte`, `src/lib/audio/ytPlayerBridge.ts`)**: Memindahkan `#xmusic-yt-audio-host` dari `-left-[9999px]` ke dalam viewport (`left-0 bottom-0 opacity-[0.001]`) dan menambahkan `widget_referrer` + `strict-origin-when-cross-origin` agar Chromium Android System WebView tidak membekukan dekoder iframe YouTube di latar belakang.
+- **Hard Failsafe Watchdog + Auto-Fallback Audio Penuh Audius/Archive (`src/lib/audio/engine.svelte.ts`)**: Menambahkan batas waktu keras 5.0–5.5 detik agar indikator *"Menghubungkan stream audio YouTube Music..."* tidak pernah berputar tanpa henti, otomatis mencari dan memutar stream audio penuh yang cocok dari Audius/Archive via `ExoPlayer` native jika stream YouTube diblokir, atau menampilkan tombol **Coba Audio Lagi** dan **Mode Video Cadangan**.
+
 ## [6.21.0] - 2026-11-23
 
 ### Upgraded & Hardened (Single-Source Version Bump to v6.21.0 + Clean Deterministic Packaging)
