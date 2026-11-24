@@ -1,0 +1,44 @@
+{
+  "name": "xmusic",
+  "version": "6.31.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "author": "Azka Putra",
+  "packageManager": "pnpm@10.12.1",
+  "description": "nys Xmusic \u2014 Offline & Streaming Music Player with Konsta UI iOS Theme, Strict TypeScript, Audiophile Web Audio DSP, and Native Android Media Notification",
+  "engines": {
+    "node": ">=22.17.0",
+    "pnpm": ">=10.0.0"
+  },
+  "imports": {
+    "#lib/*": "./src/lib/*"
+  },
+  "scripts": {
+    "dev": "vite dev",
+    "build": "node scripts/build-frontend.mjs",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "tauri": "tauri",
+    "sync:icons": "python3 scripts/sync-android-icons.py",
+    "optimize:android": "python3 scripts/optimize-android-gradle.py",
+    "license:apply": "python3 scripts/license-manager.py apply",
+    "license:check": "python3 scripts/license-manager.py check"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.3",
+    "konsta": "^5.5.0"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^4.0.1",
+    "@sveltejs/kit": "^3.2.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tailwindcss/vite": "^4.1.0",
+    "@tauri-apps/cli": "^2.12.2",
+    "svelte": "^5.57.3",
+    "svelte-check": "^4.1.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^6.0.0",
+    "vite": "^8.0.12"
+  }
+}

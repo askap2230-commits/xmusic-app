@@ -1,0 +1,246 @@
+/* Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later */
+@import "tailwindcss";
+@import "konsta/svelte/theme.css";
+
+/*
+ * Pure Konsta UI v5.5 iOS Theme Configuration
+ * - Class-based dark mode managed natively by Konsta v5 (@custom-variant dark).
+ * - Brand accent token configured per official Konsta UI v5 Tailwind CSS v4 guide.
+ */
+@theme {
+  --color-brand-primary: #007aff;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  height: 100%;
+  overscroll-behavior-y: contain;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeSpeed;
+}
+
+/* Remove harsh blue focus rectangle on touch devices; keep WCAG keyboard focus on desktop */
+:focus {
+  outline: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button:focus-visible,
+  a:focus-visible,
+  [role="button"]:focus-visible {
+    outline: 2px solid #007aff;
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  html.dark button:focus-visible,
+  html.dark a:focus-visible,
+  html.dark [role="button"]:focus-visible {
+    outline-color: #64d2ff;
+  }
+}
+
+.skip-link {
+  position: fixed;
+  top: -64px;
+  left: 12px;
+  z-index: 9999;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #000000;
+  color: #ffffff;
+  font-weight: 700;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+
+html.dark .skip-link {
+  background: #ffffff;
+  color: #000000;
+}
+
+.skip-link:focus {
+  top: 12px;
+}
+
+/* Dedicated GPU compositing layer for silky 60/120fps fixed bottom Tabbar & PlayerBar */
+.xmusic-gpu-layer {
+  transform: translateZ(0);
+  will-change: transform;
+  contain: layout style;
+}
+
+/* Smooth horizontal iOS chip/pill rails with hidden scrollbars */
+.xmusic-hscroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.xmusic-hscroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Smooth vertical touch-scroll container (Android WebView 3D-flip safe) */
+.xmusic-vscroll {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
+
+/* Scroll virtualization & paint containment for 60/120fps Android WebView grids */
+.xmusic-grid {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
+}
+
+/* 3D Flip Card Utility (Android WebView compositing-safe) */
+.xmusic-flip-scene {
+  perspective: 1100px;
+  contain: layout style;
+}
+
+.xmusic-flip-inner {
+  position: relative;
+  width: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.xmusic-flip-inner.is-flipped {
+  transform: rotateY(180deg);
+}
+
+.xmusic-flip-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: rotateY(0deg);
+}
+
+.xmusic-flip-inner.is-flipped > .xmusic-flip-face:not(.xmusic-flip-back) {
+  pointer-events: none;
+}
+
+.xmusic-flip-back {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  overflow: hidden;
+  transform: rotateY(180deg);
+  pointer-events: none;
+}
+
+.xmusic-flip-inner.is-flipped > .xmusic-flip-back {
+  pointer-events: auto;
+}
+
+/* Vertical 5-Band EQ Sliders */
+.xmusic-eq-slider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  height: 124px;
+  width: 32px;
+  accent-color: #007aff;
+  cursor: pointer;
+}
+
+html.dark .xmusic-eq-slider {
+  accent-color: #0a84ff;
+}
+
+/* Ultra-fast 60/120fps GPU-only directional page transition (transform + opacity only) */
+@keyframes xmusic-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translate3d(16px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes xmusic-slide-in-left {
+  from {
+    opacity: 0;
+    transform: translate3d(-16px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.xmusic-tab-pane {
+  contain: layout style;
+}
+
+.xmusic-tab-pane.xmusic-tab-active-right {
+  animation: xmusic-slide-in-right 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.xmusic-tab-pane.xmusic-tab-active-left {
+  animation: xmusic-slide-in-left 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+
+/* GPU-only smooth cover artwork crossfade & scale transition across all tracks */
+@keyframes xmusic-art-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.xmusic-art-transition {
+  animation: xmusic-art-fade-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, opacity;
+}
+
+
+/* Lightweight GPU-only Liquid Glass (iOS 26) & Dynamic Cover Glow */
+.xmusic-liquid-glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(18px) saturate(165%);
+  -webkit-backdrop-filter: blur(18px) saturate(165%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 10px 30px rgba(0, 0, 0, 0.12);
+}
+
+.dark .xmusic-liquid-glass {
+  background: rgba(24, 24, 28, 0.72);
+  backdrop-filter: blur(18px) saturate(175%);
+  -webkit-backdrop-filter: blur(18px) saturate(175%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 12px 34px rgba(0, 0, 0, 0.45);
+}
+
+.xmusic-glass-pill {
+  background: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+/* WCAG 2.3.3 Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

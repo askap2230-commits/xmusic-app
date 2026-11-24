@@ -1,0 +1,323 @@
+# Copyright 2026 Azka Putra
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Build Reproducible Android APK (Manual)
+
+# Manual-only trigger: never auto-builds on push or pull_request.
+# Trigger via GitHub Web UI (Actions -> Run workflow) or GitHub CLI:
+#   gh workflow run build-apk.yml -f target_arch=aarch64 -f publish_release=true
+on:
+  workflow_dispatch:
+    inputs:
+      target_arch:
+        description: "Target CPU ABI (aarch64 = arm64-v8a smallest APK, universal = all ABIs)"
+        required: true
+        default: "aarch64"
+        type: choice
+        options:
+          - aarch64
+          - universal
+      publish_release:
+        description: "Publish signed APK, SHA-256, SHA-512 & verification table to GitHub Releases"
+        required: false
+        default: true
+        type: boolean
+      release_tag:
+        description: "Optional custom GitHub Release tag (leave blank to use v<package.json version>)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_OPTS: "-Xmx4096m"
+  GRADLE_OPTS: "-Dorg.gradle.daemon=true -Dorg.gradle.parallel=true -Dorg.gradle.caching=true -Dorg.gradle.configureondemand=true -Xmx4096m"
+  CARGO_INCREMENTAL: "0"
+  CARGO_NET_RETRY: "10"
+  RUST_BACKTRACE: "1"
+  TZ: "UTC"
+  LC_ALL: "C.UTF-8"
+
+jobs:
+  build-android-apk:
+    name: Build Deterministic APK (${{ inputs.target_arch }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Resolve Version, ABI Label & Reproducible Build Timestamp
+        id: meta
+        run: |
+          set -euo pipefail
+          APP_VERSION=$(node -p "require('./package.json').version")
+          if [ "${{ inputs.target_arch }}" = "universal" ]; then
+            ABI_LABEL="universal"
+          else
+            ABI_LABEL="arm64-v8a"
+          fi
+          EPOCH=$(git log -1 --format=%ct 2>/dev/null || echo "1763510400")
+          APK_NAME="Xmusic-v${APP_VERSION}-android-${ABI_LABEL}-release.apk"
+          TAG_NAME="${{ inputs.release_tag }}"
+          if [ -z "$TAG_NAME" ]; then
+            TAG_NAME="v${APP_VERSION}"
+          fi
+
+          echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "abi_label=${ABI_LABEL}" >> "$GITHUB_OUTPUT"
+          echo "apk_name=${APK_NAME}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "SOURCE_DATE_EPOCH=${EPOCH}" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=--remap-path-prefix=${PWD}=. --remap-path-prefix=${HOME}=/home/builder" >> "$GITHUB_ENV"
+
+          echo "Resolved Version: ${APP_VERSION} | ABI: ${ABI_LABEL} | APK: ${APK_NAME} | SOURCE_DATE_EPOCH: ${EPOCH}"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js 24 LTS
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Get pnpm Store Directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "store_path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm Global Store
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.store_path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Verify AGPL-3.0 License Headers (Google addlicense)
+        run: |
+          set -euo pipefail
+          go install github.com/google/addlicense@latest
+          "$(go env GOPATH)/bin/addlicense" -check -f .license-header.txt \
+            -ignore "node_modules/**" \
+            -ignore "dist/**" \
+            -ignore ".svelte-kit/**" \
+            -ignore "src-tauri/target/**" \
+            -ignore "src-tauri/gen/**" \
+            src-tauri/src src/lib scripts vite.config.ts static/sw.js
+          python3 scripts/license-manager.py check
+
+      - name: Setup Java 21 LTS (Temurin)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup Gradle Enhanced Caching
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-cleanup: on-success
+
+      - name: Configure Pre-Installed Android SDK & NDK
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+
+          SDKMANAGER=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n 1)
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+
+          EXISTING_NDK=$(ls -d "$ANDROID_HOME"/ndk/28.* "$ANDROID_HOME"/ndk/27.* "$ANDROID_HOME"/ndk/26.* 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -z "$EXISTING_NDK" ]; then
+            echo "Installing Android NDK 27.2.12479018..."
+            "$SDKMANAGER" "ndk;27.2.12479018"
+            EXISTING_NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          else
+            echo "Reusing pre-installed NDK: $EXISTING_NDK"
+          fi
+
+          "$SDKMANAGER" "platform-tools" || true
+
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$EXISTING_NDK" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$EXISTING_NDK" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Setup Rust Stable Toolchain (MSRV >= 1.90)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ inputs.target_arch == 'universal' && 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android' || 'aarch64-linux-android' }}
+
+      - name: Cache Rust & Cargo Artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+          cache-on-failure: true
+          shared-key: "tauri-v2-12-android-${{ inputs.target_arch }}"
+
+      - name: Install Dependencies & Build Frontend (pnpm)
+        run: |
+          pnpm install
+          pnpm check
+          pnpm build
+
+      - name: Initialize Android Project, Sync Icons & Enforce Reproducible Gradle
+        run: |
+          pnpm exec tauri android init
+          pnpm exec tauri icon app-icon.png
+          python3 scripts/sync-android-icons.py
+          python3 scripts/optimize-android-gradle.py
+
+      - name: Build Reproducible Production APK
+        run: |
+          if [ "${{ inputs.target_arch }}" = "universal" ]; then
+            pnpm exec tauri android build --apk
+          else
+            pnpm exec tauri android build --apk --target aarch64
+          fi
+
+      - name: Zipalign, Sign (v1+v2+v3), Compute SHA-256/SHA-512 & Generate Release Notes
+        id: verify
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          APK_NAME: ${{ steps.meta.outputs.apk_name }}
+          APP_VERSION: ${{ steps.meta.outputs.app_version }}
+          ABI_LABEL: ${{ steps.meta.outputs.abi_label }}
+          TAG_NAME: ${{ steps.meta.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          RAW_APK=$(find src-tauri/gen/android -name "*.apk" -path "*release*" | head -n 1)
+          if [ -z "$RAW_APK" ]; then
+            echo "ERROR: Release APK not found!"
+            exit 1
+          fi
+
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          echo "Using Android Build-Tools: $BT"
+
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > release-ks.jks
+            PASS="${KS_PASS:-xmusic123}"
+          elif [ -f "src-tauri/keystore/xmusic-release.jks" ]; then
+            cp src-tauri/keystore/xmusic-release.jks release-ks.jks
+            PASS="xmusic123"
+          else
+            PASS="xmusic123"
+            keytool -genkeypair -v -keystore release-ks.jks -alias xmusic -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$PASS" -keypass "$PASS" -dname "CN=nys Xmusic, O=Azka Putra, C=ID"
+          fi
+
+          "$BT/zipalign" -f -p 4 "$RAW_APK" aligned.apk
+          "$BT/apksigner" sign \
+            --ks release-ks.jks \
+            --ks-key-alias xmusic \
+            --ks-pass pass:"$PASS" \
+            --key-pass pass:"$PASS" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out "$APK_NAME" \
+            aligned.apk
+
+          VERIFY_OUT=$("$BT/apksigner" verify -v --print-certs "$APK_NAME")
+          echo "$VERIFY_OUT"
+
+          CERT_SHA256=$(echo "$VERIFY_OUT" | grep -m1 "certificate SHA-256 digest:" | awk '{print $NF}' || echo "unavailable")
+          sha256sum "$APK_NAME" > "${APK_NAME}.sha256"
+          sha512sum "$APK_NAME" > "${APK_NAME}.sha512"
+
+          SHA256_HASH=$(cut -d' ' -f1 "${APK_NAME}.sha256")
+          SHA512_HASH=$(cut -d' ' -f1 "${APK_NAME}.sha512")
+          APK_BYTES=$(stat -c%s "$APK_NAME")
+          APK_HUMAN=$(du -h "$APK_NAME" | cut -f1)
+          RUSTC_VER=$(rustc --version)
+          NODE_VER=$(node -v)
+          PNPM_VER=$(pnpm -v)
+          JAVA_VER=$(java -version 2>&1 | head -n 1)
+
+          CHANGELOG_BODY=$(python3 -c 'import re, sys; ver = sys.argv[1]; text = open("CHANGELOG.md", encoding="utf-8").read(); m = re.search(rf"## \[{re.escape(ver)}\][^\n]*\n(.*?)(?=\n## \[|\Z)", text, re.S) or re.search(r"## \[[^\]]+\][^\n]*\n(.*?)(?=\n## \[|\Z)", text, re.S); print(m.group(1).strip() if m else "Pembaruan stabilitas, performa, dan perbaikan bug.")' "$APP_VERSION")
+
+          cat <<EOF > release-notes.md
+          ### nys Xmusic ${TAG_NAME} — What's New
+
+          ${CHANGELOG_BODY}
+
+          ---
+
+          ### Deterministic Reproducible Build Verification (${ABI_LABEL})
+
+          | Property | Verified Value |
+          | :--- | :--- |
+          | **APK Filename** | \`${APK_NAME}\` |
+          | **Version** | \`v${APP_VERSION}\` (single-source \`package.json\`) |
+          | **Target ABI** | \`${ABI_LABEL}\` |
+          | **Exact File Size** | **${APK_HUMAN}** (\`${APK_BYTES}\` bytes) |
+          | **SHA-256** | \`${SHA256_HASH}\` |
+          | **SHA-512** | \`${SHA512_HASH}\` |
+          | **Signing Cert SHA-256** | \`${CERT_SHA256}\` |
+          | **APK Signature Schemes** | v1 (JAR) + v2 + v3 verified |
+          | **Git Commit SHA** | \`${GITHUB_SHA}\` |
+          | **SOURCE_DATE_EPOCH** | \`${SOURCE_DATE_EPOCH}\` (TZ=UTC, LC_ALL=C.UTF-8) |
+          | **Toolchain** | \`${RUSTC_VER}\` · Node \`${NODE_VER}\` · pnpm \`${PNPM_VER}\` · \`${JAVA_VER}\` |
+          | **License** | \`AGPL-3.0-or-later\` (Copyright 2026 Azka Putra) |
+
+          #### Reproducibility & Integrity Verification
+          \`\`\`bash
+          # 1. Verify SHA-256 & SHA-512 checksums
+          sha256sum -c ${APK_NAME}.sha256
+          sha512sum -c ${APK_NAME}.sha512
+
+          # 2. Verify APK signature certificate fingerprint
+          apksigner verify -v --print-certs ${APK_NAME}
+          \`\`\`
+          EOF
+
+          cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Direct APK Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.meta.outputs.apk_name }}
+          path: ${{ steps.meta.outputs.apk_name }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload SHA-256 Checksum Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.meta.outputs.apk_name }}.sha256
+          path: ${{ steps.meta.outputs.apk_name }}.sha256
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload SHA-512 Checksum Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.meta.outputs.apk_name }}.sha512
+          path: ${{ steps.meta.outputs.apk_name }}.sha512
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release with Checksums & Reproducible Attestation
+        if: ${{ inputs.publish_release }}
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.meta.outputs.tag_name }}
+          name: "nys Xmusic ${{ steps.meta.outputs.tag_name }} (${{ steps.meta.outputs.abi_label }})"
+          body_path: release-notes.md
+          files: |
+            ${{ steps.meta.outputs.apk_name }}
+            ${{ steps.meta.outputs.apk_name }}.sha256
+            ${{ steps.meta.outputs.apk_name }}.sha512

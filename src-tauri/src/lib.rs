@@ -1,0 +1,775 @@
+// Copyright 2026 Azka Putra
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+use serde::Serialize;
+use serde_json::{Value, json};
+use std::time::Duration;
+
+/// Metadata describing the active Tauri runtime environment.
+#[derive(Debug, Clone, Serialize)]
+pub struct RuntimeInfo {
+    pub app_name: &'static str,
+    pub version: String,
+    pub engine: &'static str,
+    pub platform: &'static str,
+    pub arch: &'static str,
+}
+
+/// Pure YouTube Music song metadata extracted directly via InnerTube (zero proxy, zero API key).
+#[derive(Debug, Clone, Serialize)]
+pub struct YtmSong {
+    pub video_id: String,
+    pub title: String,
+    pub artist: String,
+    pub duration: u32,
+    pub thumbnail: String,
+}
+
+/// Verified direct YouTube Music audio stream URL paired with the exact User-Agent required to avoid HTTP 403.
+#[derive(Debug, Clone, Serialize)]
+pub struct YtmResolvedAudio {
+    pub url: String,
+    pub user_agent: String,
+}
+
+/// Returns single-source application version (resolved from package.json via tauri.conf.json)
+/// and target environment metadata to the frontend.
+#[tauri::command]
+fn get_runtime_info(app: tauri::AppHandle) -> RuntimeInfo {
+    RuntimeInfo {
+        app_name: "nys Xmusic",
+        version: app.package_info().version.to_string(),
+        engine: "Tauri v2.12 + Rust Native HTTP/InnerTube + Konsta UI iOS",
+        platform: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
+    }
+}
+
+fn is_allowed_music_host(url: &str) -> bool {
+    if !url.starts_with("https://") {
+        return false;
+    }
+    let rest = &url["https://".len()..];
+    let host = rest.split('/').next().unwrap_or("").to_ascii_lowercase();
+    let host_no_port = host.split(':').next().unwrap_or("");
+    let allowed_suffixes = [
+        "audius.co",
+        "itunes.apple.com",
+        "api.deezer.com",
+        "archive.org",
+        "lrclib.net",
+        "piped.yt",
+        "kavin.rocks",
+        "adminforge.de",
+        "privacy.com.de",
+        "leptons.xyz",
+        "invidious.io",
+        "googleapis.com",
+        "open.spotify.com",
+        "youtube.com",
+    ];
+    allowed_suffixes
+        .iter()
+        .any(|s| host_no_port == *s || host_no_port.ends_with(&format!(".{s}")))
+        || host_no_port.contains("audius")
+        || host_no_port.contains("piped")
+        || host_no_port.contains("invidious")
+}
+
+/// Zero-CORS native HTTPS JSON fetcher for public music APIs (Audius, Deezer, iTunes, Archive.org, LRCLIB).
+/// Eliminates Android WebView CORS/origin failures and enforces a strict 5-second timeout.
+#[tauri::command]
+async fn http_get_json(url: String) -> Result<Value, String> {
+    let clean = url.trim();
+    if !is_allowed_music_host(clean) {
+        return Err(String::from("Blocked non-allowlisted URL"));
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .user_agent("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let res = client
+        .get(clean)
+        .header("Accept", "application/json, text/plain, */*")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        return Err(format!("HTTP {}", res.status()));
+    }
+    res.json::<Value>().await.map_err(|e| e.to_string())
+}
+
+fn parse_duration_text(text: &str) -> Option<u32> {
+    let parts: Vec<&str> = text.trim().split(':').collect();
+    match parts.len() {
+        2 => {
+            let m: u32 = parts[0].parse().ok()?;
+            let s: u32 = parts[1].parse().ok()?;
+            Some(m * 60 + s)
+        }
+        3 => {
+            let h: u32 = parts[0].parse().ok()?;
+            let m: u32 = parts[1].parse().ok()?;
+            let s: u32 = parts[2].parse().ok()?;
+            Some(h * 3600 + m * 60 + s)
+        }
+        _ => None,
+    }
+}
+
+fn collect_ytm_songs(node: &Value, out: &mut Vec<YtmSong>) {
+    if out.len() >= 22 {
+        return;
+    }
+    match node {
+        Value::Object(map) => {
+            if let Some(item) = map.get("musicResponsiveListItemRenderer") {
+                if let Some(song) = extract_song_from_renderer(item) {
+                    if !out.iter().any(|s| s.video_id == song.video_id) {
+                        out.push(song);
+                    }
+                }
+                return;
+            }
+            for v in map.values() {
+                collect_ytm_songs(v, out);
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr {
+                collect_ytm_songs(v, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_video_renderers(node: &Value, out: &mut Vec<YtmSong>) {
+    if out.len() >= 20 {
+        return;
+    }
+    match node {
+        Value::Object(map) => {
+            if let Some(item) = map.get("videoRenderer") {
+                if let Some(song) = extract_song_from_video_renderer(item) {
+                    if !out.iter().any(|s| s.video_id == song.video_id) {
+                        out.push(song);
+                    }
+                }
+                return;
+            }
+            for v in map.values() {
+                collect_video_renderers(v, out);
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr {
+                collect_video_renderers(v, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn extract_song_from_video_renderer(item: &Value) -> Option<YtmSong> {
+    let video_id = item.get("videoId").and_then(Value::as_str)?.to_string();
+    if video_id.len() != 11 {
+        return None;
+    }
+    let title = item
+        .pointer("/title/runs/0/text")
+        .and_then(Value::as_str)
+        .or_else(|| item.pointer("/title/simpleText").and_then(Value::as_str))?
+        .trim()
+        .to_string();
+    if title.is_empty() {
+        return None;
+    }
+    let length_txt = item
+        .pointer("/lengthText/simpleText")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let duration = parse_duration_text(length_txt).unwrap_or(0);
+    // Reject livestreams (0s), Shorts (<60s), or ultra-long mixes (>12m)
+    if duration < 60 || duration > 720 {
+        return None;
+    }
+    let artist = item
+        .pointer("/ownerText/runs/0/text")
+        .and_then(Value::as_str)
+        .or_else(|| item.pointer("/longBylineText/runs/0/text").and_then(Value::as_str))
+        .unwrap_or("YouTube Music")
+        .trim()
+        .trim_end_matches(" - Topic")
+        .to_string();
+    let thumbnail = format!("https://img.youtube.com/vi/{video_id}/hqdefault.jpg");
+    Some(YtmSong {
+        video_id,
+        title,
+        artist,
+        duration,
+        thumbnail,
+    })
+}
+
+fn extract_song_from_renderer(item: &Value) -> Option<YtmSong> {
+    let video_id = item
+        .pointer("/playlistItemData/videoId")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            item.pointer("/overlay/musicItemThumbnailOverlayRenderer/content/musicPlayButtonRenderer/playNavigationEndpoint/watchEndpoint/videoId")
+                .and_then(Value::as_str)
+        })?
+        .to_string();
+
+    if video_id.len() != 11 {
+        return None;
+    }
+
+    let flex_cols = item.get("flexColumns")?.as_array()?;
+    let title = flex_cols
+        .first()?
+        .pointer("/musicResponsiveListItemFlexColumnRenderer/text/runs/0/text")
+        .and_then(Value::as_str)?
+        .trim()
+        .to_string();
+
+    if title.is_empty() {
+        return None;
+    }
+
+    let mut artist = String::from("YouTube Music");
+    let mut duration: u32 = 0;
+
+    if let Some(runs) = flex_cols
+        .get(1)
+        .and_then(|c| c.pointer("/musicResponsiveListItemFlexColumnRenderer/text/runs"))
+        .and_then(Value::as_array)
+    {
+        for run in runs {
+            if let Some(txt) = run.get("text").and_then(Value::as_str) {
+                let clean = txt.trim();
+                if clean.is_empty() || clean == "•" || clean == "·" || clean == "&" || clean == "," {
+                    continue;
+                }
+                if let Some(sec) = parse_duration_text(clean) {
+                    duration = sec;
+                } else if artist == "YouTube Music" && !clean.eq_ignore_ascii_case("song") && !clean.eq_ignore_ascii_case("lagu") {
+                    artist = clean.to_string();
+                }
+            }
+        }
+    }
+
+    // Reject livestreams (0s), Shorts (<60s), or ultra-long mixes (>12m)
+    if duration > 0 && (duration < 60 || duration > 720) {
+        return None;
+    }
+
+    let raw_thumb = item
+        .pointer("/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails")
+        .and_then(Value::as_array)
+        .and_then(|arr| arr.last())
+        .and_then(|t| t.get("url"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+
+    let thumbnail = if raw_thumb.is_empty() {
+        format!("https://img.youtube.com/vi/{video_id}/hqdefault.jpg")
+    } else if raw_thumb.contains("=w") {
+        raw_thumb
+            .split("=w")
+            .next()
+            .map(|prefix| format!("{prefix}=w544-h544-l90-rj"))
+            .unwrap_or_else(|| raw_thumb.to_string())
+    } else {
+        raw_thumb.to_string()
+    };
+
+    Some(YtmSong {
+        video_id,
+        title,
+        artist,
+        duration,
+        thumbnail,
+    })
+}
+
+fn url_encode_query(input: &str) -> String {
+    let mut out = String::with_capacity(input.len() * 2);
+    for b in input.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            b' ' => out.push('+'),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// 3-Layer direct on-device YouTube Music search (zero API key, zero proxy):
+/// 1. InnerTube WEB_REMIX Songs-only (`music.youtube.com`)
+/// 2. InnerTube WEB (`www.youtube.com`) with strict 60s-720s song filter
+/// 3. Direct HTML `ytInitialData` extraction (immune to InnerTube clientVersion changes)
+#[tauri::command]
+async fn ytm_search(query: String, region: String) -> Result<Vec<YtmSong>, String> {
+    let clean_query = query.trim();
+    if clean_query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let gl = if region.len() == 2 && region.chars().all(|c| c.is_ascii_alphabetic()) {
+        region.to_ascii_uppercase()
+    } else {
+        String::from("ID")
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // Layer 1: YouTube Music WEB_REMIX (Songs-only filter)
+    let ytm_payload = json!({
+        "context": {
+            "client": {
+                "clientName": "WEB_REMIX",
+                "clientVersion": "1.20261101.01.00",
+                "hl": "id",
+                "gl": gl
+            }
+        },
+        "query": clean_query,
+        "params": "EgWKAQIIAWoKEAMQBBAJEAoQBQ=="
+    });
+
+    if let Ok(res) = client
+        .post("https://music.youtube.com/youtubei/v1/search?prettyPrint=false")
+        .header("Origin", "https://music.youtube.com")
+        .header("Referer", "https://music.youtube.com/")
+        .header("X-YouTube-Client-Name", "67")
+        .header("X-YouTube-Client-Version", "1.20261101.01.00")
+        .json(&ytm_payload)
+        .send()
+        .await
+    {
+        if res.status().is_success() {
+            if let Ok(data) = res.json::<Value>().await {
+                let mut songs = Vec::new();
+                collect_ytm_songs(&data, &mut songs);
+                if !songs.is_empty() {
+                    return Ok(songs);
+                }
+            }
+        }
+    }
+
+    // Layer 2: Standard YouTube WEB InnerTube search ("<query> official audio")
+    let web_payload = json!({
+        "context": {
+            "client": {
+                "clientName": "WEB",
+                "clientVersion": "2.20261101.01.00",
+                "hl": "id",
+                "gl": gl
+            }
+        },
+        "query": format!("{clean_query} official audio")
+    });
+
+    if let Ok(res) = client
+        .post("https://www.youtube.com/youtubei/v1/search?prettyPrint=false")
+        .header("Origin", "https://www.youtube.com")
+        .header("Referer", "https://www.youtube.com/")
+        .json(&web_payload)
+        .send()
+        .await
+    {
+        if res.status().is_success() {
+            if let Ok(data) = res.json::<Value>().await {
+                let mut songs = Vec::new();
+                collect_video_renderers(&data, &mut songs);
+                if !songs.is_empty() {
+                    return Ok(songs);
+                }
+            }
+        }
+    }
+
+    // Layer 3: Direct HTML ytInitialData extraction (immune to clientVersion changes)
+    let encoded = url_encode_query(&format!("{clean_query} official audio"));
+    let html_url = format!("https://www.youtube.com/results?search_query={encoded}");
+    if let Ok(res) = client
+        .get(&html_url)
+        .header("Accept-Language", "id-ID,id;q=0.9,en;q=0.8")
+        .send()
+        .await
+    {
+        if res.status().is_success() {
+            if let Ok(html) = res.text().await {
+                let marker = "var ytInitialData = ";
+                if let Some(start) = html.find(marker) {
+                    let after = &html[start + marker.len()..];
+                    if let Some(end) = after.find(";</script>") {
+                        if let Ok(data) = serde_json::from_str::<Value>(&after[..end]) {
+                            let mut songs = Vec::new();
+                            collect_video_renderers(&data, &mut songs);
+                            if !songs.is_empty() {
+                                return Ok(songs);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(Vec::new())
+}
+
+fn collect_audio_candidates(data: &Value) -> Vec<String> {
+    let status = data
+        .pointer("/playabilityStatus/status")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if status != "OK" {
+        return Vec::new();
+    }
+
+    let mut out: Vec<String> = Vec::new();
+
+    if let Some(adaptive) = data
+        .pointer("/streamingData/adaptiveFormats")
+        .and_then(Value::as_array)
+    {
+        let mut mp4s: Vec<(u64, String)> = Vec::new();
+        let mut webms: Vec<(u64, String)> = Vec::new();
+        for fmt in adaptive {
+            let mime = fmt.get("mimeType").and_then(Value::as_str).unwrap_or("");
+            if !mime.starts_with("audio/") {
+                continue;
+            }
+            if let Some(url) = fmt.get("url").and_then(Value::as_str) {
+                if url.starts_with("https://") {
+                    let bitrate = fmt.get("bitrate").and_then(Value::as_u64).unwrap_or(0);
+                    if mime.contains("mp4") {
+                        mp4s.push((bitrate, url.to_string()));
+                    } else {
+                        webms.push((bitrate, url.to_string()));
+                    }
+                }
+            }
+        }
+        mp4s.sort_by(|a, b| b.0.cmp(&a.0));
+        webms.sort_by(|a, b| b.0.cmp(&a.0));
+        // Push up to 2 MP4 AAC and 2 WebM Opus candidates so if one edge server returns 403, the backup succeeds
+        for (_, mp4_url) in mp4s.into_iter().take(2) {
+            if !out.iter().any(|u| u == &mp4_url) {
+                out.push(mp4_url);
+            }
+        }
+        for (_, webm_url) in webms.into_iter().take(2) {
+            if !out.iter().any(|u| u == &webm_url) {
+                out.push(webm_url);
+            }
+        }
+    }
+
+    if let Some(hls) = data
+        .pointer("/streamingData/hlsManifestUrl")
+        .and_then(Value::as_str)
+    {
+        if hls.starts_with("https://") && !out.iter().any(|u| u == hls) {
+            out.push(hls.to_string());
+        }
+    }
+
+    if let Some(formats) = data
+        .pointer("/streamingData/formats")
+        .and_then(Value::as_array)
+    {
+        for fmt in formats {
+            if let Some(url) = fmt.get("url").and_then(Value::as_str) {
+                if url.starts_with("https://") && !out.iter().any(|u| u == url) {
+                    out.push(url.to_string());
+                    break;
+                }
+            }
+        }
+    }
+
+    out
+}
+
+async fn quick_probe_stream(client: &reqwest::Client, url: &str, ua: &str) -> bool {
+    let mut req = client
+        .get(url)
+        .header("User-Agent", ua)
+        .timeout(Duration::from_millis(1200));
+    if !url.contains(".m3u8") && !url.contains("/manifest/hls") {
+        req = req.header("Range", "bytes=0-1");
+    }
+    if url.contains("googlevideo.com") && ua.starts_with("Mozilla/") {
+        req = req
+            .header("Origin", "https://www.youtube.com")
+            .header("Referer", "https://www.youtube.com/");
+    }
+    match req.send().await {
+        Ok(r) => {
+            let code = r.status().as_u16();
+            code == 200 || code == 206
+        }
+        Err(_) => false,
+    }
+}
+
+async fn try_innertube_client(
+    client: &reqwest::Client,
+    client_name_id: &str,
+    client_ver: &str,
+    ua: &str,
+    visitor_data: Option<&str>,
+    body: Value,
+) -> Vec<YtmResolvedAudio> {
+    let mut req = client
+        .post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
+        .header("User-Agent", ua)
+        .header("X-YouTube-Client-Name", client_name_id)
+        .header("X-YouTube-Client-Version", client_ver)
+        .header("X-Goog-Api-Format-Version", "2")
+        .timeout(Duration::from_millis(1800));
+    if let Some(vd) = visitor_data {
+        if !vd.is_empty() {
+            req = req.header("X-Goog-Visitor-Id", vd);
+        }
+    }
+    let Ok(res) = req.json(&body).send().await else {
+        return Vec::new();
+    };
+    if !res.status().is_success() {
+        return Vec::new();
+    }
+    let Ok(data) = res.json::<Value>().await else {
+        return Vec::new();
+    };
+    let candidates = collect_audio_candidates(&data);
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    // Fast-verify candidates: put Range-verified (200/206) URLs first, followed by unverified backups
+    let mut verified: Vec<YtmResolvedAudio> = Vec::new();
+    let mut unverified: Vec<YtmResolvedAudio> = Vec::new();
+    for (idx, url) in candidates.into_iter().enumerate() {
+        if idx < 2 && quick_probe_stream(client, &url, ua).await {
+            verified.push(YtmResolvedAudio {
+                url,
+                user_agent: ua.to_string(),
+            });
+        } else {
+            unverified.push(YtmResolvedAudio {
+                url,
+                user_agent: ua.to_string(),
+            });
+        }
+    }
+    verified.extend(unverified);
+    verified
+}
+
+async fn try_piped_single(client: &reqwest::Client, host: &str, vid: &str) -> Vec<YtmResolvedAudio> {
+    let ua = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36";
+    let url = format!("{host}/streams/{vid}");
+    let Ok(res) = client
+        .get(&url)
+        .header("User-Agent", ua)
+        .timeout(Duration::from_millis(1800))
+        .send()
+        .await
+    else {
+        return Vec::new();
+    };
+    if !res.status().is_success() {
+        return Vec::new();
+    }
+    let Ok(data) = res.json::<Value>().await else {
+        return Vec::new();
+    };
+    let mut out: Vec<YtmResolvedAudio> = Vec::new();
+    if let Some(streams) = data.get("audioStreams").and_then(Value::as_array) {
+        let mut ranked: Vec<(i64, String)> = Vec::new();
+        for s in streams {
+            if let Some(stream_url) = s.get("url").and_then(Value::as_str) {
+                if stream_url.starts_with("https://") {
+                    let mime = s.get("mimeType").and_then(Value::as_str).unwrap_or("");
+                    let bitrate = s.get("bitrate").and_then(Value::as_i64).unwrap_or(0);
+                    let score = if mime.contains("mp4") { 10_000_000 + bitrate } else { bitrate };
+                    ranked.push((score, stream_url.to_string()));
+                }
+            }
+        }
+        ranked.sort_by(|a, b| b.0.cmp(&a.0));
+        for (_, u) in ranked.into_iter().take(2) {
+            out.push(YtmResolvedAudio {
+                url: u,
+                user_agent: ua.to_string(),
+            });
+        }
+    }
+    if let Some(hls) = data.get("hls").and_then(Value::as_str) {
+        if hls.starts_with("https://") {
+            out.push(YtmResolvedAudio {
+                url: hls.to_string(),
+                user_agent: ua.to_string(),
+            });
+        }
+    }
+    out
+}
+
+/// Resolves ordered, Range-verified direct HTTPS audio stream candidates in parallel (<800ms typical).
+#[tauri::command]
+async fn ytm_resolve_candidates(video_id: String) -> Result<Vec<YtmResolvedAudio>, String> {
+    let vid = video_id.trim();
+    if vid.len() != 11 {
+        return Ok(Vec::new());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(2200))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let visionos_ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
+    let android_ua = "com.google.android.youtube/20.10.38 (Linux; U; Android 15) gzip";
+    let android_vr_ua = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip";
+
+    let body_visionos = json!({
+        "context": {
+            "client": {
+                "clientName": "VISIONOS",
+                "clientVersion": "1.02",
+                "userAgent": visionos_ua,
+                "osName": "visionOS",
+                "osVersion": "26.5.23O471",
+                "deviceMake": "Apple",
+                "deviceModel": "RealityDevice17,1",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "videoId": vid,
+        "contentCheckOk": true,
+        "racyCheckOk": true
+    });
+
+    let body_android = json!({
+        "context": {
+            "client": {
+                "clientName": "ANDROID",
+                "clientVersion": "20.10.38",
+                "userAgent": android_ua,
+                "osName": "Android",
+                "osVersion": "15",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "videoId": vid,
+        "contentCheckOk": true,
+        "racyCheckOk": true
+    });
+
+    let body_vr = json!({
+        "context": {
+            "client": {
+                "clientName": "ANDROID_VR",
+                "clientVersion": "1.65.10",
+                "userAgent": android_vr_ua,
+                "deviceMake": "Oculus",
+                "deviceModel": "Quest 3",
+                "osName": "Android",
+                "osVersion": "12L",
+                "androidSdkVersion": 32,
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "videoId": vid,
+        "contentCheckOk": true,
+        "racyCheckOk": true
+    });
+
+    let mut handles = Vec::new();
+    {
+        let c = client.clone();
+        handles.push(tauri::async_runtime::spawn(async move {
+            try_innertube_client(&c, "101", "1.02", visionos_ua, None, body_visionos).await
+        }));
+    }
+    {
+        let c = client.clone();
+        handles.push(tauri::async_runtime::spawn(async move {
+            try_innertube_client(&c, "3", "20.10.38", android_ua, None, body_android).await
+        }));
+    }
+    {
+        let c = client.clone();
+        handles.push(tauri::async_runtime::spawn(async move {
+            try_innertube_client(&c, "28", "1.65.10", android_vr_ua, None, body_vr).await
+        }));
+    }
+    for host in [
+        "https://pipedapi.kavin.rocks",
+        "https://api.piped.yt",
+        "https://pipedapi.adminforge.de",
+    ] {
+        let c = client.clone();
+        let v = vid.to_string();
+        let h = host.to_string();
+        handles.push(tauri::async_runtime::spawn(async move {
+            try_piped_single(&c, &h, &v).await
+        }));
+    }
+
+    let mut all_candidates: Vec<YtmResolvedAudio> = Vec::new();
+    for handle in handles {
+        if let Ok(list) = handle.await {
+            for item in list {
+                if !all_candidates.iter().any(|c| c.url == item.url) {
+                    all_candidates.push(item);
+                }
+            }
+        }
+    }
+
+    Ok(all_candidates)
+}
+
+/// Backward-compatible single-best audio stream command.
+#[tauri::command]
+async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>, String> {
+    let list = ytm_resolve_candidates(video_id).await?;
+    Ok(list.into_iter().next())
+}
+
+/// Shared application entry point for both Desktop and Mobile targets.
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            get_runtime_info,
+            http_get_json,
+            ytm_search,
+            ytm_resolve_audio,
+            ytm_resolve_candidates
+        ])
+        .run(tauri::generate_context!())
+        .expect("Failed to start nys Xmusic Tauri runtime");
+}
