@@ -85,8 +85,8 @@
 {#if appStore.uiStyle === 'liquid-glass'}
   <!-- Unified iOS 26 Liquid Glass Dock: Music Player + Sliding Optical Lens Navigation Bar in ONE glass capsule -->
   <div
-    class="xmusic-gpu-layer fixed right-3 bottom-[calc(10px+env(safe-area-inset-bottom,0px))] left-3 z-40 mx-auto max-w-lg overflow-hidden xmusic-liquid-glass transition-all duration-300 {engine.current
-      ? 'rounded-[30px]'
+    class="xmusic-gpu-layer fixed right-2.5 bottom-[calc(10px+env(safe-area-inset-bottom,0px))] left-2.5 z-40 mx-auto max-w-xl overflow-hidden xmusic-liquid-glass transition-all duration-300 {engine.current
+      ? 'rounded-[34px]'
       : 'rounded-full'}"
     style={engine.current?.c1 ? `border-color: ${engine.current.c1}66;` : ''}
     role="region"
@@ -94,7 +94,7 @@
   >
     {#if engine.current}
       <!-- Top Specular Progress Line -->
-      <div class="h-[2.5px] w-full bg-black/8 dark:bg-white/10">
+      <div class="h-[3px] w-full bg-black/8 dark:bg-white/10">
         <div
           class="h-full transition-[width] duration-200 ease-linear"
           style="width: {progressPct}%; background: {engine.current.c1 || '#007aff'};"
@@ -102,7 +102,7 @@
       </div>
 
       <!-- Integrated Mini Music Player Section -->
-      <div class="flex items-center gap-2.5 px-3 pt-2.5 pb-2">
+      <div class="flex items-center gap-3 px-4 pt-3 pb-2.5">
         <button
           type="button"
           class="xmusic-spring-tap flex min-w-0 flex-1 items-center gap-2.5 text-left"
@@ -110,7 +110,7 @@
           aria-label="Buka pemutar penuh {engine.current.title}"
         >
           <span
-            class="relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-2xl text-sm font-bold text-white shadow-sm ring-1 ring-white/25"
+            class="relative grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-2xl text-sm font-bold text-white shadow-sm ring-1 ring-white/25"
             style={engine.current.imageUrl && !imgFailed
               ? ''
               : `background: linear-gradient(135deg, ${engine.current.c1 || '#007aff'}, ${engine.current.c2 || '#18181b'})`}
@@ -128,10 +128,10 @@
           </span>
 
           <span class="min-w-0 flex-1">
-            <span class="block truncate text-[13px] font-bold tracking-tight text-black dark:text-white">
+            <span class="block truncate text-[14px] font-bold tracking-tight text-black dark:text-white">
               {engine.current.title}
             </span>
-            <span class="block truncate text-[11px] tabular-nums text-black/65 dark:text-white/70">
+            <span class="block truncate text-[12px] tabular-nums text-black/65 dark:text-white/70">
               {#if liveLyricLine}
                 <span class="font-semibold" style="color: {engine.current.c1 || '#0a84ff'};">
                   ♪ {liveLyricLine}
@@ -146,7 +146,7 @@
         <div class="flex shrink-0 items-center gap-1">
           <button
             type="button"
-            class="xmusic-spring-tap grid h-9 w-9 place-items-center rounded-full text-white shadow-sm"
+            class="xmusic-spring-tap grid h-10 w-10 place-items-center rounded-full text-white shadow-sm"
             style="background: {engine.current.c1 || '#007aff'};"
             aria-label={engine.playing ? 'Jeda' : 'Putar'}
             onclick={() => engine.togglePlay()}
@@ -160,7 +160,7 @@
 
           <button
             type="button"
-            class="xmusic-spring-tap grid h-8 w-8 place-items-center rounded-full bg-black/6 text-black/80 dark:bg-white/12 dark:text-white/90"
+            class="xmusic-spring-tap grid h-9 w-9 place-items-center rounded-full bg-black/6 text-black/80 dark:bg-white/12 dark:text-white/90"
             aria-label="Lagu berikutnya"
             onclick={() => engine.next(false)}
           >
@@ -169,7 +169,7 @@
 
           <button
             type="button"
-            class="xmusic-spring-tap grid h-8 w-8 place-items-center rounded-full bg-black/6 text-black/65 dark:bg-white/12 dark:text-white/75"
+            class="xmusic-spring-tap grid h-9 w-9 place-items-center rounded-full bg-black/6 text-black/65 dark:bg-white/12 dark:text-white/75"
             aria-label="Tutup pemutar"
             onclick={() => engine.stopTrack()}
           >
@@ -183,7 +183,7 @@
     {/if}
 
     <!-- Integrated iOS 26 Sliding Optical Lens Navigation Bar (Tap or Slide Finger Across Tabs) -->
-    <nav class="px-1.5 py-1.5 select-none" aria-label="Navigasi utama">
+    <nav class="px-2 py-2 select-none" aria-label="Navigasi utama">
       <div
         bind:this={navTrackEl}
         class="xmusic-lens-track touch-pan-y"
@@ -207,15 +207,15 @@
           {@const isActive = appStore.view === tab.id}
           <button
             type="button"
-            class="relative z-10 flex flex-col items-center justify-center gap-0.5 rounded-full py-1.5 text-[10px] font-bold tracking-tight transition-transform duration-200 {isActive
+            class="relative z-10 flex flex-col items-center justify-center gap-0.5 rounded-full py-2 text-[11px] font-bold tracking-tight transition-transform duration-200 {isActive
               ? 'scale-105 text-black dark:text-white'
               : 'text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white'}"
             style={isActive && engine.current?.c1 ? `color: ${engine.current.c1};` : ''}
             aria-current={isActive ? 'page' : undefined}
             onclick={() => onSwitchTab(tab.id)}
           >
-            <Icon name={tab.icon} size={19} />
-            <span class="max-w-[58px] truncate">{i18n.t(tab.labelKey)}</span>
+            <Icon name={tab.icon} size={22} />
+            <span class="max-w-[64px] truncate">{i18n.t(tab.labelKey)}</span>
           </button>
         {/each}
       </div>

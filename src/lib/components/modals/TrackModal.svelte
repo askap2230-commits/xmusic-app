@@ -14,8 +14,15 @@
   let lyricsScrollEl = $state<HTMLDivElement | null>(null);
   let imgFailed = $state<boolean>(false);
   let showVideoFallback = $state<boolean>(false);
+  let storyCanvasEnabled = $state<boolean>(true);
+  let moreMenuOpen = $state<boolean>(false);
   let manualScrollUntil = 0;
   let sharingStory = $state<boolean>(false);
+
+  $effect(() => {
+    void track?.id;
+    moreMenuOpen = false;
+  });
 
   function pauseAutoScroll(): void {
     manualScrollUntil = Date.now() + 4500;
@@ -285,10 +292,10 @@
                   : ''}
               >
                 <div class="relative flex min-h-[540px] flex-col justify-between overflow-hidden bg-zinc-950 text-white">
-                  <!-- Full-Card Cover Artwork Layer (fills 100% of card with smooth crossfade/scale transition) -->
+                  <!-- Full-Card Video Story (Canvas) + Animated Artwork Layer -->
                   {#key track.id}
                     <div
-                      class="xmusic-art-transition pointer-events-none absolute inset-0"
+                      class="xmusic-art-transition pointer-events-none absolute inset-0 overflow-hidden"
                       style={track.imageUrl && !imgFailed
                         ? ''
                         : `background: linear-gradient(155deg, ${track.c1 || '#007aff'} 0%, ${track.c2 || '#111827'} 65%, #09090b 100%)`}
@@ -297,9 +304,9 @@
                         <img
                           src={track.imageUrl}
                           alt="Sampul {track.title}"
-                          class="h-full w-full object-cover object-center transition-transform duration-700 ease-out {engine.playing && engine.current?.id === track.id
-                            ? 'scale-[1.03]'
-                            : 'scale-100'}"
+                          class="h-full w-full object-cover object-center {storyCanvasEnabled && engine.playing && engine.current?.id === track.id
+                            ? 'xmusic-story-canvas-loop'
+                            : 'transition-transform duration-700 ease-out scale-100'}"
                           onerror={() => (imgFailed = true)}
                         />
                       {:else}
@@ -308,6 +315,16 @@
                             {getTrackInitial(track.title)}
                           </span>
                         </div>
+                      {/if}
+
+                      {#if storyCanvasEnabled && track.videoId && appStore.isOnline && engine.playing && engine.current?.id === track.id && !showVideoFallback}
+                        <!-- Muted Looping Full-Bleed Video Story Canvas -->
+                        <iframe
+                          title="Video Story {track.title}"
+                          class="pointer-events-none absolute top-1/2 left-1/2 h-[185%] w-[320%] -translate-x-1/2 -translate-y-1/2 scale-110 border-0 opacity-85 mix-blend-lighten"
+                          src="https://www.youtube.com/embed/{track.videoId}?autoplay=1&mute=1&controls=0&loop=1&playlist={track.videoId}&playsinline=1&modestbranding=1&rel=0&showinfo=0"
+                          allow="autoplay; encrypted-media"
+                        ></iframe>
                       {/if}
                     </div>
                   {/key}
@@ -332,14 +349,25 @@
                       </div>
                     {:else}
                       <div class="flex items-center justify-between gap-2">
-                        <span class="rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white/90">
+                        <span class="xmusic-glass-pill rounded-full px-3 py-1 text-[11px] font-semibold tracking-wide text-white">
                           {track.album || (track.source === 'youtube' ? 'YouTube Music' : 'nys Xmusic')}
                         </span>
-                        {#if track.releaseYear}
-                          <span class="rounded-full bg-black/45 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-white/90">
-                            {track.releaseYear}
-                          </span>
-                        {/if}
+                        <div class="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            class="xmusic-spring-tap xmusic-glass-pill inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold text-white"
+                            aria-pressed={storyCanvasEnabled}
+                            onclick={() => (storyCanvasEnabled = !storyCanvasEnabled)}
+                          >
+                            <Icon name="video" size={13} />
+                            <span>{storyCanvasEnabled ? 'Story ON' : 'Story OFF'}</span>
+                          </button>
+                          {#if track.releaseYear}
+                            <span class="xmusic-glass-pill rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums text-white">
+                              {track.releaseYear}
+                            </span>
+                          {/if}
+                        </div>
                       </div>
                     {/if}
                   </div>
@@ -517,82 +545,120 @@
                       </div>
                     {/if}
 
-                    <!-- Quick Action Buttons -->
-                    <div class="grid grid-cols-2 gap-2 pt-1">
-                      <Button
-                        rounded
-                        small
-                        class="!bg-white/15 !text-white font-semibold"
-                        onclick={() => appStore.toggleModalFlip()}
-                      >
-                        {i18n.t('player.lyricsBtn')}
-                      </Button>
-                      <Button
-                        rounded
-                        small
-                        class="!bg-white/15 !text-white font-semibold"
-                        onclick={() => {
-                          appStore.targetTrackForPlaylist = track;
-                          appStore.playlistModalOpen = true;
-                        }}
-                      >
-                        {i18n.t('player.playlistBtn')}
-                      </Button>
-                      <Button
-                        rounded
-                        small
-                        class="!bg-white/15 !text-white font-semibold"
-                        onclick={() => {
-                          appStore.closeTrackModal();
-                          appStore.view = 'eq';
-                        }}
-                      >
-                        EQ: {EQ_PRESETS[engine.eqPreset]?.name || 'Custom'}
-                      </Button>
-                      <Button
-                        rounded
-                        small
-                        class="!bg-[#ff453a]/30 !text-[#ff857d] font-semibold"
-                        onclick={handleStopAndClose}
-                      >
-                        {i18n.t('player.stopBtn')}
-                      </Button>
-                    </div>
-
-                    {#if track.isPreview}
-                      <Button
-                        rounded
-                        small
-                        class="!bg-[#30d158] !text-black font-bold"
-                        onclick={() => appStore.findFullVersion(track)}
-                      >
-                        {i18n.t('player.findFullBtn')}
-                      </Button>
-                    {/if}
-
-                    <div class="grid {track.videoId ? 'grid-cols-2' : 'grid-cols-1'} gap-2">
-                      <Button
-                        rounded
-                        small
-                        class="!bg-white/15 !text-white font-semibold"
-                        disabled={sharingStory}
-                        onclick={() => shareStoryCard(track)}
-                      >
-                        {sharingStory ? 'Membuat Kartu...' : 'Bagikan Story'}
-                      </Button>
-                      {#if track.videoId}
-                        <Button
-                          rounded
-                          small
-                          class="!bg-white/12 !text-white/90 font-medium"
-                          onclick={() => {
-                            appStore.closeTrackModal();
-                            appStore.openDownloaderWithUrl(`https://youtu.be/${track.videoId}`);
-                          }}
+                    <!-- Consolidated Single Three-Dots (More) Liquid Glass Action Button + Expandable Menu -->
+                    <div class="relative pt-1">
+                      {#if moreMenuOpen}
+                        <div
+                          class="mb-2.5 grid grid-cols-2 gap-1.5 rounded-2xl border border-white/25 bg-black/75 p-2.5 backdrop-blur-2xl shadow-2xl"
+                          role="menu"
+                          aria-label="Opsi lagu lainnya"
                         >
-                          {i18n.t('player.downloadMp3Btn')}
-                        </Button>
+                          <button
+                            type="button"
+                            class="xmusic-spring-tap flex items-center gap-2 rounded-xl bg-white/12 px-3 py-2 text-left text-xs font-semibold text-white"
+                            onclick={() => {
+                              moreMenuOpen = false;
+                              appStore.toggleModalFlip();
+                            }}
+                          >
+                            <Icon name="flip" size={14} />
+                            <span class="truncate">{i18n.t('player.lyricsBtn')}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            class="xmusic-spring-tap flex items-center gap-2 rounded-xl bg-white/12 px-3 py-2 text-left text-xs font-semibold text-white"
+                            onclick={() => {
+                              moreMenuOpen = false;
+                              appStore.targetTrackForPlaylist = track;
+                              appStore.playlistModalOpen = true;
+                            }}
+                          >
+                            <Icon name="plus" size={14} />
+                            <span class="truncate">{i18n.t('player.playlistBtn')}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            class="xmusic-spring-tap flex items-center gap-2 rounded-xl bg-white/12 px-3 py-2 text-left text-xs font-semibold text-white"
+                            disabled={sharingStory}
+                            onclick={() => {
+                              moreMenuOpen = false;
+                              void shareStoryCard(track);
+                            }}
+                          >
+                            <Icon name="spark" size={14} />
+                            <span class="truncate">{sharingStory ? 'Membuat...' : 'Bagikan Story'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            class="xmusic-spring-tap flex items-center gap-2 rounded-xl bg-white/12 px-3 py-2 text-left text-xs font-semibold text-white"
+                            onclick={() => {
+                              moreMenuOpen = false;
+                              appStore.closeTrackModal();
+                              appStore.view = 'eq';
+                            }}
+                          >
+                            <Icon name="eq" size={14} />
+                            <span class="truncate">EQ: {EQ_PRESETS[engine.eqPreset]?.name || 'Custom'}</span>
+                          </button>
+
+                          {#if track.videoId}
+                            <button
+                              type="button"
+                              class="xmusic-spring-tap flex items-center gap-2 rounded-xl bg-white/12 px-3 py-2 text-left text-xs font-semibold text-white"
+                              onclick={() => {
+                                moreMenuOpen = false;
+                                appStore.closeTrackModal();
+                                appStore.openDownloaderWithUrl(`https://youtu.be/${track.videoId}`);
+                              }}
+                            >
+                              <Icon name="download" size={14} />
+                              <span class="truncate">{i18n.t('player.downloadMp3Btn')}</span>
+                            </button>
+                          {/if}
+
+                          {#if track.isPreview}
+                            <button
+                              type="button"
+                              class="xmusic-spring-tap flex items-center gap-2 rounded-xl bg-[#30d158] px-3 py-2 text-left text-xs font-bold text-black"
+                              onclick={() => {
+                                moreMenuOpen = false;
+                                appStore.findFullVersion(track);
+                              }}
+                            >
+                              <Icon name="music" size={14} />
+                              <span class="truncate">{i18n.t('player.findFullBtn')}</span>
+                            </button>
+                          {/if}
+
+                          <button
+                            type="button"
+                            class="xmusic-spring-tap flex items-center gap-2 rounded-xl bg-[#ff453a]/30 px-3 py-2 text-left text-xs font-semibold text-[#ff857d] {track.videoId || track.isPreview ? '' : 'col-span-2'}"
+                            onclick={() => {
+                              moreMenuOpen = false;
+                              handleStopAndClose();
+                            }}
+                          >
+                            <Icon name="close" size={14} />
+                            <span class="truncate">{i18n.t('player.stopBtn')}</span>
+                          </button>
+                        </div>
                       {/if}
+
+                      <div class="flex items-center justify-center">
+                        <button
+                          type="button"
+                          class="xmusic-spring-tap xmusic-glass-pill inline-flex h-10 items-center justify-center gap-2 rounded-full px-6 text-xs font-bold tracking-wide text-white shadow-lg"
+                          aria-expanded={moreMenuOpen}
+                          aria-label="Menu titik tiga lainnya"
+                          onclick={() => (moreMenuOpen = !moreMenuOpen)}
+                        >
+                          <Icon name="more" size={18} />
+                          <span>{moreMenuOpen ? 'Tutup Menu' : 'Lainnya'}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

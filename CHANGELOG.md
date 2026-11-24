@@ -2,6 +2,14 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.35.0] - 2026-11-25
+
+### Added & Improved (iOS 27 Prismatic Liquid Glass, Larger Lens Dock, Card Video Story & Consolidated More Menu)
+- **Navbar Lensa & Dok Kaca Lebih Besar Bergaya iOS 27 (`src/app.css`, `src/lib/components/UnifiedGlassDock.svelte`)**: Memperbesar ukuran kapsul dok kaca terpadu (`max-w-xl`, ikon navigasi `22px`, area sentuh lebih lega) dengan efek pembiasan prismatik iOS 27 (`backdrop-filter: blur(28px) saturate(215%)` + specular edge rim).
+- **Video Story pada Kartu Lagu (`src/lib/components/modals/TrackModal.svelte`)**: Menampilkan latar belakang video berulang penuh (*Spotify Canvas / Video Story*) langsung di dalam kartu lagu untuk trek YouTube Music (dilengkapi tombol cepat `Story ON/OFF` dan animasi gerak *Ken Burns* untuk sampul statis).
+- **Penggabungan Tombol Bawah Kartu ke Menu Titik Tiga (`••• Lainnya`) (`src/lib/components/modals/TrackModal.svelte`, `Icon.svelte`)**: Menggabungkan seluruh tombol aksi bawah kartu (Lirik, Playlist, Bagikan Story, EQ, Unduh MP3, dan Hentikan) ke dalam satu tombol kapsul kaca **`••• Lainnya`** yang rapi.
+- **Balapan Paralel API Key & Keyless (`Promise.any`) (`src/lib/api/services.ts`)**: Menjalankan pencarian & trending YouTube Data API v3 (`ytApiKey`) secara paralel bersamaan dengan resolver native Rust & mirror Piped agar hasil maupun audio muncul seketika tanpa menunggu antrean.
+
 ## [6.34.0] - 2026-11-25
 
 ### Fixed & Improved (iOS 26 Sliding Optical Lens Glider on Unified Glass Dock)

@@ -32,7 +32,9 @@
     | 'upload'
     | 'key'
     | 'spark'
-    | 'refresh';
+    | 'refresh'
+    | 'more'
+    | 'video';
 </script>
 
 <script lang="ts">
@@ -127,5 +129,12 @@
     <polyline points="21 3 21 9 15 9" />
   {:else if name === 'spark'}
     <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" />
+  {:else if name === 'more'}
+    <circle cx="5" cy="12" r="1.8" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none" />
+    <circle cx="19" cy="12" r="1.8" fill="currentColor" stroke="none" />
+  {:else if name === 'video'}
+    <rect x="2.5" y="5" width="14" height="14" rx="2.5" />
+    <path d="m16.5 10 5-3v10l-5-3z" fill="currentColor" stroke="none" />
   {/if}
 </svg>

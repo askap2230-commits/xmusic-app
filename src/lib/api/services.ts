@@ -795,30 +795,44 @@ export async function fetchYtTrending(region = 'ID', page = 0): Promise<Track[]>
   const regionKey = REGIONAL_YTMUSIC_QUERIES[region] ? region : 'ID';
   const safeStore = /^[A-Z]{2}$/.test(region) ? region : 'ID';
 
-  if (ytApiKey && page === 0) {
-    try {
-      const data = await fetchJsonWithTimeout<{ items?: unknown[] }>(
-        `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&videoCategoryId=10&regionCode=${safeStore}&maxResults=24&key=${ytApiKey}`,
-        3500
-      );
-      const items = (data.items || [])
-        .map(ytToTrack)
-        .filter((t) => !NON_MUSIC_REGEX.test(t.title));
-      if (items.length > 0) return items;
-    } catch {
-      // Fall through to FOSS parallel race
-    }
-  }
-
   const pool = REGIONAL_YTMUSIC_QUERIES[regionKey];
   const query = pool[Math.abs(page) % pool.length];
+  const races: Array<Promise<Track[]>> = [];
 
-  const nativeSongs = await nativeYtmSearch(query, safeStore);
-  if (nativeSongs.length > 0) return nativeSongs;
+  if (ytApiKey && page === 0) {
+    races.push(
+      fetchJsonWithTimeout<{ items?: unknown[] }>(
+        `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&videoCategoryId=10&regionCode=${safeStore}&maxResults=24&key=${ytApiKey}`,
+        2200
+      ).then((data) => {
+        const items = (data.items || [])
+          .map(ytToTrack)
+          .filter((t) => !NON_MUSIC_REGEX.test(t.title));
+        if (items.length === 0) throw new Error('empty-yt-api');
+        return items;
+      })
+    );
+  }
 
-  const piped = await racePipedMusicSearch(query, 18);
-  if (piped.length > 0) return piped;
-  return raceInvidiousMusicSearch(query, 16);
+  races.push(
+    nativeYtmSearch(query, safeStore).then((items) => {
+      if (items.length === 0) throw new Error('empty-native');
+      return items;
+    })
+  );
+
+  races.push(
+    racePipedMusicSearch(query, 18).then((items) => {
+      if (items.length === 0) throw new Error('empty-piped');
+      return items;
+    })
+  );
+
+  try {
+    return await Promise.any(races);
+  } catch {
+    return raceInvidiousMusicSearch(query, 16);
+  }
 }
 
 /**
@@ -830,36 +844,45 @@ export async function fetchYtSearch(query: string): Promise<Track[]> {
   if (!clean) return [];
   const { ytApiKey } = getApiConfig();
 
+  const races: Array<Promise<Track[]>> = [];
+
   if (ytApiKey) {
-    try {
-      const data = await fetchJsonWithTimeout<{ items?: unknown[] }>(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=20&q=${encodeURIComponent(clean)}&key=${ytApiKey}`,
-        3500
-      );
-      const items = (data.items || [])
-        .map(ytToTrack)
-        .filter((t) => !NON_MUSIC_REGEX.test(t.title));
-      if (items.length > 0) return items;
-    } catch {
-      // Fall through to FOSS parallel race
-    }
+    races.push(
+      fetchJsonWithTimeout<{ items?: unknown[] }>(
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=24&q=${encodeURIComponent(clean)}&key=${ytApiKey}`,
+        2200
+      ).then((data) => {
+        const items = (data.items || [])
+          .map(ytToTrack)
+          .filter((t) => !NON_MUSIC_REGEX.test(t.title));
+        if (items.length === 0) throw new Error('empty-yt-api');
+        return items;
+      })
+    );
   }
 
-  const pipedPromise = racePipedMusicSearch(clean, 20);
-  const nativeSongs = await Promise.race([
-    nativeYtmSearch(clean, 'ID'),
-    new Promise<Track[]>((resolve) => setTimeout(() => resolve([]), 2200))
-  ]);
-  if (nativeSongs.length > 0) return nativeSongs;
+  races.push(
+    nativeYtmSearch(clean, 'ID').then((items) => {
+      if (items.length === 0) throw new Error('empty-native');
+      return items;
+    })
+  );
 
-  const piped = await pipedPromise;
-  if (piped.length > 0) return piped;
-  return raceInvidiousMusicSearch(clean, 16);
+  races.push(
+    racePipedMusicSearch(clean, 20).then((items) => {
+      if (items.length === 0) throw new Error('empty-piped');
+      return items;
+    })
+  );
+
+  try {
+    return await Promise.any(races);
+  } catch {
+    return raceInvidiousMusicSearch(clean, 16);
+  }
 }
 
-/**
- * Fetches native playable full-length tracks for Spotify Charts (with page support for Load More).
- */
+
 export async function fetchSpotifyChartTracks(chartTitle: string, page = 0): Promise<Track[]> {
   const queryPools: Record<string, string[]> = {
     'Top 50 Indonesia': [
