@@ -40,6 +40,10 @@
     }
     lastTapAt = now;
 
+    if (track.isPreview && appStore.isOnline) {
+      void appStore.findFullVersion(track);
+      return;
+    }
     if (!isPlaying || engine.audioResolveFailed) {
       engine.playTrack(track, appStore.allTracks);
     }

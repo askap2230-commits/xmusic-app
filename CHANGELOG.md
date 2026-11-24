@@ -2,6 +2,12 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.23.0] - 2026-11-24
+
+### Fixed (Full-Duration Song Prioritization & Auto-Upgrade from 30s Catalog Previews)
+- **Prioritas Lagu Durasi Penuh di Peringkat Pencarian (`src/lib/search/smartSearch.ts`)**: Meningkatkan bobot skor lagu durasi penuh (`!track.isPreview` dari YouTube Music, Audius, Lokal, dan Archive) di atas pratinjau katalog 30 detik (`30d` dari iTunes/Deezer) serta menghapus promosi kartu pratinjau 30 detik ke posisi teratas pada tab **Semua** — sehingga **Hasil Teratas** dan daftar utama pencarian selalu menampilkan lagu durasi penuh (`Full`).
+- **Auto-Upgrade Otomatis ke Versi Penuh Saat Memutar Pratinjau (`SearchView.svelte`, `TrackCard.svelte`, `library.svelte.ts`)**: Menambahkan perluasan kueri YouTube Music otomatis jika hasil awal kurang dari 4 lagu, serta mengalihkan pemutaran kartu/baris berlabel `30d` langsung ke versi durasi penuh (`findFullVersion`) saat online agar lagu tidak berhenti di detik ke-30.
+
 ## [6.22.0] - 2026-11-24
 
 ### Fixed (Eliminate Infinite "Menghubungkan stream audio YouTube Music..." Spinner on Android)

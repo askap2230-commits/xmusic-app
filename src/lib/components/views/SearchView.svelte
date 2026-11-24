@@ -38,6 +38,10 @@
 
   function openAndPlay(track: Track): void {
     appStore.showSuggestions = false;
+    if (track.isPreview && appStore.isOnline && appStore.searchSourceFilter !== 'catalog') {
+      void appStore.findFullVersion(track);
+      return;
+    }
     engine.playTrack(track, appStore.filteredSearchResults);
     appStore.openTrackModal(track, false);
   }

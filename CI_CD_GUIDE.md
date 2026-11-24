@@ -18,11 +18,11 @@ All GitHub Actions workflows in this repository are **manual-only** (`workflow_d
 Every production build automatically reads `"version"` from `package.json` and maps the selected target architecture to a clear, unambiguous filename:
 
 - **`aarch64` (default, smallest ~3 MB)**:
-  - `Xmusic-v6.22.0-android-arm64-v8a-release.apk`
-  - `Xmusic-v6.22.0-android-arm64-v8a-release.apk.sha256` & `.sha512` (embedded with signing cert SHA-256, exact byte size, `SOURCE_DATE_EPOCH`, Git SHA, and toolchain versions directly in the GitHub Release body)
+  - `Xmusic-v6.23.0-android-arm64-v8a-release.apk`
+  - `Xmusic-v6.23.0-android-arm64-v8a-release.apk.sha256` & `.sha512` (embedded with signing cert SHA-256, exact byte size, `SOURCE_DATE_EPOCH`, Git SHA, and toolchain versions directly in the GitHub Release body)
 - **`universal` (all Android ABIs)**:
-  - `Xmusic-v6.22.0-android-universal-release.apk`
-  - `Xmusic-v6.22.0-android-universal-release.apk.sha256` & `.sha512`
+  - `Xmusic-v6.23.0-android-universal-release.apk`
+  - `Xmusic-v6.23.0-android-universal-release.apk.sha256` & `.sha512`
 
 ---
 
@@ -35,7 +35,7 @@ Every production build automatically reads `"version"` from `package.json` and m
 4. Choose:
    - `target_arch`: `aarch64` (recommended for 64-bit phones) or `universal`.
    - `publish_release`: `true` to publish APK + `.sha256` + `.sha512` to GitHub Releases.
-   - `release_tag`: Leave blank to auto-use `v<package.json version>` (e.g., `v6.22.0`).
+   - `release_tag`: Leave blank to auto-use `v<package.json version>` (e.g., `v6.23.0`).
 5. Click **Run workflow**. Download the direct `.apk`, `.sha256`, and `.sha512` files from **Artifacts** or **Releases**.
 
 ### Option B: GitHub CLI (`gh`)
@@ -82,7 +82,7 @@ gh workflow run ci-verify.yml
 ## 6. Verifying Reproducibility Locally
 
 ```bash
-sha256sum -c Xmusic-v6.22.0-android-arm64-v8a-release.apk.sha256
-sha512sum -c Xmusic-v6.22.0-android-arm64-v8a-release.apk.sha512
-apksigner verify -v --print-certs Xmusic-v6.22.0-android-arm64-v8a-release.apk
+sha256sum -c Xmusic-v6.23.0-android-arm64-v8a-release.apk.sha256
+sha512sum -c Xmusic-v6.23.0-android-arm64-v8a-release.apk.sha512
+apksigner verify -v --print-certs Xmusic-v6.23.0-android-arm64-v8a-release.apk
 ```
