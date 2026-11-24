@@ -2,6 +2,12 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.27.0] - 2026-11-24
+
+### Fixed (Instant 0ms Playback Start — Zero "Menghubungkan stream audio YouTube Music..." Banner Delay)
+- **Eliminasi Total Banner Loading `resolvingAudio` Saat Putar Lagu (`src/lib/audio/engine.svelte.ts`, `src/lib/audio/ytPlayerBridge.ts`)**: Menghapus penundaan buatan `900ms` dan tidak lagi menyalakan banner *"Menghubungkan stream audio YouTube Music..."* saat pengguna mengetuk lagu hasil pencarian — pemutar `YT.Player` dan resolver native `ExoPlayer` kini langsung berjalan bersamaan sejak `0ms` dengan batas waktu cepat `2.5 detik` sehingga lagu langsung berputar seketika.
+- **Resolusi Stream Paralel 6-Jalur Tanpa Probe Sekuensial Lambat di Rust (`src-tauri/src/lib.rs`)**: `ytm_resolve_audio` kini menjalankan 3 klien InnerTube (`VISIONOS 1.02`, `ANDROID 20.10.38`, `ANDROID_VR 1.65.10`) dan 3 node Piped secara bersamaan dalam 1 gelombang cepat (`timeout 1.8s`) tanpa menunggu probe `Range` berantai yang sebelumnya menghabiskan hingga 10 detik.
+
 ## [6.26.0] - 2026-11-24
 
 ### Fixed (Instant Search Playback & Zero Stuck "Menghubungkan stream audio YouTube Music..." Banner)

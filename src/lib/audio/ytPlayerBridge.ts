@@ -65,7 +65,7 @@ function loadYoutubeIframeApi(): Promise<YtGlobal | null> {
     const timer = setTimeout(() => {
       apiLoadPromise = null;
       resolve(null);
-    }, 6500);
+    }, 2500);
     const prevReady = win.onYouTubeIframeAPIReady;
     win.onYouTubeIframeAPIReady = () => {
       clearTimeout(timer);
@@ -174,7 +174,7 @@ export class YtAudioBridge {
         const timer = setTimeout(() => {
           this.initPromise = null;
           resolve(null);
-        }, 7000);
+        }, 2500);
 
         const playerVars: Record<string, string | number> = {
           autoplay: 1,

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.26.0).
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.27.0).
  *
  * Signal Chain (Zero-Clipping Lossless-Clear DSP):
  *   MediaElementAudioSourceNode
@@ -13,7 +13,7 @@
  *     -> AnalyserNode (pull-based FFT visualizer)
  *     -> AudioContext.destination (latencyHint: 'playback')
  *
- * Stability Guarantees (v6.26.0):
+ * Stability Guarantees (v6.27.0):
  *   - Monotonic playSessionId eliminates async race conditions and phantom restarts after pause.
  *   - Transition guard suppresses spurious pause/play flicker during track switches.
  *   - Idempotent resume() + automatic self-healing recovery prevents stuck Play buttons on all sources.
@@ -981,10 +981,12 @@ class AudioEngine {
         return;
       }
 
-      // Path B: Prefer verified native Android MediaPlayer stream; fallback to IFrame Bridge if slow
+      // Path B: Start immediately without blocking banner (`resolvingAudio = false`);
+      // race parallel Rust InnerTube/Piped ExoPlayer + YouTube IFrame Bridge simultaneously at 0ms!
       this.usingDirectAudio = false;
-      this.usingYtBridge = !this.canUseNativeAndroidPlayer();
-      this.resolvingAudio = true;
+      this.usingYtBridge = true;
+      this.resolvingAudio = false;
+      this.buffering = true;
       this.syncNativeAndroidNotification();
       void this.startYoutubeSmartPlayback(track, sessionId, 0);
       return;
@@ -1137,15 +1139,14 @@ class AudioEngine {
     const videoId = track.videoId;
     const trackId = track.id;
 
-    // Kick off direct stream resolution immediately (reuses any in-flight pointerdown prefetch!)
-    // Cap total wait at 5000ms so a hung network call can NEVER trap the UI spinner forever.
+    // 1. Fire direct stream resolution (Rust parallel InnerTube+Piped) immediately at 0ms
     const directPromise = Promise.race([
       ytPreloader.resolveNow(videoId, true),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3500))
     ]);
 
-    // Hard failsafe watchdog: if neither direct stream nor YouTube IFrame starts within 3.2s,
-    // automatically try matching full-length Audius/Archive audio and ALWAYS clear `resolvingAudio`!
+    // 2. Fast 2.5s failsafe watchdog: if neither path starts within 2.5s, seamlessly fall back to
+    // matching full-length Audius/Archive audio and clear all spinners!
     this.clearYtWatchdog();
     this.ytWatchdogTimer = setTimeout(() => {
       this.ytWatchdogTimer = null;
@@ -1156,11 +1157,11 @@ class AudioEngine {
         void this.tryAlternativeFullAudioFallback(track, sessionId, resumeAt);
       } else {
         this.resolvingAudio = false;
-        if (this.playing) this.buffering = false;
+        this.buffering = false;
       }
-    }, 3200);
+    }, 2500);
 
-    // ALWAYS upgrade to native Android Media3 ExoPlayer (or directAudioEl on web) the instant a verified stream resolves
+    // 3. Upgrade to native Android Media3 ExoPlayer (or directAudioEl on web) the instant direct stream resolves
     void directPromise.then((stream) => {
       if (
         !stream?.url ||
@@ -1176,36 +1177,13 @@ class AudioEngine {
         ? Math.max(resumeAt, this.ytBridge.getCurrentTime(), this.position)
         : resumeAt;
       this.clearYtWatchdog();
+      this.resolvingAudio = false;
       this.current = { ...track, url: stream.url };
       this.playResolvedStream(stream, this.current, sessionId, livePos);
     });
 
-    // Give the fast parallel Rust InnerTube resolver a 1500ms head-start on Android so fast hits launch
-    // straight into XmusicMediaService's native ExoPlayer; if slower, start YouTube IFrame Bridge in parallel
-    // so audio starts immediately while ExoPlayer upgrades seamlessly in background!
-    if (this.canUseNativeAndroidPlayer()) {
-      const fastWinner = await Promise.race([
-        directPromise,
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 900))
-      ]);
-      if (
-        sessionId !== this.playSessionId ||
-        this.userPaused ||
-        this.current?.id !== trackId ||
-        this.usingNativeAndroid
-      ) {
-        return;
-      }
-      if (fastWinner?.url) {
-        this.clearYtWatchdog();
-        this.resolvingAudio = false;
-        this.current = { ...track, url: fastWinner.url };
-        this.playResolvedStream(fastWinner, this.current, sessionId, resumeAt);
-        return;
-      }
-      this.usingYtBridge = true;
-    }
-
+    // 4. Launch YouTube IFrame Bridge in parallel at 0ms (zero artificial delay!) so audio starts right away
+    this.usingYtBridge = true;
     await this.startYoutubeAudioBridge(track, sessionId, resumeAt);
   }
 
@@ -1266,7 +1244,8 @@ class AudioEngine {
     }
     this.usingDirectAudio = false;
     this.usingYtBridge = true;
-    this.resolvingAudio = true;
+    this.resolvingAudio = false;
+    this.buffering = true;
     this.audioResolveFailed = false;
     const cleanTrack: Track = { ...this.current, url: undefined };
     this.current = cleanTrack;
@@ -1279,7 +1258,8 @@ class AudioEngine {
     resumeAt = 0
   ): Promise<void> {
     if (!track.videoId) return;
-    this.resolvingAudio = true;
+    this.resolvingAudio = false;
+    this.buffering = true;
     this.audioResolveFailed = false;
     const stream = await Promise.race([
       ytPreloader.resolveNow(track.videoId, true),
@@ -1311,9 +1291,12 @@ class AudioEngine {
       const cleanArtist = (track.artist || '').replace(/YouTube Music/gi, '').trim();
       const query = `${cleanTitle} ${cleanArtist}`.trim();
       if (query) {
-        const [audiusHits, archiveHits] = await Promise.all([
-          fetchSearch(query, 6).catch(() => [] as Track[]),
-          fetchArchiveAudioSearch(query, 3).catch(() => [] as Track[])
+        const [audiusHits, archiveHits] = await Promise.race([
+          Promise.all([
+            fetchSearch(query, 6).catch(() => [] as Track[]),
+            fetchArchiveAudioSearch(query, 3).catch(() => [] as Track[])
+          ]),
+          new Promise<[Track[], Track[]]>((resolve) => setTimeout(() => resolve([[], []]), 2200))
         ]);
         if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== track.id) return;
         if (this.playing || this.usingNativeAndroid || this.usingDirectAudio) return;
