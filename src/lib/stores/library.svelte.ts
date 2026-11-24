@@ -112,7 +112,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '6.32.0',
+    version: '6.33.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
@@ -310,9 +310,7 @@ class AppStore {
   initTheme(): void {
     if (typeof window === 'undefined') return;
     const savedStyle = localStorage.getItem('nys_ui_style');
-    if (savedStyle === 'liquid-glass' || savedStyle === 'editorial') {
-      this.uiStyle = savedStyle;
-    }
+    this.uiStyle = savedStyle === 'editorial' ? 'editorial' : 'liquid-glass';
     const saved = localStorage.getItem('nys_theme_mode');
     if (saved === 'light' || saved === 'dark' || saved === 'system') {
       this.themeMode = saved;

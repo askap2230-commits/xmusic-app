@@ -207,7 +207,7 @@ html.dark .xmusic-eq-slider {
 }
 
 
-/* Ultra-Light GPU Liquid Glass (iOS 26) & Dynamic Cover Aura */
+/* iOS 26 Liquid Glass Unified Dock, Lens Tabbar & Dynamic Cover Aura */
 :root {
   --xmusic-accent: #007aff;
   --xmusic-accent-2: #5e5ce6;
@@ -218,40 +218,93 @@ html.dark .xmusic-eq-slider {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.24;
+  opacity: 0.34;
   background:
-    radial-gradient(circle at 18% 8%, var(--xmusic-accent) 0%, transparent 52%),
-    radial-gradient(circle at 86% 24%, var(--xmusic-accent-2) 0%, transparent 48%);
+    radial-gradient(circle at 16% 6%, var(--xmusic-accent) 0%, transparent 54%),
+    radial-gradient(circle at 88% 22%, var(--xmusic-accent-2) 0%, transparent 50%),
+    radial-gradient(circle at 50% 96%, var(--xmusic-accent) 0%, transparent 45%);
   transition: opacity 0.4s ease;
 }
 
 html.dark .xmusic-ambient-aura {
-  opacity: 0.28;
+  opacity: 0.42;
 }
 
 .xmusic-liquid-glass {
-  background: rgba(255, 255, 255, 0.76);
-  backdrop-filter: blur(16px) saturate(165%);
-  -webkit-backdrop-filter: blur(16px) saturate(165%);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.68) 0%,
+    rgba(245, 247, 252, 0.54) 100%
+  ) !important;
+  backdrop-filter: blur(24px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.72) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.75),
-    0 10px 28px rgba(0, 0, 0, 0.1);
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.28),
+    0 14px 36px rgba(15, 23, 42, 0.14) !important;
 }
 
-.dark .xmusic-liquid-glass {
-  background: rgba(22, 22, 26, 0.76);
-  backdrop-filter: blur(16px) saturate(175%);
-  -webkit-backdrop-filter: blur(16px) saturate(175%);
+html.dark .xmusic-liquid-glass {
+  background: linear-gradient(
+    180deg,
+    rgba(36, 38, 46, 0.62) 0%,
+    rgba(18, 19, 24, 0.56) 100%
+  ) !important;
+  backdrop-filter: blur(24px) saturate(195%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(195%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    0 12px 32px rgba(0, 0, 0, 0.42);
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    0 18px 42px rgba(0, 0, 0, 0.58) !important;
+}
+
+/* iOS 26 Active Tab Lens Bubble inside the Unified Liquid Glass Dock */
+.xmusic-lens-pill-active {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.88) 0%,
+    rgba(240, 244, 255, 0.68) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+html.dark .xmusic-lens-pill-active {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.22) 0%,
+    rgba(255, 255, 255, 0.11) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+/* Frosted Liquid Glass top Navbar */
+.xmusic-glass-navbar .navbar-bg {
+  background: rgba(255, 255, 255, 0.62) !important;
+  backdrop-filter: blur(22px) saturate(185%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(185%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.5) !important;
+}
+
+html.dark .xmusic-glass-navbar .navbar-bg {
+  background: rgba(18, 19, 24, 0.62) !important;
+  backdrop-filter: blur(22px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(190%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
 }
 
 .xmusic-glass-pill {
-  background: rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.24);
 }
 
 .xmusic-spring-tap {
@@ -259,7 +312,7 @@ html.dark .xmusic-ambient-aura {
 }
 
 .xmusic-spring-tap:active {
-  transform: scale(0.96);
+  transform: scale(0.95);
 }
 
 /* WCAG 2.3.3 Reduced Motion */

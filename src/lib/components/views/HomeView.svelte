@@ -38,7 +38,7 @@
 </script>
 
 <!-- Compact, Intuitive iOS Header Card -->
-<Block strong inset class="space-y-3.5">
+<Block strong inset class="space-y-3.5 {appStore.uiStyle === 'liquid-glass' ? '!bg-white/65 dark:!bg-zinc-900/60 backdrop-blur-xl border border-white/50 dark:border-white/12' : ''}">
   <div class="flex items-center justify-between gap-2">
     <div class="min-w-0">
       <div class="text-xs font-semibold text-[#007aff] dark:text-[#64d2ff]">

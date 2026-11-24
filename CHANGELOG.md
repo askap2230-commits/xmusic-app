@@ -2,6 +2,12 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.33.0] - 2026-11-25
+
+### Fixed & Improved (iOS 26 Liquid Glass Restored + Unified Music & Lens Navigation Dock for Android)
+- **Mengembalikan & Memperkuat Efek `Liquid Glass (iOS 26)` (`src/app.css`, `library.svelte.ts`)**: Menambahkan lapisan kaca transparan berspekular (`backdrop-filter: blur(24px) saturate(195%)`, tepi kilau kaca `inset 0 1.5px 0`, serta kapsul lensa aktif `xmusic-lens-pill-active`) dengan perlindungan `!important` agar tidak tertimpa tema bawaan Konsta UI dan selalu aktif secara default.
+- **Menyatukan Navbar Musik & Navbar Lensa Aplikasi (`src/lib/components/UnifiedGlassDock.svelte`, `src/routes/+page.svelte`)**: Menggabungkan pemutar musik mini (lengkap dengan garis progres di sisi atas, sampul lagu, kapsul lirik berjalan, tombol Play/Pause, Next, dan Tutup) dengan bilah navigasi 5 tab bergaya Lensa iOS 26 ke dalam **satu kapsul kaca mengambang terpadu** di bagian bawah layar Android.
+
 ## [6.32.0] - 2026-11-25
 
 ### Added & Improved (Floating Lens Liquid Glass UI, Live Lyric Capsule & Zero-Wait Stream Race)
