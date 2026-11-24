@@ -719,39 +719,41 @@ export async function resolveYoutubeAudioStream(videoId: string): Promise<Resolv
     ytAudioStreamCache.delete(videoId);
   }
 
-  // Fast Range-verified native Rust InnerTube resolution directly from user's device IP
-  const nativeStream = await nativeYtmResolveAudio(videoId);
-  if (nativeStream) {
-    ytAudioStreamCache.set(videoId, {
-      stream: nativeStream,
-      expiresAt: Date.now() + YT_AUDIO_CACHE_TTL_MS
+  const pipedRace = async (): Promise<ResolvedAudioStream> => {
+    const pipedAttempts = getPipedCandidates().map(async (host) => {
+      const data = await fetchJsonWithTimeout<{
+        audioStreams?: Array<{ url?: string; mimeType?: string; bitrate?: number }>;
+      }>(`${host}/streams/${encodeURIComponent(videoId)}`, 2400);
+      const streams = (data.audioStreams || []).filter((s) => Boolean(s.url));
+      if (streams.length === 0) throw new Error('no-audio');
+      streams.sort((a, b) => {
+        const aM4a = String(a.mimeType || '').includes('mp4') ? 1 : 0;
+        const bM4a = String(b.mimeType || '').includes('mp4') ? 1 : 0;
+        if (aM4a !== bM4a) return bM4a - aM4a;
+        return (Number(b.bitrate) || 0) - (Number(a.bitrate) || 0);
+      });
+      const bestUrl = streams[0].url;
+      if (!bestUrl) throw new Error('no-url');
+      fastestPipedHost = host;
+      return { url: bestUrl } satisfies ResolvedAudioStream;
     });
-    return nativeStream;
-  }
+    return Promise.any(pipedAttempts);
+  };
 
-  const pipedAttempts = getPipedCandidates().map(async (host) => {
-    const data = await fetchJsonWithTimeout<{
-      audioStreams?: Array<{ url?: string; mimeType?: string; bitrate?: number }>;
-    }>(`${host}/streams/${encodeURIComponent(videoId)}`, 3200);
-    const streams = (data.audioStreams || []).filter((s) => Boolean(s.url));
-    if (streams.length === 0) throw new Error('no-audio');
-    streams.sort((a, b) => {
-      const aM4a = String(a.mimeType || '').includes('mp4') ? 1 : 0;
-      const bM4a = String(b.mimeType || '').includes('mp4') ? 1 : 0;
-      if (aM4a !== bM4a) return bM4a - aM4a;
-      return (Number(b.bitrate) || 0) - (Number(a.bitrate) || 0);
-    });
-    const bestUrl = streams[0].url;
-    if (!bestUrl) throw new Error('no-url');
-    fastestPipedHost = host;
-    return bestUrl;
-  });
+  // Race native Rust InnerTube resolution against parallel Piped mirrors so the fastest wins immediately
+  const nativeRace = async (): Promise<ResolvedAudioStream> => {
+    const nativeStream = await nativeYtmResolveAudio(videoId);
+    if (!nativeStream?.url) throw new Error('no-native');
+    return nativeStream;
+  };
 
   try {
-    const url = await Promise.any(pipedAttempts);
-    const stream: ResolvedAudioStream = { url };
-    ytAudioStreamCache.set(videoId, { stream, expiresAt: Date.now() + YT_AUDIO_CACHE_TTL_MS });
-    return stream;
+    const winner = await Promise.any([nativeRace(), pipedRace()]);
+    ytAudioStreamCache.set(videoId, {
+      stream: winner,
+      expiresAt: Date.now() + YT_AUDIO_CACHE_TTL_MS
+    });
+    return winner;
   } catch {
     // Fallback to parallel Invidious audio-only adaptive formats
   }

@@ -79,8 +79,19 @@
             ? i18n.t('nav.sleepEndOfTrack')
             : formatTime(engine.sleepRemainingSec)
         }`
-      : undefined
+      : engine.current && engine.playing
+        ? `${engine.current.title} • ${engine.current.artist}`
+        : undefined
   );
+
+  // Adaptive Theme Color: sync CSS accent variables with active track's cover colors
+  $effect(() => {
+    if (typeof document === 'undefined') return;
+    const c1 = engine.current?.c1 || '#007aff';
+    const c2 = engine.current?.c2 || '#5e5ce6';
+    document.documentElement.style.setProperty('--xmusic-accent', c1);
+    document.documentElement.style.setProperty('--xmusic-accent-2', c2);
+  });
 
   // Track directional transition & scroll memory whenever appStore.view changes (from Tabbar OR in-app links)
   $effect(() => {
@@ -153,6 +164,10 @@
 <a href="#main-content" class="skip-link">{i18n.t('nav.skip')}</a>
 
 <Page class={engine.current ? 'pb-48' : 'pb-28'}>
+  {#if appStore.uiStyle === 'liquid-glass'}
+    <div class="xmusic-ambient-aura" aria-hidden="true"></div>
+  {/if}
+
   <Navbar
     title={navTitle}
     subtitle={navSubtitle}
@@ -214,59 +229,90 @@
 
   <PlayerBar />
 
-  <Tabbar labels icons class="xmusic-gpu-layer left-0 bottom-0 fixed z-40">
-    <ToolbarPane>
-      <TabbarLink
-        active={appStore.view === 'home'}
-        label={i18n.t('nav.home')}
-        onclick={() => switchTab('home')}
-      >
-        {#snippet icon()}
-          <Icon name="home" size={22} />
-        {/snippet}
-      </TabbarLink>
+  {#if appStore.uiStyle === 'liquid-glass'}
+    <nav
+      class="xmusic-gpu-layer fixed right-3 bottom-[calc(10px+env(safe-area-inset-bottom,0px))] left-3 z-40 mx-auto max-w-md rounded-full border border-white/25 px-2 py-1.5 xmusic-liquid-glass dark:border-white/15"
+      aria-label="Navigasi utama"
+    >
+      <div class="grid grid-cols-5 items-center gap-1">
+        {#each [
+          { id: 'home', icon: 'home', label: i18n.t('nav.home') },
+          { id: 'search', icon: 'search', label: i18n.t('nav.search') },
+          { id: 'library', icon: 'library', label: i18n.t('nav.library') },
+          { id: 'eq', icon: 'eq', label: i18n.t('nav.eq') },
+          { id: 'profile', icon: 'profile', label: i18n.t('nav.profile') }
+        ] as tab (tab.id)}
+          {@const isActive = appStore.view === tab.id}
+          <button
+            type="button"
+            class="xmusic-spring-tap flex flex-col items-center justify-center gap-0.5 rounded-full py-1.5 text-[10px] font-semibold transition-all {isActive
+              ? 'bg-black/10 text-black shadow-xs dark:bg-white/16 dark:text-white'
+              : 'text-black/60 dark:text-white/60'}"
+            style={isActive && engine.current?.c1 ? `color: ${engine.current.c1};` : ''}
+            aria-current={isActive ? 'page' : undefined}
+            onclick={() => switchTab(tab.id as AppView)}
+          >
+            <Icon name={tab.icon as any} size={20} />
+            <span class="truncate max-w-[56px]">{tab.label}</span>
+          </button>
+        {/each}
+      </div>
+    </nav>
+  {:else}
+    <Tabbar labels icons class="xmusic-gpu-layer left-0 bottom-0 fixed z-40">
+      <ToolbarPane>
+        <TabbarLink
+          active={appStore.view === 'home'}
+          label={i18n.t('nav.home')}
+          onclick={() => switchTab('home')}
+        >
+          {#snippet icon()}
+            <Icon name="home" size={22} />
+          {/snippet}
+        </TabbarLink>
 
-      <TabbarLink
-        active={appStore.view === 'search'}
-        label={i18n.t('nav.search')}
-        onclick={() => switchTab('search')}
-      >
-        {#snippet icon()}
-          <Icon name="search" size={22} />
-        {/snippet}
-      </TabbarLink>
+        <TabbarLink
+          active={appStore.view === 'search'}
+          label={i18n.t('nav.search')}
+          onclick={() => switchTab('search')}
+        >
+          {#snippet icon()}
+            <Icon name="search" size={22} />
+          {/snippet}
+        </TabbarLink>
 
-      <TabbarLink
-        active={appStore.view === 'library'}
-        label={i18n.t('nav.library')}
-        onclick={() => switchTab('library')}
-      >
-        {#snippet icon()}
-          <Icon name="library" size={22} />
-        {/snippet}
-      </TabbarLink>
+        <TabbarLink
+          active={appStore.view === 'library'}
+          label={i18n.t('nav.library')}
+          onclick={() => switchTab('library')}
+        >
+          {#snippet icon()}
+            <Icon name="library" size={22} />
+          {/snippet}
+        </TabbarLink>
 
-      <TabbarLink
-        active={appStore.view === 'eq'}
-        label={i18n.t('nav.eq')}
-        onclick={() => switchTab('eq')}
-      >
-        {#snippet icon()}
-          <Icon name="eq" size={22} />
-        {/snippet}
-      </TabbarLink>
+        <TabbarLink
+          active={appStore.view === 'eq'}
+          label={i18n.t('nav.eq')}
+          onclick={() => switchTab('eq')}
+        >
+          {#snippet icon()}
+            <Icon name="eq" size={22} />
+          {/snippet}
+        </TabbarLink>
 
-      <TabbarLink
-        active={appStore.view === 'profile'}
-        label={i18n.t('nav.profile')}
-        onclick={() => switchTab('profile')}
-      >
-        {#snippet icon()}
-          <Icon name="profile" size={22} />
-        {/snippet}
-      </TabbarLink>
-    </ToolbarPane>
-  </Tabbar>
+        <TabbarLink
+          active={appStore.view === 'profile'}
+          label={i18n.t('nav.profile')}
+          onclick={() => switchTab('profile')}
+        >
+          {#snippet icon()}
+            <Icon name="profile" size={22} />
+          {/snippet}
+        </TabbarLink>
+      </ToolbarPane>
+    </Tabbar>
+  {/if}
 </Page>
 
 

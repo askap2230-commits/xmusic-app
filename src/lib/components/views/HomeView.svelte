@@ -26,7 +26,7 @@
 
   $effect(() => {
     if (appStore.isOnline && appStore.rankedYtFeed.length > 0) {
-      engine.prewarmTracks(appStore.rankedYtFeed, 4);
+      engine.prewarmTracks(appStore.rankedYtFeed, 6);
     }
   });
 

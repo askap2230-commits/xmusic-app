@@ -1,9 +1,10 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { Preloader, Progressbar } from 'konsta/svelte';
+  import { parseLrcLyrics } from '#lib/api/services.ts';
   import { engine } from '#lib/audio/engine.svelte.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
-  import { formatTime, getTrackInitial } from '#lib/utils/format.ts';
+  import { findActiveLyricIndex, formatTime, getTrackInitial } from '#lib/utils/format.ts';
   import Icon from './Icon.svelte';
 
   let imgFailed = $state<boolean>(false);
@@ -17,12 +18,20 @@
     engine.duration > 0 ? Math.min(1, engine.position / engine.duration) : 0
   );
   const isLoadingAudio = $derived(engine.resolvingAudio || engine.buffering);
+  const liveLyricLine = $derived.by(() => {
+    const raw = engine.current?.lyrics;
+    if (!raw) return '';
+    const parsed = parseLrcLyrics(raw);
+    if (parsed.length === 0) return '';
+    const idx = findActiveLyricIndex(parsed, engine.position);
+    return idx >= 0 ? parsed[idx]?.text || '' : '';
+  });
 </script>
 
 <!-- Shown cleanly only when a track is active, docked above Konsta v5.5 Floating iOS Tabbar -->
 {#if engine.current}
   <footer
-    class="xmusic-gpu-layer fixed right-3 left-3 bottom-[calc(86px+env(safe-area-inset-bottom,0px))] z-30 mx-auto max-w-4xl overflow-hidden rounded-[24px] border transition-colors {appStore.uiStyle === 'liquid-glass'
+    class="xmusic-gpu-layer fixed right-3 left-3 bottom-[calc(76px+env(safe-area-inset-bottom,0px))] z-30 mx-auto max-w-4xl overflow-hidden rounded-[24px] border transition-colors {appStore.uiStyle === 'liquid-glass'
       ? 'xmusic-liquid-glass border-white/25 dark:border-white/16'
       : 'border-black/10 bg-ios-light-surface-1/95 shadow-xl dark:border-white/12 dark:bg-ios-dark-surface-1/95 dark:shadow-2xl'}"
     style={appStore.uiStyle === 'liquid-glass' && engine.current?.c1
@@ -62,7 +71,11 @@
             {engine.current.title}
           </span>
           <span class="block truncate text-xs tabular-nums text-black/60 dark:text-white/60">
-            {engine.current.artist} • {formatTime(engine.position)} / {formatTime(engine.duration)}
+            {#if liveLyricLine}
+              <span class="font-medium text-[#007aff] dark:text-[#64d2ff]">♪ {liveLyricLine}</span>
+            {:else}
+              {engine.current.artist} • {formatTime(engine.position)} / {formatTime(engine.duration)}
+            {/if}
           </span>
         </span>
       </button>

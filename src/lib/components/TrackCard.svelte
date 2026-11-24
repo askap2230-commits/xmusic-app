@@ -47,15 +47,16 @@
   }
 </script>
 
-<article class="xmusic-flip-scene">
+<article class="xmusic-flip-scene xmusic-spring-tap">
   <div class="xmusic-flip-inner" class:is-flipped={isFlipped}>
     <!-- FRONT FACE: FULL-CARD COVER OVERLAY -->
     <div class="xmusic-flip-face">
       <Card
         contentWrap={false}
-        class="!m-0 overflow-hidden rounded-2xl border {isPlaying
-          ? 'border-[#007aff] dark:border-[#0a84ff]'
-          : 'border-black/10 dark:border-white/10'} transition-colors"
+        class="!m-0 overflow-hidden rounded-[22px] border {isPlaying
+          ? 'border-[#007aff] dark:border-[#0a84ff] shadow-lg'
+          : 'border-black/10 dark:border-white/12'} transition-all"
+        style={isPlaying && track.c1 ? `border-color: ${track.c1};` : ''}
       >
         <div class="relative aspect-[4/5] w-full overflow-hidden bg-zinc-900">
           <button

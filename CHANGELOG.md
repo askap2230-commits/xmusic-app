@@ -2,6 +2,13 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.32.0] - 2026-11-25
+
+### Added & Improved (Floating Lens Liquid Glass UI, Live Lyric Capsule & Zero-Wait Stream Race)
+- **Navigasi Lensa Mengambang (`Floating Lens Pill Tabbar`) & Aura Warna Dinamis (`src/app.css`, `src/routes/+page.svelte`)**: Menghadirkan bilah navigasi kapsul kaca transparan bergaya iOS 26 dengan animasi *spring-tap* ringan berbasis GPU serta pendaran latar adaptif (`--xmusic-accent`) yang otomatis menyesuaikan warna dominan sampul album aktif.
+- **Kapsul Lirik Berjalan (`Live Lyric Pill`) (`src/lib/components/PlayerBar.svelte`)**: Menampilkan baris lirik yang sedang aktif secara *real-time* langsung di pemutar mini melayang tepat di atas bilah navigasi lensa.
+- **Balapan Resolusi Stream Paralel (`Promise.any` Native + Piped) & Preload 8 Lagu (`src/lib/api/services.ts`, `src/lib/audio/ytPreloader.ts`, `HomeView.svelte`)**: Menjalankan resolusi native Rust dan mirror Piped tercepat secara bersamaan sekaligus memperluas *pre-resolve* otomatis menjadi 8 lagu teratas (`concurrency: 4`) agar pemutaran dimulai instan tanpa jeda loading.
+
 ## [6.31.0] - 2026-11-24
 
 ### Fixed (Declare `uiStyle` Property & `UiStyleMode` Import on `AppStore` for `svelte-check`)

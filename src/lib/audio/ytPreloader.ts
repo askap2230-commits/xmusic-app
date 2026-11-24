@@ -37,7 +37,7 @@ interface NetworkConnectionLike {
 const CACHE_TTL_MS = 45 * 60 * 1000;
 const FAIL_COOLDOWN_MS = 5 * 60 * 1000;
 const MAX_CACHE_SIZE = 60;
-const MAX_PRECONNECT_ORIGINS = 3;
+const MAX_PRECONNECT_ORIGINS = 5;
 const SESSION_STORAGE_KEY = 'nys_yt_stream_cache_v1';
 
 class SmartYtPreloader {
@@ -70,9 +70,9 @@ class SmartYtPreloader {
       return { maxConcurrent: 1, viewportLimit: 0, allowSpeculative: false };
     }
     if (eff === '3g' || conn.type === 'cellular') {
-      return { maxConcurrent: 2, viewportLimit: 3, allowSpeculative: true };
+      return { maxConcurrent: 2, viewportLimit: 4, allowSpeculative: true };
     }
-    return { maxConcurrent: 3, viewportLimit: 6, allowSpeculative: true };
+    return { maxConcurrent: 4, viewportLimit: 8, allowSpeculative: true };
   }
 
   private hydrateSessionCache(): void {
@@ -252,7 +252,7 @@ class SmartYtPreloader {
   /**
    * Predictively pre-resolve YouTube Music tracks adapted to current network quality & Data Saver.
    */
-  prefetchTracks(tracks: Track[], limit = 6, urgent = false): void {
+  prefetchTracks(tracks: Track[], limit = 8, urgent = false): void {
     const budget = this.getNetworkBudget();
     const effectiveLimit = urgent
       ? Math.min(limit, budget.maxConcurrent === 1 ? 1 : 2)
