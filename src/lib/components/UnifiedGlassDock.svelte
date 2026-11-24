@@ -86,7 +86,7 @@
   <!-- Unified iOS 26 Liquid Glass Dock: Music Player + Sliding Optical Lens Navigation Bar in ONE glass capsule -->
   <div
     class="xmusic-gpu-layer fixed right-2.5 bottom-[calc(10px+env(safe-area-inset-bottom,0px))] left-2.5 z-40 mx-auto max-w-xl overflow-hidden xmusic-liquid-glass transition-all duration-300 {engine.current
-      ? 'rounded-[34px]'
+      ? 'rounded-[38px]'
       : 'rounded-full'}"
     style={engine.current?.c1 ? `border-color: ${engine.current.c1}66;` : ''}
     role="region"
@@ -183,7 +183,7 @@
     {/if}
 
     <!-- Integrated iOS 26 Sliding Optical Lens Navigation Bar (Tap or Slide Finger Across Tabs) -->
-    <nav class="px-2 py-2 select-none" aria-label="Navigasi utama">
+    <nav class="px-2.5 py-2.5 select-none" aria-label="Navigasi utama">
       <div
         bind:this={navTrackEl}
         class="xmusic-lens-track touch-pan-y"
@@ -207,14 +207,14 @@
           {@const isActive = appStore.view === tab.id}
           <button
             type="button"
-            class="relative z-10 flex flex-col items-center justify-center gap-0.5 rounded-full py-2 text-[11px] font-bold tracking-tight transition-transform duration-200 {isActive
-              ? 'scale-105 text-black dark:text-white'
+            class="relative z-10 flex flex-col items-center justify-center gap-0.5 rounded-full py-2.5 text-[11px] font-extrabold tracking-tight transition-transform duration-200 {isActive
+              ? 'scale-110 text-black dark:text-white'
               : 'text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white'}"
             style={isActive && engine.current?.c1 ? `color: ${engine.current.c1};` : ''}
             aria-current={isActive ? 'page' : undefined}
             onclick={() => onSwitchTab(tab.id)}
           >
-            <Icon name={tab.icon} size={22} />
+            <Icon name={tab.icon} size={24} />
             <span class="max-w-[64px] truncate">{i18n.t(tab.labelKey)}</span>
           </button>
         {/each}

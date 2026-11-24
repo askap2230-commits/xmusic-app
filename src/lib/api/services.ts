@@ -838,6 +838,62 @@ export async function fetchYtTrending(region = 'ID', page = 0): Promise<Track[]>
 /**
  * Searches pure YouTube Music songs (parallel Piped music_songs race + Invidious fallback).
  */
+const storyVideoIdCache = new Map<string, string>();
+
+/**
+ * Resolves the exact YouTube Music Video / Story Canvas ID for a song.
+ * Prioritizes YouTube Data API v3 (`ytApiKey` with `videoEmbeddable=true` & `videoCategoryId=10`)
+ * so local, Spotify, or catalog tracks also get their matching looping Video Story!
+ */
+export async function resolveSongStoryVideoId(
+  title: string,
+  artist: string,
+  existingVideoId?: string
+): Promise<string | null> {
+  if (existingVideoId && /^[a-zA-Z0-9_-]{11}$/.test(existingVideoId)) {
+    return existingVideoId;
+  }
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return null;
+
+  const cacheKey = `${title.trim().toLowerCase()}::${artist.trim().toLowerCase()}`;
+  const cached = storyVideoIdCache.get(cacheKey);
+  if (cached) return cached;
+
+  const query = `${title} ${artist} official music video`.trim();
+  if (!query) return null;
+
+  const { ytApiKey } = getApiConfig();
+  if (ytApiKey) {
+    try {
+      const data = await fetchJsonWithTimeout<{
+        items?: Array<{ id?: { videoId?: string } }>;
+      }>(
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&videoEmbeddable=true&maxResults=3&q=${encodeURIComponent(query)}&key=${encodeURIComponent(ytApiKey.trim())}`,
+        2200
+      );
+      const vid = data.items?.find((it) => it.id?.videoId)?.id?.videoId;
+      if (vid && /^[a-zA-Z0-9_-]{11}$/.test(vid)) {
+        storyVideoIdCache.set(cacheKey, vid);
+        return vid;
+      }
+    } catch {
+      // Fall through to keyless YouTube Music video match
+    }
+  }
+
+  try {
+    const tracks = await fetchYtSearch(`${title} ${artist}`.trim());
+    const match = tracks.find((t) => t.videoId && /^[a-zA-Z0-9_-]{11}$/.test(t.videoId));
+    if (match?.videoId) {
+      storyVideoIdCache.set(cacheKey, match.videoId);
+      return match.videoId;
+    }
+  } catch {
+    // Ignore fallback errors
+  }
+  return null;
+}
+
 export async function fetchYtSearch(query: string): Promise<Track[]> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
   const clean = query.trim();

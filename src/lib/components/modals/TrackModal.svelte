@@ -2,7 +2,7 @@
 <script lang="ts">
   import { Button, Card, Link, Navbar, Page, Popup, Preloader, Range } from 'konsta/svelte';
   import { engine } from '#lib/audio/engine.svelte.ts';
-  import { parseLrcLyrics } from '#lib/api/services.ts';
+  import { parseLrcLyrics, resolveSongStoryVideoId } from '#lib/api/services.ts';
   import { EQ_PRESETS } from '#lib/data/presets.ts';
   import { i18n } from '#lib/i18n/index.svelte.ts';
   import { appStore } from '#lib/stores/library.svelte.ts';
@@ -19,9 +19,22 @@
   let manualScrollUntil = 0;
   let sharingStory = $state<boolean>(false);
 
+  let resolvedStoryVideoId = $state<string | null>(null);
+
   $effect(() => {
-    void track?.id;
+    const active = track;
     moreMenuOpen = false;
+    resolvedStoryVideoId = active?.videoId || null;
+    if (!active || !storyCanvasEnabled) return;
+    let cancelled = false;
+    void resolveSongStoryVideoId(active.title, active.artist, active.videoId).then((vid) => {
+      if (!cancelled && vid) {
+        resolvedStoryVideoId = vid;
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   });
 
   function pauseAutoScroll(): void {
@@ -317,12 +330,12 @@
                         </div>
                       {/if}
 
-                      {#if storyCanvasEnabled && track.videoId && appStore.isOnline && engine.playing && engine.current?.id === track.id && !showVideoFallback}
-                        <!-- Muted Looping Full-Bleed Video Story Canvas -->
+                      {#if storyCanvasEnabled && resolvedStoryVideoId && appStore.isOnline && engine.playing && engine.current?.id === track.id && !showVideoFallback}
+                        <!-- Muted Looping Full-Bleed Video Story Canvas (Resolved via YouTube API Key) -->
                         <iframe
                           title="Video Story {track.title}"
                           class="pointer-events-none absolute top-1/2 left-1/2 h-[185%] w-[320%] -translate-x-1/2 -translate-y-1/2 scale-110 border-0 opacity-85 mix-blend-lighten"
-                          src="https://www.youtube.com/embed/{track.videoId}?autoplay=1&mute=1&controls=0&loop=1&playlist={track.videoId}&playsinline=1&modestbranding=1&rel=0&showinfo=0"
+                          src="https://www.youtube.com/embed/{resolvedStoryVideoId}?autoplay=1&mute=1&controls=0&loop=1&playlist={resolvedStoryVideoId}&playsinline=1&modestbranding=1&rel=0&showinfo=0"
                           allow="autoplay; encrypted-media"
                         ></iframe>
                       {/if}

@@ -2,6 +2,12 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.36.0] - 2026-11-25
+
+### Added & Improved (YouTube API Key Video Story Matching & Oversized Bubbly Glass Lens Dock)
+- **Video Story Kartu Lagu Otomatis via YouTube API Key (`resolveSongStoryVideoId` di `services.ts` & `TrackModal.svelte`)**: Mengambil video musik resmi yang sesuai dengan judul & artis lagu menggunakan YouTube Data API v3 (`ytApiKey` dengan filter `videoCategoryId=10` & `videoEmbeddable=true`) dan menyimpannya dalam cache instan sehingga seluruh lagu memiliki latar Video Story yang akurat.
+- **Gelembung Lensa Navigasi Sangat Besar & Ringan 120fps (`src/app.css`, `UnifiedGlassDock.svelte`)**: Memperbesar gelembung lensa kaca refraktif (`width: 23%`, ikon `24px`, efek magnifikasi `scale(1.10)`–`scale(1.14)` saat digeser) dengan akselerasi lapisan GPU ringan agar tetap halus dan enteng di Android.
+
 ## [6.35.0] - 2026-11-25
 
 ### Added & Improved (iOS 27 Prismatic Liquid Glass, Larger Lens Dock, Card Video Story & Consolidated More Menu)
