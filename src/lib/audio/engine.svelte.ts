@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.27.0).
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.28.0).
  *
  * Signal Chain (Zero-Clipping Lossless-Clear DSP):
  *   MediaElementAudioSourceNode
@@ -13,7 +13,7 @@
  *     -> AnalyserNode (pull-based FFT visualizer)
  *     -> AudioContext.destination (latencyHint: 'playback')
  *
- * Stability Guarantees (v6.27.0):
+ * Stability Guarantees (v6.28.0):
  *   - Monotonic playSessionId eliminates async race conditions and phantom restarts after pause.
  *   - Transition guard suppresses spurious pause/play flicker during track switches.
  *   - Idempotent resume() + automatic self-healing recovery prevents stuck Play buttons on all sources.
@@ -21,6 +21,7 @@
  */
 import { YtAudioBridge } from './ytPlayerBridge.ts';
 import { fetchArchiveAudioSearch, fetchSearch, fetchYtSearch } from '#lib/api/services.ts';
+import { scoreTrackRelevance } from '#lib/search/smartSearch.ts';
 import { ytPreloader } from './ytPreloader.ts';
 import { EQ_BANDS, EQ_PRESETS } from '#lib/data/presets.ts';
 import { loadJSON, saveJSON } from '#lib/db/storage.ts';
@@ -1287,36 +1288,42 @@ class AudioEngine {
     if (this.playing || this.usingNativeAndroid || this.usingDirectAudio) return;
 
     try {
-      const cleanTitle = (track.title || '').replace(/\(.*?\)|\[.*?\]/g, '').trim();
+      const cleanTitle = (track.title || '')
+        .replace(/\(.*?\)|\[.*?\]|official\s*(music\s*)?(video|audio|lyric|lyrics|mv)/gi, '')
+        .trim();
       const cleanArtist = (track.artist || '').replace(/YouTube Music/gi, '').trim();
       const query = `${cleanTitle} ${cleanArtist}`.trim();
       if (query) {
-        const [audiusHits, archiveHits] = await Promise.race([
+        const [audiusHits, archiveHits, titleOnlyAudius] = await Promise.race([
           Promise.all([
-            fetchSearch(query, 6).catch(() => [] as Track[]),
-            fetchArchiveAudioSearch(query, 3).catch(() => [] as Track[])
+            fetchSearch(query, 8).catch(() => [] as Track[]),
+            fetchArchiveAudioSearch(query, 4).catch(() => [] as Track[]),
+            cleanTitle && cleanArtist ? fetchSearch(cleanTitle, 6).catch(() => [] as Track[]) : Promise.resolve([] as Track[])
           ]),
-          new Promise<[Track[], Track[]]>((resolve) => setTimeout(() => resolve([[], []]), 2200))
+          new Promise<[Track[], Track[], Track[]]>((resolve) => setTimeout(() => resolve([[], [], []]), 2200))
         ]);
         if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== track.id) return;
         if (this.playing || this.usingNativeAndroid || this.usingDirectAudio) return;
 
-        const normTitle = cleanTitle.toLowerCase();
-        const bestMatch =
-          [...audiusHits, ...archiveHits].find(
-            (c) => c.url && !c.isPreview && c.title.toLowerCase().includes(normTitle)
-          ) ||
-          [...audiusHits, ...archiveHits].find((c) => Boolean(c.url && !c.isPreview));
-
-        if (bestMatch?.url) {
-          this.usingYtBridge = false;
-          this.ytBridge.stop();
-          this.resolvingAudio = false;
-          this.audioResolveFailed = false;
-          this.current = { ...track, url: bestMatch.url };
-          this.playResolvedStream({ url: bestMatch.url }, this.current, sessionId, resumeAt);
-          this.toast('Memutar via sumber audio penuh alternatif.');
-          return;
+        const pool = [...audiusHits, ...titleOnlyAudius, ...archiveHits].filter(
+          (c) => Boolean(c.url && !c.isPreview && (c.dur === 0 || c.dur >= 60))
+        );
+        if (pool.length > 0) {
+          const emptySet = new Set<string>();
+          const ranked = pool
+            .map((c) => ({ c, sc: scoreTrackRelevance(c, query, emptySet, emptySet) }))
+            .sort((a, b) => b.sc - a.sc);
+          const bestMatch = ranked[0]?.c;
+          if (bestMatch?.url) {
+            this.usingYtBridge = false;
+            this.ytBridge.stop();
+            this.resolvingAudio = false;
+            this.audioResolveFailed = false;
+            this.current = { ...track, url: bestMatch.url };
+            this.playResolvedStream({ url: bestMatch.url }, this.current, sessionId, resumeAt);
+            this.toast('Memutar via sumber audio penuh alternatif.');
+            return;
+          }
         }
       }
     } catch {

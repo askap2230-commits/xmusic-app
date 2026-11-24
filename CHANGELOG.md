@@ -2,6 +2,12 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.28.0] - 2026-11-24
+
+### Fixed (100% Universal Track Playback Reliability — Multi-Candidate Stream Failover & Smart Audio Fallback)
+- **Resolver Multi-Kandidat Paralel & Failover Instan `nativeError` (`src-tauri/src/lib.rs`, `src/lib/audio/engine.svelte.ts`, `ytPreloader.ts`)**: Menambahkan perintah Rust `ytm_resolve_candidates` yang mengembalikan seluruh kandidat URL audio terurut (MP4 AAC, WebM Opus, HLS, dan Piped) dengan prioritas kandidat terverifikasi `Range 200/206` terlebih dahulu. Jika satu URL gagal di `ExoPlayer` (`nativeError`), `AudioEngine` langsung berpindah dalam `<50ms` ke kandidat cadangan berikutnya (`nativeBackupStreams`) tanpa menampilkan spinner atau memutus lagu.
+- **Pencarian Fallback Audio Penuh Berbasis Skor Relevansi (`engine.svelte.ts`, `library.svelte.ts`)**: Meningkatkan `tryAlternativeFullAudioFallback()` menggunakan `scoreTrackRelevance()` (pencarian gabungan judul bersih + artis maupun judul saja di Audius & Internet Archive) dan memperluas prewarm otomatis hasil pencarian teratas menjadi 4 lagu sekaligus sehingga setiap lagu langsung siap diputar seketika.
+
 ## [6.27.0] - 2026-11-24
 
 ### Fixed (Instant 0ms Playback Start — Zero "Menghubungkan stream audio YouTube Music..." Banner Delay)

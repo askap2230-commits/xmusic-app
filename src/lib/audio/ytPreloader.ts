@@ -24,6 +24,7 @@ import type { ResolvedAudioStream, Track } from '#lib/types/music.ts';
 interface CacheEntry {
   url: string;
   userAgent?: string;
+  backupStreams?: Array<{ url: string; userAgent?: string }>;
   expiresAt: number;
 }
 
@@ -140,7 +141,7 @@ class SmartYtPreloader {
       this.cache.delete(videoId);
       return null;
     }
-    return { url: entry.url, userAgent: entry.userAgent };
+    return { url: entry.url, userAgent: entry.userAgent, backupStreams: entry.backupStreams };
   }
 
   getCachedUrl(videoId: string): string | null {
@@ -163,6 +164,7 @@ class SmartYtPreloader {
     this.cache.set(videoId, {
       url: stream.url,
       userAgent: stream.userAgent,
+      backupStreams: stream.backupStreams,
       expiresAt: Date.now() + CACHE_TTL_MS
     });
     this.preconnectOrigin(stream.url);

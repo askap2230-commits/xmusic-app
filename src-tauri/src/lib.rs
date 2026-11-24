@@ -507,6 +507,28 @@ fn collect_audio_candidates(data: &Value) -> Vec<String> {
     out
 }
 
+async fn quick_probe_stream(client: &reqwest::Client, url: &str, ua: &str) -> bool {
+    let mut req = client
+        .get(url)
+        .header("User-Agent", ua)
+        .timeout(Duration::from_millis(1200));
+    if !url.contains(".m3u8") && !url.contains("/manifest/hls") {
+        req = req.header("Range", "bytes=0-1");
+    }
+    if url.contains("googlevideo.com") && ua.starts_with("Mozilla/") {
+        req = req
+            .header("Origin", "https://www.youtube.com")
+            .header("Referer", "https://www.youtube.com/");
+    }
+    match req.send().await {
+        Ok(r) => {
+            let code = r.status().as_u16();
+            code == 200 || code == 206
+        }
+        Err(_) => false,
+    }
+}
+
 async fn try_innertube_client(
     client: &reqwest::Client,
     client_name_id: &str,
@@ -514,7 +536,7 @@ async fn try_innertube_client(
     ua: &str,
     visitor_data: Option<&str>,
     body: Value,
-) -> Option<YtmResolvedAudio> {
+) -> Vec<YtmResolvedAudio> {
     let mut req = client
         .post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
         .header("User-Agent", ua)
@@ -527,52 +549,74 @@ async fn try_innertube_client(
             req = req.header("X-Goog-Visitor-Id", vd);
         }
     }
-    let res = req.json(&body).send().await.ok()?;
+    let Ok(res) = req.json(&body).send().await else {
+        return Vec::new();
+    };
     if !res.status().is_success() {
-        return None;
+        return Vec::new();
     }
-    let data = res.json::<Value>().await.ok()?;
+    let Ok(data) = res.json::<Value>().await else {
+        return Vec::new();
+    };
     let candidates = collect_audio_candidates(&data);
-    // Return top direct audio stream immediately without slow sequential Range probes
-    // (AndroidX Media3 ExoPlayer streams directly and reports errors instantaneously if any).
-    candidates.into_iter().next().map(|url| YtmResolvedAudio {
-        url,
-        user_agent: ua.to_string(),
-    })
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    // Fast-verify candidates: put Range-verified (200/206) URLs first, followed by unverified backups
+    let mut verified: Vec<YtmResolvedAudio> = Vec::new();
+    let mut unverified: Vec<YtmResolvedAudio> = Vec::new();
+    for (idx, url) in candidates.into_iter().enumerate() {
+        if idx < 2 && quick_probe_stream(client, &url, ua).await {
+            verified.push(YtmResolvedAudio {
+                url,
+                user_agent: ua.to_string(),
+            });
+        } else {
+            unverified.push(YtmResolvedAudio {
+                url,
+                user_agent: ua.to_string(),
+            });
+        }
+    }
+    verified.extend(unverified);
+    verified
 }
 
-async fn try_piped_single(client: &reqwest::Client, host: &str, vid: &str) -> Option<YtmResolvedAudio> {
+async fn try_piped_single(client: &reqwest::Client, host: &str, vid: &str) -> Vec<YtmResolvedAudio> {
     let ua = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36";
     let url = format!("{host}/streams/{vid}");
-    let res = client
+    let Ok(res) = client
         .get(&url)
         .header("User-Agent", ua)
         .timeout(Duration::from_millis(1800))
         .send()
         .await
-        .ok()?;
+    else {
+        return Vec::new();
+    };
     if !res.status().is_success() {
-        return None;
+        return Vec::new();
     }
-    let data = res.json::<Value>().await.ok()?;
+    let Ok(data) = res.json::<Value>().await else {
+        return Vec::new();
+    };
+    let mut out: Vec<YtmResolvedAudio> = Vec::new();
     if let Some(streams) = data.get("audioStreams").and_then(Value::as_array) {
-        let mut best_url: Option<String> = None;
-        let mut best_score: i64 = -1;
+        let mut ranked: Vec<(i64, String)> = Vec::new();
         for s in streams {
             if let Some(stream_url) = s.get("url").and_then(Value::as_str) {
                 if stream_url.starts_with("https://") {
                     let mime = s.get("mimeType").and_then(Value::as_str).unwrap_or("");
                     let bitrate = s.get("bitrate").and_then(Value::as_i64).unwrap_or(0);
                     let score = if mime.contains("mp4") { 10_000_000 + bitrate } else { bitrate };
-                    if score > best_score {
-                        best_score = score;
-                        best_url = Some(stream_url.to_string());
-                    }
+                    ranked.push((score, stream_url.to_string()));
                 }
             }
         }
-        if let Some(u) = best_url {
-            return Some(YtmResolvedAudio {
+        ranked.sort_by(|a, b| b.0.cmp(&a.0));
+        for (_, u) in ranked.into_iter().take(2) {
+            out.push(YtmResolvedAudio {
                 url: u,
                 user_agent: ua.to_string(),
             });
@@ -580,26 +624,25 @@ async fn try_piped_single(client: &reqwest::Client, host: &str, vid: &str) -> Op
     }
     if let Some(hls) = data.get("hls").and_then(Value::as_str) {
         if hls.starts_with("https://") {
-            return Some(YtmResolvedAudio {
+            out.push(YtmResolvedAudio {
                 url: hls.to_string(),
                 user_agent: ua.to_string(),
             });
         }
     }
-    None
+    out
 }
 
-/// Ultra-fast parallel YouTube Music audio stream resolver (<800ms typical).
-/// Races InnerTube (VISIONOS + ANDROID sdkless + ANDROID_VR) and FOSS Piped instances simultaneously!
+/// Resolves ordered, Range-verified direct HTTPS audio stream candidates in parallel (<800ms typical).
 #[tauri::command]
-async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>, String> {
+async fn ytm_resolve_candidates(video_id: String) -> Result<Vec<YtmResolvedAudio>, String> {
     let vid = video_id.trim();
     if vid.len() != 11 {
-        return Ok(None);
+        return Ok(Vec::new());
     }
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(2000))
+        .timeout(Duration::from_millis(2200))
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -663,7 +706,6 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>,
         "racyCheckOk": true
     });
 
-    // Spawn ALL InnerTube + Piped tasks in parallel at once!
     let mut handles = Vec::new();
     {
         let c = client.clone();
@@ -696,18 +738,25 @@ async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>,
         }));
     }
 
-    let mut winner: Option<YtmResolvedAudio> = None;
+    let mut all_candidates: Vec<YtmResolvedAudio> = Vec::new();
     for handle in handles {
-        if winner.is_some() {
-            handle.abort();
-            continue;
-        }
-        if let Ok(Some(res)) = handle.await {
-            winner = Some(res);
+        if let Ok(list) = handle.await {
+            for item in list {
+                if !all_candidates.iter().any(|c| c.url == item.url) {
+                    all_candidates.push(item);
+                }
+            }
         }
     }
 
-    Ok(winner)
+    Ok(all_candidates)
+}
+
+/// Backward-compatible single-best audio stream command.
+#[tauri::command]
+async fn ytm_resolve_audio(video_id: String) -> Result<Option<YtmResolvedAudio>, String> {
+    let list = ytm_resolve_candidates(video_id).await?;
+    Ok(list.into_iter().next())
 }
 
 /// Shared application entry point for both Desktop and Mobile targets.
@@ -718,7 +767,8 @@ pub fn run() {
             get_runtime_info,
             http_get_json,
             ytm_search,
-            ytm_resolve_audio
+            ytm_resolve_audio,
+            ytm_resolve_candidates
         ])
         .run(tauri::generate_context!())
         .expect("Failed to start nys Xmusic Tauri runtime");

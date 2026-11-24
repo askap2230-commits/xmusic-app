@@ -110,7 +110,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '6.27.0',
+    version: '6.28.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
@@ -1125,7 +1125,7 @@ class AppStore {
         publish();
         if (res.length > 0) {
           this.searching = false;
-          engine.prewarmTracks(res, 2);
+          engine.prewarmTracks(res, 4);
         }
       });
 
@@ -1153,7 +1153,7 @@ class AppStore {
         if (!searchController.signal.aborted && extraYt.length > 0) {
           ytList = extraYt;
           publish();
-          engine.prewarmTracks(extraYt, 2);
+          engine.prewarmTracks(extraYt, 4);
         }
       }
       if (searchController.signal.aborted) return;

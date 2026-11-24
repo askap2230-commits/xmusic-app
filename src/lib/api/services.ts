@@ -687,11 +687,18 @@ async function nativeYtmResolveAudio(videoId: string): Promise<ResolvedAudioStre
   if (typeof window === 'undefined' || !window.__TAURI_INTERNALS__) return null;
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    const res = await invoke<{ url?: string; user_agent?: string } | null>('ytm_resolve_audio', {
+    const rows = await invoke<Array<{ url?: string; user_agent?: string }>>('ytm_resolve_candidates', {
       videoId
     });
-    if (res?.url && res.url.startsWith('https://')) {
-      return { url: res.url, userAgent: res.user_agent || undefined };
+    const valid = (Array.isArray(rows) ? rows : [])
+      .filter((r) => r?.url && r.url.startsWith('https://'))
+      .map((r) => ({ url: r.url!, userAgent: r.user_agent || undefined }));
+    if (valid.length > 0) {
+      return {
+        url: valid[0].url,
+        userAgent: valid[0].userAgent,
+        backupStreams: valid.slice(1)
+      };
     }
     return null;
   } catch (err) {

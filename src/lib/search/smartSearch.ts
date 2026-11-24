@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Modular Typo-Tolerant Smart Search, Multi-Source Blending & Dynamic Discovery Engine (v6.27.0).
+ * Modular Typo-Tolerant Smart Search, Multi-Source Blending & Dynamic Discovery Engine (v6.28.0).
  *
  * Pure TypeScript, zero external dependencies, 100% on-device:
  * - Diacritic & repeated-character normalization ("tuluuus" -> "tulus", "bernaadya" -> "bernadya")

@@ -166,6 +166,7 @@ export interface DownloadResult {
 export interface ResolvedAudioStream {
   url: string;
   userAgent?: string;
+  backupStreams?: Array<{ url: string; userAgent?: string }>;
 }
 
 export interface NativeAndroidPlaybackState {
