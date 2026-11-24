@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Modular Typo-Tolerant Smart Search, Multi-Source Blending & Dynamic Discovery Engine (v6.23.0).
+ * Modular Typo-Tolerant Smart Search, Multi-Source Blending & Dynamic Discovery Engine (v6.24.0).
  *
  * Pure TypeScript, zero external dependencies, 100% on-device:
  * - Diacritic & repeated-character normalization ("tuluuus" -> "tulus", "bernaadya" -> "bernadya")
@@ -150,21 +150,25 @@ export function scoreTrackRelevance(
     score += (matchedCount / qTokens.length) * 18;
   }
 
-  // Full-length priority: full songs ALWAYS rank ahead of 30-second catalog previews
+  // Strong Full-Length Song Priority (never let 30s previews or 5s voice clips beat full songs)
   if (!track.isPreview) {
     score += 95;
   } else {
-    score -= 45;
+    score -= 65;
   }
-  if (track.dur >= 90 && track.dur <= 480) score += 10;
-  if (track.source === 'local') score += 18;
+  if (track.dur > 0 && track.dur < 45 && !track.isPreview) {
+    score -= 60;
+  } else if (track.dur >= 90 && track.dur <= 540) {
+    score += 14;
+  }
+  if (track.source === 'local') score += 16;
   if (likedSet.has(track.id)) score += 14;
   if (artistNorm && recentArtistSet.has(artistNorm)) score += 10;
 
-  // Full streaming source priority
-  if (track.source === 'youtube') score += 16;
-  else if (track.source === 'audius') score += 14;
-  else if (track.source === 'archive') score += 10;
+  // Source ranking for full-length music
+  if (track.source === 'youtube') score += 18;
+  else if (track.source === 'audius') score += 12;
+  else if (track.source === 'archive') score += 8;
 
   return score;
 }
@@ -215,19 +219,15 @@ export function blendAndRankSearchResults(
   const result: Track[] = [top.track];
   const usedIds = new Set<string>([top.track.id]);
 
-  // Ensure top diverse FULL-LENGTH sources (YouTube, Audius, Local, Archive) are represented early
-  const fullSources: Array<Track['source']> = ['youtube', 'audius', 'local', 'archive'];
+  // Ensure top diverse sources (Audius, YouTube, Catalog, Local, Archive) are represented early if relevant
+  const secondarySources: Array<Track['source']> = ['youtube', 'audius', 'local', 'archive'];
   const minThreshold = Math.max(18, top.score * 0.35);
 
   const promoted: Track[] = [];
-  for (const src of fullSources) {
+  for (const src of secondarySources) {
     if (src === top.track.source) continue;
     const match = rest.find(
-      (item) =>
-        !item.track.isPreview &&
-        item.track.source === src &&
-        item.score >= minThreshold &&
-        !usedIds.has(item.track.id)
+      (item) => item.track.source === src && item.score >= minThreshold && !usedIds.has(item.track.id)
     );
     if (match) {
       promoted.push(match.track);
@@ -235,13 +235,10 @@ export function blendAndRankSearchResults(
     }
   }
 
-  // Interleave full-length remaining tracks first, then append 30s catalog previews at the end
-  const fullRest = rest.filter((item) => !item.track.isPreview);
-  const previewRest = rest.filter((item) => item.track.isPreview);
-
+  // Interleave top-ranked remaining tracks with promoted multi-source diversity hits
   let pIdx = 0;
   let rCount = 0;
-  for (const item of fullRest) {
+  for (const item of rest) {
     if (usedIds.has(item.track.id)) continue;
     result.push(item.track);
     usedIds.add(item.track.id);
@@ -252,11 +249,6 @@ export function blendAndRankSearchResults(
   }
   while (pIdx < promoted.length) {
     result.push(promoted[pIdx++]);
-  }
-  for (const item of previewRest) {
-    if (usedIds.has(item.track.id)) continue;
-    result.push(item.track);
-    usedIds.add(item.track.id);
   }
 
   return result;

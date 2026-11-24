@@ -346,7 +346,7 @@ export async function audiusFetch(path: string): Promise<Track[]> {
       `${primary}${path}${sep}app_name=${APP_NAME}`,
       4500
     );
-    const items = (data.data || []).map(audiusToTrack);
+    const items = (data.data || []).map(audiusToTrack).filter((t) => t.dur === 0 || t.dur >= 45);
     if (items.length > 0) return items;
   } catch (err) {
     console.warn('[Audius Primary Error]', err);
@@ -362,7 +362,7 @@ export async function audiusFetch(path: string): Promise<Track[]> {
           `${nodeUrl}${path}${sep}app_name=${APP_NAME}`,
           3800
         );
-        const items = (data.data || []).map(audiusToTrack);
+        const items = (data.data || []).map(audiusToTrack).filter((t) => t.dur === 0 || t.dur >= 45);
         if (items.length === 0) throw new Error('empty');
         return items;
       });

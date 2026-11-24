@@ -2,11 +2,17 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.24.0] - 2026-11-24
+
+### Improved (Full-Bleed Cover Artwork Overlay & Smooth Crossfade Transitions Across All Tracks)
+- **Tampilan Sampul Penuh (Full-Card Overlay) di Pemutar Utama (`src/lib/components/modals/TrackModal.svelte`)**: Mengubah kotak sampul yang sebelumnya berhenti di tengah kartu (`248x248px`) menjadi sampul penuh menyeluruh (`inset-0 object-cover`) yang mengisi 100% area kartu pemutar untuk seluruh sumber lagu (YouTube Music, Audius, Lokal Offline, Katalog, dan Archive), lengkap dengan gradasi keterbacaan WCAG kontras tinggi, animasi transisi pergantian sampul `.xmusic-art-transition` (`320ms`), serta efek zoom halus saat lagu berputar.
+- **Kartu Grid Sampul Penuh dengan Overlay Metadata (`src/lib/components/TrackCard.svelte`, `src/app.css`)**: Mengubah seluruh kartu lagu di Beranda, Cari, dan Pustaka menjadi desain kartu penuh (`aspect-[4/5]` `contentWrap={false}`) dengan sampul menyatu hingga tepi kartu, scrim bawah yang kontras, serta tombol kontrol bersih tanpa tumpang tindih.
+
 ## [6.23.0] - 2026-11-24
 
-### Fixed (Full-Duration Song Prioritization & Auto-Upgrade from 30s Catalog Previews)
-- **Prioritas Lagu Durasi Penuh di Peringkat Pencarian (`src/lib/search/smartSearch.ts`)**: Meningkatkan bobot skor lagu durasi penuh (`!track.isPreview` dari YouTube Music, Audius, Lokal, dan Archive) di atas pratinjau katalog 30 detik (`30d` dari iTunes/Deezer) serta menghapus promosi kartu pratinjau 30 detik ke posisi teratas pada tab **Semua** — sehingga **Hasil Teratas** dan daftar utama pencarian selalu menampilkan lagu durasi penuh (`Full`).
-- **Auto-Upgrade Otomatis ke Versi Penuh Saat Memutar Pratinjau (`SearchView.svelte`, `TrackCard.svelte`, `library.svelte.ts`)**: Menambahkan perluasan kueri YouTube Music otomatis jika hasil awal kurang dari 4 lagu, serta mengalihkan pemutaran kartu/baris berlabel `30d` langsung ke versi durasi penuh (`findFullVersion`) saat online agar lagu tidak berhenti di detik ke-30.
+### Fixed (100% Full-Duration Music Playback & Search — Never Stuck on 30-Second Previews)
+- **Auto-Upgrade Pratinjau 30 Detik ke Versi Lagu Penuh (`src/lib/audio/engine.svelte.ts`)**: Saat pengguna memutar lagu dari katalog publik (iTunes/Deezer) yang sebelumnya hanya berdurasi `0:30` (`isPreview: true`), `AudioEngine.upgradePreviewToFullTrack()` kini otomatis mencari dan memutar versi **lagu penuh** dari YouTube Music / Audius secara mulus lewat `ExoPlayer` native `XmusicMediaService` sehingga lagu tidak pernah terpotong di detik ke-30.
+- **Filter Default `Hanya Penuh` + Prioritas Skor Lagu Penuh (`src/lib/stores/library.svelte.ts`, `src/lib/search/smartSearch.ts`, `src/lib/api/services.ts`)**: Mengaktifkan `fullOnlyFilter = true` secara default pada pencarian, menyaring klip suara pendek `<45 detik` dari Audius, memberikan bobot relevansi tertinggi (`+95`) untuk lagu penuh YouTube Music & Audius, serta menambahkan pencarian cadangan otomatis bila kueri awal hanya mengembalikan pratinjau 30 detik.
 
 ## [6.22.0] - 2026-11-24
 

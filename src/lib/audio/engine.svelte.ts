@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.23.0).
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.24.0).
  *
  * Signal Chain (Zero-Clipping Lossless-Clear DSP):
  *   MediaElementAudioSourceNode
@@ -13,14 +13,14 @@
  *     -> AnalyserNode (pull-based FFT visualizer)
  *     -> AudioContext.destination (latencyHint: 'playback')
  *
- * Stability Guarantees (v6.23.0):
+ * Stability Guarantees (v6.24.0):
  *   - Monotonic playSessionId eliminates async race conditions and phantom restarts after pause.
  *   - Transition guard suppresses spurious pause/play flicker during track switches.
  *   - Idempotent resume() + automatic self-healing recovery prevents stuck Play buttons on all sources.
  *   - Deduplicated native Android notification sync (WebView owns AudioFocus, zero ping-pong loop).
  */
 import { YtAudioBridge } from './ytPlayerBridge.ts';
-import { fetchArchiveAudioSearch, fetchSearch } from '#lib/api/services.ts';
+import { fetchArchiveAudioSearch, fetchSearch, fetchYtSearch } from '#lib/api/services.ts';
 import { ytPreloader } from './ytPreloader.ts';
 import { EQ_BANDS, EQ_PRESETS } from '#lib/data/presets.ts';
 import { loadJSON, saveJSON } from '#lib/db/storage.ts';
@@ -1030,8 +1030,14 @@ class AudioEngine {
           this.playDirectUrl(track.url, track, sessionId);
         }
       });
+    } else if (track.isPreview) {
+      // Automatic Full-Length Upgrade: 30-second catalog previews (iTunes/Deezer) are automatically
+      // upgraded to the full-length YouTube Music / Audius song so playback never cuts off at 0:30!
+      this.resolvingAudio = true;
+      this.syncNativeAndroidNotification();
+      void this.upgradePreviewToFullTrack(track, sessionId);
     } else {
-      // All remote HTTP/HTTPS streams (Audius, Deezer, iTunes, Internet Archive, Direct URLs):
+      // All full-length remote HTTP/HTTPS streams (Audius, Internet Archive, Direct URLs):
       // On Android, play via XmusicMediaService Media3 ExoPlayer so background & screen-off never stop
       this.playResolvedStream({ url: track.url }, track, sessionId, 0);
     }
@@ -1040,6 +1046,72 @@ class AudioEngine {
     this.updateMediaSessionMeta();
     this.syncNativeAndroidNotification();
     this.preloadUpcomingQueue();
+  }
+
+  private async upgradePreviewToFullTrack(previewTrack: Track, sessionId: number): Promise<void> {
+    const cleanTitle = (previewTrack.title || '').replace(/\(.*?\)|\[.*?\]/g, '').trim();
+    const cleanArtist = (previewTrack.artist || '').split(',')[0].trim();
+    const query = `${cleanTitle} ${cleanArtist}`.trim();
+
+    try {
+      const [ytHits, audiusHits] = await Promise.all([
+        fetchYtSearch(query).catch(() => [] as Track[]),
+        fetchSearch(query, 6).catch(() => [] as Track[])
+      ]);
+      if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== previewTrack.id) {
+        return;
+      }
+
+      const normTitle = cleanTitle.toLowerCase();
+      const fullAudius =
+        audiusHits.find((t) => t.url && !t.isPreview && t.dur >= 60 && t.title.toLowerCase().includes(normTitle)) ||
+        audiusHits.find((t) => Boolean(t.url && !t.isPreview && t.dur >= 60));
+
+      const fullYt =
+        ytHits.find((t) => t.videoId && t.title.toLowerCase().includes(normTitle)) ||
+        ytHits.find((t) => Boolean(t.videoId));
+
+      if (fullYt?.videoId) {
+        const upgraded: Track = {
+          ...previewTrack,
+          videoId: fullYt.videoId,
+          dur: fullYt.dur || previewTrack.dur,
+          isPreview: false,
+          source: 'youtube'
+        };
+        this.current = upgraded;
+        this.duration = upgraded.dur || 0;
+        this.updateMediaSessionMeta();
+        await this.startYoutubeSmartPlayback(upgraded, sessionId, 0);
+        return;
+      }
+
+      if (fullAudius?.url) {
+        const upgraded: Track = {
+          ...previewTrack,
+          url: fullAudius.url,
+          dur: fullAudius.dur || previewTrack.dur,
+          isPreview: false,
+          source: 'audius'
+        };
+        this.current = upgraded;
+        this.duration = upgraded.dur || 0;
+        this.resolvingAudio = false;
+        this.updateMediaSessionMeta();
+        this.playResolvedStream({ url: fullAudius.url }, upgraded, sessionId, 0);
+        return;
+      }
+    } catch {
+      // Fallback to 30s preview stream below only if no full version exists anywhere
+    }
+
+    if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== previewTrack.id) {
+      return;
+    }
+    this.resolvingAudio = false;
+    if (previewTrack.url) {
+      this.playResolvedStream({ url: previewTrack.url }, previewTrack, sessionId, 0);
+    }
   }
 
   private async startYoutubeSmartPlayback(

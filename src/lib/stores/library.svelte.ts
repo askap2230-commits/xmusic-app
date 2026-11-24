@@ -67,7 +67,7 @@ class AppStore {
   libFilter = $state<string>('local');
   searchQuery = $state<string>('');
   eraFilter = $state<string>('all');
-  fullOnlyFilter = $state<boolean>(false);
+  fullOnlyFilter = $state<boolean>(true);
   searchSourceFilter = $state<'all' | 'youtube' | 'audius' | 'catalog' | 'archive' | 'local'>('all');
   searchSort = $state<'relevant' | 'newest' | 'longest' | 'alpha'>('relevant');
   searchVisibleCount = $state<number>(12);
@@ -110,7 +110,7 @@ class AppStore {
   // Runtime & profile
   runtimeInfo = $state<RuntimeInfo>({
     app_name: 'nys Xmusic',
-    version: '6.23.0',
+    version: '6.24.0',
     engine: 'Tauri v2.12 + SvelteKit 3.2 + Konsta UI iOS',
     platform: 'web',
     arch: 'wasm'
@@ -1036,7 +1036,7 @@ class AppStore {
     if (suggestion.kind === 'public' && this.isOnline) {
       void fetchYtSearch(suggestion.query).then((ytTracks) => {
         if (ytTracks.length > 0) {
-          engine.prewarmTracks(ytTracks, 3);
+          engine.prewarmTracks(ytTracks, 2);
         }
       });
     }
@@ -1120,18 +1120,12 @@ class AppStore {
         );
       };
 
-      const ytTask = fetchYtSearch(cleanQuery).then(async (res) => {
-        let finalYt = res;
-        if (finalYt.length < 4 && !searchController.signal.aborted) {
-          const extra = await fetchYtSearch(`${cleanQuery} lagu`);
-          const seenYt = new Set(finalYt.map((t) => t.id));
-          finalYt = [...finalYt, ...extra.filter((t) => !seenYt.has(t.id))];
-        }
-        ytList = finalYt;
+      const ytTask = fetchYtSearch(cleanQuery).then((res) => {
+        ytList = res;
         publish();
-        if (finalYt.length > 0) {
+        if (res.length > 0) {
           this.searching = false;
-          engine.prewarmTracks(finalYt, 3);
+          engine.prewarmTracks(res, 2);
         }
       });
 
@@ -1152,6 +1146,16 @@ class AppStore {
       });
 
       await Promise.all([ytTask, audiusTask, catalogTask]);
+      if (searchController.signal.aborted) return;
+      // If full-length results are empty after primary search, run a wider YouTube Music fallback query
+      if (ytList.length === 0 && audiusList.filter((t) => !t.isPreview).length === 0) {
+        const extraYt = await fetchYtSearch(`${cleanQuery} lagu`);
+        if (!searchController.signal.aborted && extraYt.length > 0) {
+          ytList = extraYt;
+          publish();
+          engine.prewarmTracks(extraYt, 2);
+        }
+      }
       if (searchController.signal.aborted) return;
       this.searching = false;
       this.recordRecentSearch(trimmed);
