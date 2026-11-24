@@ -11,6 +11,9 @@
 
   let { onSwitchTab }: { onSwitchTab: (view: AppView) => void } = $props();
   let imgFailed = $state<boolean>(false);
+  let navTrackEl = $state<HTMLDivElement | null>(null);
+  let draggingLens = $state<boolean>(false);
+  let dragLensIdx = $state<number>(0);
 
   $effect(() => {
     void engine.current?.imageUrl;
@@ -38,17 +41,56 @@
     { id: 'eq', icon: 'eq', labelKey: 'nav.eq' },
     { id: 'profile', icon: 'profile', labelKey: 'nav.profile' }
   ];
+
+  const activeTabIndex = $derived(
+    Math.max(0, NAV_TABS.findIndex((t) => t.id === appStore.view))
+  );
+  const displayedLensIndex = $derived(draggingLens ? dragLensIdx : activeTabIndex);
+
+  function computeLensPosFromClientX(clientX: number): number {
+    if (!navTrackEl) return activeTabIndex;
+    const rect = navTrackEl.getBoundingClientRect();
+    if (rect.width <= 0) return activeTabIndex;
+    const rel = Math.max(0, Math.min(0.999, (clientX - rect.left) / rect.width));
+    return Math.max(0, Math.min(4, rel * 5 - 0.5));
+  }
+
+  function handleLensPointerDown(e: PointerEvent): void {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    draggingLens = true;
+    dragLensIdx = computeLensPosFromClientX(e.clientX);
+    (e.currentTarget as HTMLElement)?.setPointerCapture?.(e.pointerId);
+  }
+
+  function handleLensPointerMove(e: PointerEvent): void {
+    if (!draggingLens) return;
+    dragLensIdx = computeLensPosFromClientX(e.clientX);
+    const hoveredTab = NAV_TABS[Math.round(dragLensIdx)];
+    if (hoveredTab && hoveredTab.id !== appStore.view) {
+      onSwitchTab(hoveredTab.id);
+    }
+  }
+
+  function handleLensPointerUp(e: PointerEvent): void {
+    if (!draggingLens) return;
+    const finalIdx = Math.round(computeLensPosFromClientX(e.clientX));
+    draggingLens = false;
+    const target = NAV_TABS[Math.max(0, Math.min(NAV_TABS.length - 1, finalIdx))];
+    if (target) {
+      onSwitchTab(target.id);
+    }
+  }
 </script>
 
 {#if appStore.uiStyle === 'liquid-glass'}
-  <!-- Unified iOS 26 Liquid Glass Dock: Music Player + Lens Navigation Bar merged in ONE seamless glass capsule -->
+  <!-- Unified iOS 26 Liquid Glass Dock: Music Player + Sliding Optical Lens Navigation Bar in ONE glass capsule -->
   <div
     class="xmusic-gpu-layer fixed right-3 bottom-[calc(10px+env(safe-area-inset-bottom,0px))] left-3 z-40 mx-auto max-w-lg overflow-hidden xmusic-liquid-glass transition-all duration-300 {engine.current
       ? 'rounded-[30px]'
       : 'rounded-full'}"
     style={engine.current?.c1 ? `border-color: ${engine.current.c1}66;` : ''}
     role="region"
-    aria-label="Pemutar musik dan navigasi utama"
+    aria-label="Pemutar musik dan navigasi lensa"
   >
     {#if engine.current}
       <!-- Top Specular Progress Line -->
@@ -140,15 +182,33 @@
       <div class="mx-3.5 h-px bg-black/8 dark:bg-white/12" aria-hidden="true"></div>
     {/if}
 
-    <!-- Integrated iOS 26 Lens Navigation Bar -->
-    <nav class="px-1.5 py-1.5" aria-label="Navigasi utama">
-      <div class="grid grid-cols-5 items-center gap-1">
+    <!-- Integrated iOS 26 Sliding Optical Lens Navigation Bar (Tap or Slide Finger Across Tabs) -->
+    <nav class="px-1.5 py-1.5 select-none" aria-label="Navigasi utama">
+      <div
+        bind:this={navTrackEl}
+        class="xmusic-lens-track touch-pan-y"
+        style="--lens-idx: {displayedLensIndex};"
+        onpointerdown={handleLensPointerDown}
+        onpointermove={handleLensPointerMove}
+        onpointerup={handleLensPointerUp}
+        onpointercancel={() => (draggingLens = false)}
+      >
+        <!-- Sliding Refractive Liquid Glass Lens Indicator -->
+        <div
+          class="xmusic-lens-glider"
+          class:is-dragging={draggingLens}
+          style={engine.current?.c1
+            ? `box-shadow: inset 0 2px 3px rgba(255,255,255,0.65), 0 6px 20px ${engine.current.c1}44;`
+            : ''}
+          aria-hidden="true"
+        ></div>
+
         {#each NAV_TABS as tab (tab.id)}
           {@const isActive = appStore.view === tab.id}
           <button
             type="button"
-            class="xmusic-spring-tap flex flex-col items-center justify-center gap-0.5 rounded-full py-1.5 text-[10px] font-bold tracking-tight transition-all {isActive
-              ? 'xmusic-lens-pill-active text-black dark:text-white'
+            class="relative z-10 flex flex-col items-center justify-center gap-0.5 rounded-full py-1.5 text-[10px] font-bold tracking-tight transition-transform duration-200 {isActive
+              ? 'scale-105 text-black dark:text-white'
               : 'text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white'}"
             style={isActive && engine.current?.c1 ? `color: ${engine.current.c1};` : ''}
             aria-current={isActive ? 'page' : undefined}

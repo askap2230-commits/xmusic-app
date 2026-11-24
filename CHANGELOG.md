@@ -2,6 +2,11 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.34.0] - 2026-11-25
+
+### Fixed & Improved (iOS 26 Sliding Optical Lens Glider on Unified Glass Dock)
+- **Kapsul Lensa Refraktif Bergeser (`xmusic-lens-glider`) (`src/app.css`, `src/lib/components/UnifiedGlassDock.svelte`)**: Mengganti indikator tab statis dengan kapsul lensa kaca optik (`translate3d` GPU 120fps) yang meluncur halus (*spring physics*) mengikuti tab aktif maupun geseran jari pengguna secara *real-time* di dalam dok kaca terpadu bersama pemutar musik mini.
+
 ## [6.33.0] - 2026-11-25
 
 ### Fixed & Improved (iOS 26 Liquid Glass Restored + Unified Music & Lens Navigation Dock for Android)
