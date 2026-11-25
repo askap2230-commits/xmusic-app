@@ -1,6 +1,6 @@
 <!-- Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
-  import { Block, BlockTitle, Button, Link, List, ListInput, Navbar, Page, Popup } from 'konsta/svelte';
+  import { Block, BlockTitle, Link, List, ListInput, Navbar, Page, Popup } from 'konsta/svelte';
   import { appStore } from '#lib/stores/library.svelte.ts';
   import Icon from '../Icon.svelte';
 
@@ -74,8 +74,7 @@
     bannerVideoPreviewUrl = URL.createObjectURL(file);
   }
 
-  async function handleSave(event: SubmitEvent): Promise<void> {
-    event.preventDefault();
+  async function triggerSave(): Promise<void> {
     if (saving) return;
     saving = true;
     try {
@@ -96,6 +95,11 @@
       saving = false;
     }
   }
+
+  function handleFormSubmit(event: SubmitEvent): void {
+    event.preventDefault();
+    void triggerSave();
+  }
 </script>
 
 <Popup
@@ -111,7 +115,7 @@
       {/snippet}
     </Navbar>
 
-    <form onsubmit={handleSave}>
+    <form onsubmit={handleFormSubmit} class="pb-10">
       <BlockTitle>Banner Video & Foto Sampul Profil (TikTok Mod Style)</BlockTitle>
       <Block class="space-y-3">
         <div
@@ -250,15 +254,14 @@
       </List>
 
       <Block>
-        <Button
-          type="submit"
-          rounded
-          large
+        <button
+          type="button"
           disabled={saving}
-          class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
+          onclick={() => void triggerSave()}
+          class="flex min-h-[48px] w-full cursor-pointer items-center justify-center rounded-full bg-[#248a3d] px-6 text-sm font-bold text-white shadow-md active:scale-[0.99] disabled:opacity-60 dark:bg-[#30d158] dark:text-black"
         >
           {saving ? 'Menyimpan...' : 'Simpan Pengaturan'}
-        </Button>
+        </button>
       </Block>
     </form>
   </Page>

@@ -2,6 +2,11 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.44.0] - 2026-11-25
+
+### Fixed
+- **Direct Clickable Save Button in Profile & Banner Modal (`ProfileModal.svelte`)**: Replaced `<Button type="submit">` inside Konsta `<Popup>` with an explicit native `<button type="button" onclick={triggerSave}>` so **Simpan Pengaturan** always responds immediately on tap/click after choosing a video or photo banner.
+
 ## [6.43.0] - 2026-11-25
 
 ### Fixed
