@@ -229,7 +229,7 @@
 
 
 <!-- Offscreen 1x1 audio-only host for official YouTube IFrame Player API -->
-<div id="xmusic-yt-audio-host" class="pointer-events-none fixed bottom-0 left-0 z-0 h-[200px] w-[200px] opacity-[0.001]" aria-hidden="true"></div>
+<div id="xmusic-yt-audio-host" class="pointer-events-none fixed top-0 left-0 z-0 h-[200px] w-[200px] opacity-[0.02]" aria-hidden="true"></div>
 
 <QueueDrawer />
 <TrackModal />

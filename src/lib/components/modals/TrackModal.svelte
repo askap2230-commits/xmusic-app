@@ -335,7 +335,7 @@
                         <iframe
                           title="Video Story {track.title}"
                           class="pointer-events-none absolute top-1/2 left-1/2 h-[185%] w-[320%] -translate-x-1/2 -translate-y-1/2 scale-110 border-0 opacity-85 mix-blend-lighten"
-                          src="https://www.youtube.com/embed/{resolvedStoryVideoId}?autoplay=1&mute=1&controls=0&loop=1&playlist={resolvedStoryVideoId}&playsinline=1&modestbranding=1&rel=0&showinfo=0"
+                          src="https://www.youtube.com/embed/{resolvedStoryVideoId}?autoplay=1&mute=1&controls=0&loop=1&playlist={resolvedStoryVideoId}&playsinline=1&rel=0"
                           allow="autoplay; encrypted-media"
                         ></iframe>
                       {/if}
@@ -412,13 +412,8 @@
                       </div>
                     {/if}
 
-                    <!-- Audio stream resolving / fallback notice -->
-                    {#if engine.resolvingAudio && engine.current?.id === track.id}
-                      <div class="flex items-center justify-center gap-2 rounded-xl bg-black/55 px-3 py-2 text-xs font-medium text-[#64d2ff]" role="status">
-                        <Preloader class="w-4 h-4" />
-                        <span>{i18n.t('player.resolvingAudio')}</span>
-                      </div>
-                    {:else if engine.audioResolveFailed && track.videoId && !showVideoFallback && engine.current?.id === track.id}
+                    <!-- Audio stream fallback notice (zero loading banner) -->
+                    {#if engine.audioResolveFailed && track.videoId && !showVideoFallback && engine.current?.id === track.id}
                       <div class="flex flex-col items-center gap-2 rounded-xl bg-black/65 px-3 py-2.5 text-center">
                         <span class="text-xs font-medium text-white/90">
                           {i18n.t('player.audioFailed')}

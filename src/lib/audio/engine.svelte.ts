@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.38.0).
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.40.0).
  *
  * Signal Chain (Zero-Clipping Lossless-Clear DSP):
  *   MediaElementAudioSourceNode
@@ -13,7 +13,7 @@
  *     -> AnalyserNode (pull-based FFT visualizer)
  *     -> AudioContext.destination (latencyHint: 'playback')
  *
- * Stability Guarantees (v6.38.0):
+ * Stability Guarantees (v6.40.0):
  *   - Monotonic playSessionId eliminates async race conditions and phantom restarts after pause.
  *   - Transition guard suppresses spurious pause/play flicker during track switches.
  *   - Idempotent resume() + automatic self-healing recovery prevents stuck Play buttons on all sources.
@@ -252,7 +252,7 @@ class AudioEngine {
       if (this.usingDirectAudio !== isDirect || this.isTransitioning || this.userPaused || el.paused) {
         return;
       }
-      this.buffering = true;
+      this.buffering = false;
       this.armStallWatchdog(el, this.playSessionId);
     };
 
@@ -335,7 +335,7 @@ class AudioEngine {
           this.usingDirectAudio = false;
           this.current = { ...this.current, url: undefined };
           this.usingYtBridge = true;
-          this.resolvingAudio = true;
+          this.resolvingAudio = false;
           void this.startYoutubeAudioBridge(this.current, sessionId);
         } else {
           this.playing = false;
@@ -907,7 +907,7 @@ class AudioEngine {
         ytPreloader.invalidate(track.videoId);
         this.usingDirectAudio = false;
         this.usingYtBridge = true;
-        this.resolvingAudio = true;
+        this.resolvingAudio = false;
         void this.startYoutubeAudioBridge({ ...track, url: undefined }, sessionId, resumeAt);
       } else {
         this.playing = false;
@@ -974,13 +974,21 @@ class AudioEngine {
       this.updateMediaSessionMeta();
       this.preloadUpcomingQueue();
 
-      // Always start the official YouTube IFrame Player API bridge immediately at 0ms
-      // so audio starts instantaneously with zero stream-extraction stall.
-      // Any pre-resolved native stream is kept ready in ytPreloader for seamless background/lockscreen handoff!
+      // Path A: If SmartYtPreloader already cached a verified direct stream URL, play via native ExoPlayer in 0ms!
+      const cachedStream = ytPreloader.getCachedStream(track.videoId);
+      if (cachedStream?.url) {
+        this.current = { ...track, url: cachedStream.url };
+        this.playResolvedStream(cachedStream, this.current, sessionId, 0);
+        return;
+      }
+
+      // Path B: Dual-engine instant start — launch official YT IFrame Bridge AND race native stream resolution in parallel!
       this.usingDirectAudio = false;
       this.usingYtBridge = true;
+      this.playing = true;
       this.resolvingAudio = false;
       this.buffering = false;
+      this.startPositionSync();
       this.syncNativeAndroidNotification();
       void this.startYoutubeSmartPlayback(track, sessionId, 0);
       return;
@@ -1133,10 +1141,33 @@ class AudioEngine {
     const videoId = track.videoId;
     const trackId = track.id;
 
-    // 1. Warm up background stream cache silently (never interrupts foreground official YT Player!)
-    ytPreloader.prefetch(videoId, true);
+    // 1. Start direct stream resolution immediately in parallel with official YT IFrame Bridge
+    const directStreamPromise = ytPreloader.resolveNow(videoId, true);
 
-    // 2. Watchdog (4.5s): only triggers fallback if the official YouTube IFrame Player hasn't started playing yet
+    // 2. If direct stream resolves before YT IFrame starts playing (state !== 1), immediately play via native ExoPlayer / <audio>!
+    void directStreamPromise.then((stream) => {
+      if (
+        !stream?.url ||
+        sessionId !== this.playSessionId ||
+        this.userPaused ||
+        this.current?.id !== trackId ||
+        this.usingNativeAndroid ||
+        this.usingDirectAudio
+      ) {
+        return;
+      }
+      // If YT IFrame Bridge is already confirmed playing (state === 1), keep it seamless in foreground!
+      if (this.playing && this.usingYtBridge && this.ytBridge.getPlayerState() === 1) {
+        return;
+      }
+      this.clearYtWatchdog();
+      this.resolvingAudio = false;
+      this.buffering = false;
+      this.current = { ...track, url: stream.url };
+      this.playResolvedStream(stream, this.current, sessionId, resumeAt);
+    });
+
+    // 3. Watchdog (3.2s): if neither YT IFrame nor direct stream has started playing yet, use Audius/Archive full-audio fallback
     this.clearYtWatchdog();
     this.ytWatchdogTimer = setTimeout(() => {
       this.ytWatchdogTimer = null;
@@ -1144,14 +1175,14 @@ class AudioEngine {
         return;
       }
       if (!this.playing && !this.usingNativeAndroid && !this.usingDirectAudio) {
-        void this.resolveAndPlayYoutubeAudio(track, sessionId, resumeAt);
+        void this.tryAlternativeFullAudioFallback(track, sessionId, resumeAt);
       } else {
         this.resolvingAudio = false;
         this.buffering = false;
       }
-    }, 4500);
+    }, 3200);
 
-    // 3. Play directly through the official YouTube IFrame Player API at 0ms
+    // 4. Launch official YouTube IFrame Player API at 0ms
     this.usingYtBridge = true;
     await this.startYoutubeAudioBridge(track, sessionId, resumeAt);
   }
@@ -1214,7 +1245,7 @@ class AudioEngine {
     this.usingDirectAudio = false;
     this.usingYtBridge = true;
     this.resolvingAudio = false;
-    this.buffering = true;
+    this.buffering = false;
     this.audioResolveFailed = false;
     const cleanTrack: Track = { ...this.current, url: undefined };
     this.current = cleanTrack;
@@ -1228,7 +1259,7 @@ class AudioEngine {
   ): Promise<void> {
     if (!track.videoId) return;
     this.resolvingAudio = false;
-    this.buffering = true;
+    this.buffering = false;
     this.audioResolveFailed = false;
     const stream = await Promise.race([
       ytPreloader.resolveNow(track.videoId, true),
@@ -1879,7 +1910,7 @@ class AudioEngine {
           const sessionId = ++this.playSessionId;
           const cleanTrack: Track = { ...this.current, url: undefined };
           this.current = cleanTrack;
-          this.resolvingAudio = true;
+          this.resolvingAudio = false;
           void ytPreloader.resolveNow(vid, true).then((freshStream) => {
             if (sessionId !== this.playSessionId || this.userPaused || this.current?.id !== cleanTrack.id) {
               return;

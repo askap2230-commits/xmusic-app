@@ -65,7 +65,7 @@ function loadYoutubeIframeApi(): Promise<YtGlobal | null> {
     const timer = setTimeout(() => {
       apiLoadPromise = null;
       resolve(null);
-    }, 2500);
+    }, 6000);
     const prevReady = win.onYouTubeIframeAPIReady;
     win.onYouTubeIframeAPIReady = () => {
       clearTimeout(timer);
@@ -90,6 +90,7 @@ function loadYoutubeIframeApi(): Promise<YtGlobal | null> {
 
 function getSafeOrigin(): string | null {
   if (typeof window === 'undefined') return null;
+  if ('__TAURI_INTERNALS__' in window) return null;
   const { protocol, hostname, origin } = window.location;
   if (
     protocol === 'https:' &&
@@ -174,7 +175,7 @@ export class YtAudioBridge {
         const timer = setTimeout(() => {
           this.initPromise = null;
           resolve(null);
-        }, 2500);
+        }, 6000);
 
         const playerVars: Record<string, string | number> = {
           autoplay: 1,
@@ -185,8 +186,7 @@ export class YtAudioBridge {
           modestbranding: 1,
           playsinline: 1,
           rel: 0,
-          enablejsapi: 1,
-          widget_referrer: 'https://www.youtube.com/'
+          enablejsapi: 1
         };
         if (startSeconds > 1) {
           playerVars.start = Math.floor(startSeconds);

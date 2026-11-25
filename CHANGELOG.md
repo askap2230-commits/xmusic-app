@@ -2,6 +2,16 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.40.0] - 2026-11-25
+
+### Changed
+- **Zero-Loading Play & Removal of "Menghubungkan stream audio YouTube Music..." Banner (`TrackModal.svelte`, `engine.svelte.ts`)**: Removed the `"Menghubungkan stream audio YouTube Music..."` loading notice and disabled blocking `resolvingAudio` / `buffering` spinners on play so tapping a song immediately switches to active playback state without waiting.
+
+## [6.39.0] - 2026-11-25
+
+### Fixed
+- **Zero-Wait Dual-Engine Playback & Android WebView IFrame Fix (`ytPlayerBridge.ts`, `engine.svelte.ts`, `+page.svelte`)**: Removed `tauri.localhost` origin blocking and `opacity: 0.001` Android WebView throttling on `#xmusic-yt-audio-host`, and restored parallel `ytPreloader.resolveNow()` + YouTube IFrame Bridge racing so clicking Play starts music immediately without spinning/loading.
+
 ## [6.38.0] - 2026-11-25
 
 ### Changed
