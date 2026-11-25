@@ -12,6 +12,11 @@
   let bannerVideoPreviewUrl = $state<string | null>(null);
   let bannerVideoFile = $state<File | null>(null);
   let clearBannerVideo = $state<boolean>(false);
+  let saving = $state<boolean>(false);
+
+  let videoInputEl = $state<HTMLInputElement | null>(null);
+  let bannerImgInputEl = $state<HTMLInputElement | null>(null);
+  let avatarInputEl = $state<HTMLInputElement | null>(null);
 
   let spotifyClientId = $state<string>('');
   let spotifyClientSecret = $state<string>('');
@@ -29,6 +34,7 @@
       bannerVideoPreviewUrl = appStore.userProfile.bannerVideoUrl ?? null;
       bannerVideoFile = null;
       clearBannerVideo = false;
+      saving = false;
       spotifyClientId = appStore.apiConfig.spotifyClientId || '';
       spotifyClientSecret = appStore.apiConfig.spotifyClientSecret || '';
       rapidApiKey = appStore.apiConfig.rapidApiKey || '';
@@ -70,19 +76,25 @@
 
   async function handleSave(event: SubmitEvent): Promise<void> {
     event.preventDefault();
-    await appStore.saveProfileSettings(
-      {
-        name,
-        handle,
-        bio,
-        image: imagePreview,
-        bannerImage: bannerImagePreview,
-        bannerVideoUrl: bannerVideoPreviewUrl
-      },
-      { spotifyClientId, spotifyClientSecret, rapidApiKey, ytApiKey, pipedInstance },
-      bannerVideoFile,
-      clearBannerVideo
-    );
+    if (saving) return;
+    saving = true;
+    try {
+      await appStore.saveProfileSettings(
+        {
+          name,
+          handle,
+          bio,
+          image: imagePreview,
+          bannerImage: bannerImagePreview,
+          bannerVideoUrl: bannerVideoPreviewUrl
+        },
+        { spotifyClientId, spotifyClientSecret, rapidApiKey, ytApiKey, pipedInstance },
+        bannerVideoFile,
+        clearBannerVideo
+      );
+    } finally {
+      saving = false;
+    }
   }
 </script>
 
@@ -102,34 +114,73 @@
     <form onsubmit={handleSave}>
       <BlockTitle>Banner Video & Foto Sampul Profil (TikTok Mod Style)</BlockTitle>
       <Block class="space-y-3">
-        <div class="relative h-36 w-full overflow-hidden rounded-2xl border border-black/15 bg-zinc-900 dark:border-white/15">
+        <div
+          role="button"
+          tabindex="0"
+          class="relative h-36 w-full cursor-pointer overflow-hidden rounded-2xl border border-black/15 bg-zinc-900 dark:border-white/15"
+          onclick={() => videoInputEl?.click()}
+          onkeydown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') videoInputEl?.click();
+          }}
+        >
           {#if bannerVideoPreviewUrl}
             <video src={bannerVideoPreviewUrl} autoplay muted loop playsinline class="h-full w-full object-cover"></video>
           {:else if bannerImagePreview}
             <img src={bannerImagePreview} alt="Preview Banner" class="h-full w-full object-cover" />
           {:else}
-            <div class="grid h-full w-full place-items-center text-xs font-semibold text-white/60">
-              Belum ada banner video / gambar kustom
+            <div class="grid h-full w-full place-items-center px-4 text-center text-xs font-semibold text-white/70">
+              Ketuk di sini atau tombol di bawah untuk pasang Video / Foto Banner
             </div>
           {/if}
         </div>
 
+        <input
+          bind:this={videoInputEl}
+          type="file"
+          accept="video/mp4,video/webm,video/*"
+          class="hidden"
+          onchange={onBannerVideoChange}
+        />
+        <input
+          bind:this={bannerImgInputEl}
+          type="file"
+          accept="image/*"
+          class="hidden"
+          onchange={onBannerImageChange}
+        />
+        <input
+          bind:this={avatarInputEl}
+          type="file"
+          accept="image/*"
+          class="hidden"
+          onchange={onPhotoChange}
+        />
+
         <div class="flex flex-wrap justify-center gap-2">
-          <label class="inline-flex min-h-[40px] cursor-pointer items-center justify-center gap-1.5 rounded-full bg-[#007aff] px-4 text-xs font-bold text-white">
+          <button
+            type="button"
+            class="inline-flex min-h-[40px] cursor-pointer items-center justify-center gap-1.5 rounded-full bg-[#007aff] px-4 text-xs font-bold text-white active:scale-95"
+            onclick={() => videoInputEl?.click()}
+          >
             <Icon name="video" size={14} />
-            <span>Pasang Video Banner (MP4)</span>
-            <input type="file" accept="video/mp4,video/webm,video/*" class="sr-only" onchange={onBannerVideoChange} />
-          </label>
+            <span>{bannerVideoFile ? `Video: ${bannerVideoFile.name.slice(0, 14)}` : 'Pasang Video Banner (MP4)'}</span>
+          </button>
 
-          <label class="inline-flex min-h-[40px] cursor-pointer items-center justify-center rounded-full border border-black/15 bg-black/5 px-4 text-xs font-semibold text-zinc-950 dark:border-white/20 dark:bg-white/10 dark:text-white">
+          <button
+            type="button"
+            class="inline-flex min-h-[40px] cursor-pointer items-center justify-center rounded-full border border-black/15 bg-black/5 px-4 text-xs font-semibold text-zinc-950 active:scale-95 dark:border-white/20 dark:bg-white/10 dark:text-white"
+            onclick={() => bannerImgInputEl?.click()}
+          >
             Foto Banner
-            <input type="file" accept="image/*" class="sr-only" onchange={onBannerImageChange} />
-          </label>
+          </button>
 
-          <label class="inline-flex min-h-[40px] cursor-pointer items-center justify-center rounded-full border border-black/15 bg-black/5 px-4 text-xs font-semibold text-zinc-950 dark:border-white/20 dark:bg-white/10 dark:text-white">
+          <button
+            type="button"
+            class="inline-flex min-h-[40px] cursor-pointer items-center justify-center rounded-full border border-black/15 bg-black/5 px-4 text-xs font-semibold text-zinc-950 active:scale-95 dark:border-white/20 dark:bg-white/10 dark:text-white"
+            onclick={() => avatarInputEl?.click()}
+          >
             Foto Profil
-            <input type="file" accept="image/*" class="sr-only" onchange={onPhotoChange} />
-          </label>
+          </button>
         </div>
       </Block>
 
@@ -203,9 +254,10 @@
           type="submit"
           rounded
           large
+          disabled={saving}
           class="!bg-[#248a3d] !text-white font-bold dark:!bg-[#30d158] dark:!text-black"
         >
-          Simpan Pengaturan
+          {saving ? 'Menyimpan...' : 'Simpan Pengaturan'}
         </Button>
       </Block>
     </form>

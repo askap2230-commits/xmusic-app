@@ -67,7 +67,7 @@
     <!-- Floating Quick Customize Banner Button -->
     <button
       type="button"
-      class="xmusic-spring-tap xmusic-glass-pill absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold text-white shadow-md"
+      class="xmusic-spring-tap xmusic-glass-pill absolute top-3 right-3 z-10 inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold text-white shadow-md"
       onclick={() => (appStore.editProfileOpen = true)}
     >
       <Icon name="video" size={14} />

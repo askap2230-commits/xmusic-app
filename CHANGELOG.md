@@ -2,6 +2,11 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.43.0] - 2026-11-25
+
+### Fixed
+- **Clickable Custom Video/Image Banner Picker & Save Flow (`ProfileModal.svelte`, `ProfileView.svelte`)**: Replaced `<label class="sr-only">` file inputs with explicit button-triggered `<input type="file" class="hidden" />` pickers and added `z-10` + saving guard so custom banner videos/photos open reliably and save into the profile immediately.
+
 ## [6.42.0] - 2026-11-25
 
 ### Fixed
