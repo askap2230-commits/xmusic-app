@@ -330,7 +330,7 @@
                         </div>
                       {/if}
 
-                      {#if storyCanvasEnabled && resolvedStoryVideoId && appStore.isOnline && engine.playing && engine.current?.id === track.id && !showVideoFallback}
+                      {#if storyCanvasEnabled && resolvedStoryVideoId && appStore.isOnline && !showVideoFallback}
                         <!-- Muted Looping Full-Bleed Video Story Canvas (Resolved via YouTube API Key) -->
                         <iframe
                           title="Video Story {track.title}"

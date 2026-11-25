@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 /**
- * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.36.0).
+ * Audiophile-Grade Reactive Svelte 5 Runes Audio Engine (Strict TypeScript, v6.38.0).
  *
  * Signal Chain (Zero-Clipping Lossless-Clear DSP):
  *   MediaElementAudioSourceNode
@@ -13,7 +13,7 @@
  *     -> AnalyserNode (pull-based FFT visualizer)
  *     -> AudioContext.destination (latencyHint: 'playback')
  *
- * Stability Guarantees (v6.36.0):
+ * Stability Guarantees (v6.38.0):
  *   - Monotonic playSessionId eliminates async race conditions and phantom restarts after pause.
  *   - Transition guard suppresses spurious pause/play flicker during track switches.
  *   - Idempotent resume() + automatic self-healing recovery prevents stuck Play buttons on all sources.
@@ -410,8 +410,8 @@ class AudioEngine {
           this.updateMediaSessionState();
           this.syncNativeAndroidNotification();
         } else if (state === 3) {
-          // Buffering: keep playing state stable so UI doesn't flicker Play/Pause
-          this.buffering = true;
+          // Transient initial buffering: keep UI responsive without blocking spinner
+          this.resolvingAudio = false;
         } else if (state === 2) {
           this.buffering = false;
           if (
@@ -974,15 +974,9 @@ class AudioEngine {
       this.updateMediaSessionMeta();
       this.preloadUpcomingQueue();
 
-      // Path A: 0ms Instant playback if SmartYtPreloader already cached the verified stream
-      const cachedStream = ytPreloader.getCachedStream(track.videoId);
-      if (cachedStream) {
-        this.current = { ...track, url: cachedStream.url };
-        this.playResolvedStream(cachedStream, this.current, sessionId, 0);
-        return;
-      }
-
-      // Path B: Start immediately with zero spinner lock; race Rust InnerTube/Piped + YT Bridge at 0ms!
+      // Always start the official YouTube IFrame Player API bridge immediately at 0ms
+      // so audio starts instantaneously with zero stream-extraction stall.
+      // Any pre-resolved native stream is kept ready in ytPreloader for seamless background/lockscreen handoff!
       this.usingDirectAudio = false;
       this.usingYtBridge = true;
       this.resolvingAudio = false;
@@ -1139,14 +1133,10 @@ class AudioEngine {
     const videoId = track.videoId;
     const trackId = track.id;
 
-    // 1. Fire direct stream resolution (Rust parallel InnerTube+Piped) immediately at 0ms
-    const directPromise = Promise.race([
-      ytPreloader.resolveNow(videoId, true),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3500))
-    ]);
+    // 1. Warm up background stream cache silently (never interrupts foreground official YT Player!)
+    ytPreloader.prefetch(videoId, true);
 
-    // 2. Fast 2.5s failsafe watchdog: if neither path starts within 2.5s, seamlessly fall back to
-    // matching full-length Audius/Archive audio and clear all spinners!
+    // 2. Watchdog (4.5s): only triggers fallback if the official YouTube IFrame Player hasn't started playing yet
     this.clearYtWatchdog();
     this.ytWatchdogTimer = setTimeout(() => {
       this.ytWatchdogTimer = null;
@@ -1154,40 +1144,14 @@ class AudioEngine {
         return;
       }
       if (!this.playing && !this.usingNativeAndroid && !this.usingDirectAudio) {
-        void this.tryAlternativeFullAudioFallback(track, sessionId, resumeAt);
+        void this.resolveAndPlayYoutubeAudio(track, sessionId, resumeAt);
       } else {
         this.resolvingAudio = false;
         this.buffering = false;
       }
-    }, 2500);
+    }, 4500);
 
-    // 3. If audio hasn't started yet, launch native Android ExoPlayer immediately;
-    // if YT Bridge is already playing smoothly in foreground, keep it uninterrupted and let
-    // setupBackgroundPlaybackGuard hand off the cached stream to ExoPlayer on app-switch/screen-off!
-    void directPromise.then((stream) => {
-      if (
-        !stream?.url ||
-        sessionId !== this.playSessionId ||
-        this.userPaused ||
-        this.current?.id !== trackId ||
-        this.usingNativeAndroid ||
-        this.usingDirectAudio
-      ) {
-        return;
-      }
-      this.clearYtWatchdog();
-      this.resolvingAudio = false;
-      if (this.playing && this.usingYtBridge && typeof document !== 'undefined' && !document.hidden) {
-        return;
-      }
-      const livePos = this.usingYtBridge
-        ? Math.max(resumeAt, this.ytBridge.getCurrentTime(), this.position)
-        : resumeAt;
-      this.current = { ...track, url: stream.url };
-      this.playResolvedStream(stream, this.current, sessionId, livePos);
-    });
-
-    // 4. Launch YouTube IFrame Bridge in parallel at 0ms (zero artificial delay!) so audio starts right away
+    // 3. Play directly through the official YouTube IFrame Player API at 0ms
     this.usingYtBridge = true;
     await this.startYoutubeAudioBridge(track, sessionId, resumeAt);
   }

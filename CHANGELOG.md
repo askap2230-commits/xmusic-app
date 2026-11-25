@@ -2,6 +2,17 @@
 
 All notable changes to **nys Xmusic** are documented in this file.
 
+## [6.38.0] - 2026-11-25
+
+### Changed
+- **Pre-configured YouTube Data API v3 Key (`src/lib/api/services.ts`)**: Embedded the verified `ytApiKey` as the built-in default configuration (with automatic fallback if local storage has an empty value) so instant YouTube Music search, home feed, and Song Card Video Story work out of the box without manual setup.
+
+## [6.37.0] - 2026-11-25
+
+### Fixed & Improved (Instant Official YouTube Player Playback via API Key & Immediate Card Video Story)
+- **Pemutaran Langsung Tanpa Loading Berputar (`src/lib/audio/engine.svelte.ts`)**: Memperbaiki konflik perpindahan stream latar yang memutus pemutar utama sebelum siap; kini setiap lagu YouTube langsung diputar seketika melalui **YouTube IFrame Player API** resmi (`0ms`) tanpa tertahan spinner buffering.
+- **Prioritas Pencarian & Video Story via YouTube Data API v3 Key (`src/lib/api/services.ts`, `TrackModal.svelte`)**: Saat `YouTube Data API v3 Key` diisi di pengaturan **Profil & API Key**, aplikasi langsung mengambil video musik resmi (`videoCategoryId=10&videoEmbeddable=true`) untuk hasil pencarian, rekomendasi beranda, dan tampilan **Video Story** di dalam kartu lagu.
+
 ## [6.36.0] - 2026-11-25
 
 ### Added & Improved (YouTube API Key Video Story Matching & Oversized Bubbly Glass Lens Dock)

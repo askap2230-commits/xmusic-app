@@ -89,10 +89,12 @@ async function fetchDeezerFallback(path: string): Promise<Track[]> {
   }
 }
 
+const DEFAULT_YT_API_KEY = 'AIzaSyATqteb-eJGAYGjoyuArc5fHjN9kV_G7ow';
+
 const DEFAULT_API_CONFIG: ApiConfig = {
   rapidApiKey: '',
   rapidApiHost: 'youtube-mp36.p.rapidapi.com',
-  ytApiKey: '',
+  ytApiKey: DEFAULT_YT_API_KEY,
   spotifyClientId: '',
   spotifyClientSecret: '',
   audiusHost: DEFAULT_AUDIUS_BASE,
@@ -105,7 +107,12 @@ let spotifyTokenCache: { token: string | null; expiresAt: number } = {
 };
 
 export function getApiConfig(): ApiConfig {
-  return { ...DEFAULT_API_CONFIG, ...loadJSON<Partial<ApiConfig>>('nys_api_config', {}) };
+  const saved = loadJSON<Partial<ApiConfig>>('nys_api_config', {});
+  const merged = { ...DEFAULT_API_CONFIG, ...saved };
+  if (!merged.ytApiKey || !merged.ytApiKey.trim()) {
+    merged.ytApiKey = DEFAULT_YT_API_KEY;
+  }
+  return merged;
 }
 
 export function saveApiConfig(partial: Partial<ApiConfig>): ApiConfig {
@@ -797,36 +804,33 @@ export async function fetchYtTrending(region = 'ID', page = 0): Promise<Track[]>
 
   const pool = REGIONAL_YTMUSIC_QUERIES[regionKey];
   const query = pool[Math.abs(page) % pool.length];
-  const races: Array<Promise<Track[]>> = [];
 
-  if (ytApiKey && page === 0) {
-    races.push(
-      fetchJsonWithTimeout<{ items?: unknown[] }>(
-        `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&videoCategoryId=10&regionCode=${safeStore}&maxResults=24&key=${ytApiKey}`,
-        2200
-      ).then((data) => {
-        const items = (data.items || [])
-          .map(ytToTrack)
-          .filter((t) => !NON_MUSIC_REGEX.test(t.title));
-        if (items.length === 0) throw new Error('empty-yt-api');
-        return items;
-      })
-    );
+  if (ytApiKey && ytApiKey.trim()) {
+    try {
+      const apiUrl =
+        page === 0
+          ? `https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&videoCategoryId=10&regionCode=${safeStore}&maxResults=24&key=${encodeURIComponent(ytApiKey.trim())}`
+          : `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&videoEmbeddable=true&regionCode=${safeStore}&maxResults=24&q=${encodeURIComponent(query)}&key=${encodeURIComponent(ytApiKey.trim())}`;
+      const data = await fetchJsonWithTimeout<{ items?: unknown[] }>(apiUrl, 3200);
+      const items = (data.items || [])
+        .map(ytToTrack)
+        .filter((t) => !NON_MUSIC_REGEX.test(t.title));
+      if (items.length > 0) return items;
+    } catch {
+      // Fall through to keyless mirrors if quota exceeded or key invalid
+    }
   }
 
-  races.push(
+  const races: Array<Promise<Track[]>> = [
     nativeYtmSearch(query, safeStore).then((items) => {
       if (items.length === 0) throw new Error('empty-native');
       return items;
-    })
-  );
-
-  races.push(
+    }),
     racePipedMusicSearch(query, 18).then((items) => {
       if (items.length === 0) throw new Error('empty-piped');
       return items;
     })
-  );
+  ];
 
   try {
     return await Promise.any(races);
@@ -900,36 +904,31 @@ export async function fetchYtSearch(query: string): Promise<Track[]> {
   if (!clean) return [];
   const { ytApiKey } = getApiConfig();
 
-  const races: Array<Promise<Track[]>> = [];
-
-  if (ytApiKey) {
-    races.push(
-      fetchJsonWithTimeout<{ items?: unknown[] }>(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&maxResults=24&q=${encodeURIComponent(clean)}&key=${ytApiKey}`,
-        2200
-      ).then((data) => {
-        const items = (data.items || [])
-          .map(ytToTrack)
-          .filter((t) => !NON_MUSIC_REGEX.test(t.title));
-        if (items.length === 0) throw new Error('empty-yt-api');
-        return items;
-      })
-    );
+  if (ytApiKey && ytApiKey.trim()) {
+    try {
+      const data = await fetchJsonWithTimeout<{ items?: unknown[] }>(
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=10&videoEmbeddable=true&maxResults=24&q=${encodeURIComponent(clean)}&key=${encodeURIComponent(ytApiKey.trim())}`,
+        3200
+      );
+      const items = (data.items || [])
+        .map(ytToTrack)
+        .filter((t) => !NON_MUSIC_REGEX.test(t.title));
+      if (items.length > 0) return items;
+    } catch {
+      // Fall through to keyless search mirrors if quota exceeded or key invalid
+    }
   }
 
-  races.push(
+  const races: Array<Promise<Track[]>> = [
     nativeYtmSearch(clean, 'ID').then((items) => {
       if (items.length === 0) throw new Error('empty-native');
       return items;
-    })
-  );
-
-  races.push(
+    }),
     racePipedMusicSearch(clean, 20).then((items) => {
       if (items.length === 0) throw new Error('empty-piped');
       return items;
     })
-  );
+  ];
 
   try {
     return await Promise.any(races);
