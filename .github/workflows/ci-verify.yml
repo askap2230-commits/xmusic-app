@@ -1,0 +1,112 @@
+# Copyright 2026 Azka Putra
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Verify Quality, License & Build (Manual)
+
+# Manual-only verification workflow (no auto-trigger on push).
+# Run via GitHub Web UI or: gh workflow run ci-verify.yml
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: License Check, Frontend Build & Rust Clippy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js 24 LTS
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Get pnpm Store Directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "store_path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm Global Store
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.store_path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Verify AGPL-3.0 License Headers (Google addlicense)
+        run: |
+          set -euo pipefail
+          go install github.com/google/addlicense@latest
+          "$(go env GOPATH)/bin/addlicense" -check -f .license-header.txt \
+            -ignore "node_modules/**" \
+            -ignore "dist/**" \
+            -ignore ".svelte-kit/**" \
+            -ignore "src-tauri/target/**" \
+            -ignore "src-tauri/gen/**" \
+            src-tauri/src src/lib scripts vite.config.ts static/sw.js
+          python3 scripts/license-manager.py check
+
+      - name: Build Production Frontend Bundle (pnpm)
+        run: |
+          pnpm install
+          pnpm check
+          pnpm build
+
+      - name: Validate Python Scripts (Zero-Dependency Stdlib)
+        run: |
+          python3 -m py_compile scripts/sync-android-icons.py scripts/optimize-android-gradle.py scripts/license-manager.py
+          python3 scripts/sync-android-icons.py --stdlib-only
+
+      - name: Install Linux System Dependencies for Tauri Check (Resilient APT)
+        run: |
+          set -euo pipefail
+          APT_OPTS="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          for attempt in 1 2 3 4 5; do
+            if [ "$attempt" -eq 3 ] && [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+              echo "Switching APT mirror to archive.ubuntu.com after transient 503..."
+              sudo sed -i 's|mirror+file:/etc/apt/apt-mirrors.txt|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
+            fi
+            if sudo apt-get $APT_OPTS update -qq && sudo apt-get $APT_OPTS install -y -qq --no-install-recommends --fix-missing \
+              libwebkit2gtk-4.1-dev \
+              libappindicator3-dev \
+              librsvg2-dev \
+              patchelf; then
+              exit 0
+            fi
+            echo "APT attempt ${attempt}/5 failed; retrying in $((attempt * 5))s..."
+            sleep $((attempt * 5))
+          done
+          echo "ERROR: APT failed after 5 resilient attempts."
+          exit 1
+
+      - name: Setup Rust Stable Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust & Cargo Artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+          cache-on-failure: true
+          shared-key: "tauri-v2-12-verify"
+
+      - name: Run Rust Format, Clippy & Cargo Check
+        working-directory: src-tauri
+        run: |
+          cargo fmt --all -- --check
+          cargo check --all-targets
+          cargo clippy --all-targets -- -D warnings

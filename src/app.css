@@ -1,0 +1,359 @@
+/* Copyright 2026 Azka Putra | SPDX-License-Identifier: AGPL-3.0-or-later */
+@import "tailwindcss";
+@import "konsta/svelte/theme.css";
+
+/*
+ * Pure Konsta UI v5.5 iOS Theme Configuration
+ * - Class-based dark mode managed natively by Konsta v5 (@custom-variant dark).
+ * - Brand accent token configured per official Konsta UI v5 Tailwind CSS v4 guide.
+ */
+@theme {
+  --color-brand-primary: #007aff;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  height: 100%;
+  overscroll-behavior-y: contain;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeSpeed;
+}
+
+/* Remove harsh blue focus rectangle on touch devices; keep WCAG keyboard focus on desktop */
+:focus {
+  outline: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button:focus-visible,
+  a:focus-visible,
+  [role="button"]:focus-visible {
+    outline: 2px solid #007aff;
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  html.dark button:focus-visible,
+  html.dark a:focus-visible,
+  html.dark [role="button"]:focus-visible {
+    outline-color: #64d2ff;
+  }
+}
+
+.skip-link {
+  position: fixed;
+  top: -64px;
+  left: 12px;
+  z-index: 9999;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #000000;
+  color: #ffffff;
+  font-weight: 700;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+
+html.dark .skip-link {
+  background: #ffffff;
+  color: #000000;
+}
+
+.skip-link:focus {
+  top: 12px;
+}
+
+/* Dedicated GPU compositing layer for silky 60/120fps fixed bottom Tabbar & PlayerBar */
+.xmusic-gpu-layer {
+  transform: translateZ(0);
+  will-change: transform;
+  contain: layout style;
+}
+
+/* Smooth horizontal iOS chip/pill rails with hidden scrollbars */
+.xmusic-hscroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.xmusic-hscroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Smooth vertical touch-scroll container (Android WebView 3D-flip safe) */
+.xmusic-vscroll {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
+
+/* Scroll virtualization & paint containment for 60/120fps Android WebView grids */
+.xmusic-grid {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
+}
+
+/* 3D Flip Card Utility (Android WebView compositing-safe) */
+.xmusic-flip-scene {
+  perspective: 1100px;
+  contain: layout style;
+}
+
+.xmusic-flip-inner {
+  position: relative;
+  width: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.xmusic-flip-inner.is-flipped {
+  transform: rotateY(180deg);
+}
+
+.xmusic-flip-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: rotateY(0deg);
+}
+
+.xmusic-flip-inner.is-flipped > .xmusic-flip-face:not(.xmusic-flip-back) {
+  pointer-events: none;
+}
+
+.xmusic-flip-back {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  overflow: hidden;
+  transform: rotateY(180deg);
+  pointer-events: none;
+}
+
+.xmusic-flip-inner.is-flipped > .xmusic-flip-back {
+  pointer-events: auto;
+}
+
+/* Vertical 5-Band EQ Sliders */
+.xmusic-eq-slider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  height: 124px;
+  width: 32px;
+  accent-color: #007aff;
+  cursor: pointer;
+}
+
+html.dark .xmusic-eq-slider {
+  accent-color: #0a84ff;
+}
+
+/* Ultra-fast 60/120fps GPU-only directional page transition (transform + opacity only) */
+@keyframes xmusic-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translate3d(16px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes xmusic-slide-in-left {
+  from {
+    opacity: 0;
+    transform: translate3d(-16px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.xmusic-tab-pane {
+  contain: layout style;
+}
+
+.xmusic-tab-pane.xmusic-tab-active-right {
+  animation: xmusic-slide-in-right 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.xmusic-tab-pane.xmusic-tab-active-left {
+  animation: xmusic-slide-in-left 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+
+/* GPU-only smooth cover artwork crossfade & scale transition across all tracks */
+@keyframes xmusic-art-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.xmusic-art-transition {
+  animation: xmusic-art-fade-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, opacity;
+}
+
+
+/* iOS 27 Liquid Glass Prismatic Refraction, Larger Optical Lens Dock & Dynamic Cover Aura */
+:root {
+  --xmusic-accent: #007aff;
+  --xmusic-accent-2: #5e5ce6;
+}
+
+.xmusic-ambient-aura {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.38;
+  background:
+    radial-gradient(circle at 14% 5%, var(--xmusic-accent) 0%, transparent 56%),
+    radial-gradient(circle at 88% 20%, var(--xmusic-accent-2) 0%, transparent 52%),
+    radial-gradient(circle at 50% 96%, var(--xmusic-accent) 0%, transparent 48%);
+  transition: opacity 0.4s ease;
+}
+
+html.dark .xmusic-ambient-aura {
+  opacity: 0.48;
+}
+
+.xmusic-liquid-glass {
+  background:
+    radial-gradient(140% 100% at 15% 0%, rgba(255, 255, 255, 0.82) 0%, rgba(244, 248, 255, 0.56) 55%, rgba(235, 241, 255, 0.64) 100%) !important;
+  backdrop-filter: blur(20px) saturate(195%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(195%) !important;
+  border: 1.25px solid rgba(255, 255, 255, 0.85) !important;
+  box-shadow:
+    inset 0 2px 1px rgba(255, 255, 255, 0.98),
+    inset 0 -1.5px 1px rgba(15, 23, 42, 0.06),
+    0 18px 44px rgba(15, 23, 42, 0.16) !important;
+}
+
+html.dark .xmusic-liquid-glass {
+  background:
+    radial-gradient(140% 100% at 15% 0%, rgba(56, 60, 74, 0.68) 0%, rgba(22, 24, 32, 0.58) 58%, rgba(16, 17, 23, 0.66) 100%) !important;
+  backdrop-filter: blur(20px) saturate(200%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(200%) !important;
+  border: 1.25px solid rgba(255, 255, 255, 0.28) !important;
+  box-shadow:
+    inset 0 2px 1px rgba(255, 255, 255, 0.36),
+    inset 0 -1.5px 1px rgba(0, 0, 0, 0.5),
+    0 22px 48px rgba(0, 0, 0, 0.64) !important;
+}
+
+/* iOS 27 Sliding Optical Lens Glider inside the Larger Unified Liquid Glass Dock */
+.xmusic-lens-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: center;
+}
+
+.xmusic-lens-glider {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  left: -1.5%;
+  width: 23%;
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 0;
+  transform: translate3d(calc(var(--lens-idx, 0) * 86.95%), 0, 0) scale(1.04);
+  transition: transform 340ms cubic-bezier(0.22, 1.22, 0.36, 1);
+  will-change: transform;
+  background:
+    radial-gradient(95% 75% at 35% 16%, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.72) 48%, rgba(218, 234, 255, 0.88) 100%);
+  border: 1.5px solid rgba(255, 255, 255, 1);
+  box-shadow:
+    inset 0 4px 7px rgba(255, 255, 255, 1),
+    inset 0 -4px 8px rgba(15, 23, 42, 0.12),
+    0 10px 26px rgba(0, 0, 0, 0.16);
+}
+
+html.dark .xmusic-lens-glider {
+  background:
+    radial-gradient(95% 75% at 35% 16%, rgba(255, 255, 255, 0.52) 0%, rgba(255, 255, 255, 0.18) 52%, rgba(255, 255, 255, 0.32) 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.62);
+  box-shadow:
+    inset 0 4px 7px rgba(255, 255, 255, 0.72),
+    inset 0 -4px 8px rgba(0, 0, 0, 0.58),
+    0 12px 30px rgba(0, 0, 0, 0.62);
+}
+
+.xmusic-lens-glider.is-dragging {
+  transition: none;
+  transform: translate3d(calc(var(--lens-idx, 0) * 86.95%), 0, 0) scale(1.14);
+}
+
+/* Smooth Ken Burns ambient motion loop for Song Card Video Story */
+@keyframes xmusic-story-motion {
+  0% {
+    transform: scale(1.03) translate3d(0%, 0%, 0);
+  }
+  50% {
+    transform: scale(1.13) translate3d(-1.5%, -1.5%, 0);
+  }
+  100% {
+    transform: scale(1.05) translate3d(1.5%, -1%, 0);
+  }
+}
+
+.xmusic-story-canvas-loop {
+  animation: xmusic-story-motion 11s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+/* Frosted Liquid Glass top Navbar */
+.xmusic-glass-navbar .navbar-bg {
+  background: rgba(255, 255, 255, 0.62) !important;
+  backdrop-filter: blur(22px) saturate(185%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(185%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.5) !important;
+}
+
+html.dark .xmusic-glass-navbar .navbar-bg {
+  background: rgba(18, 19, 24, 0.62) !important;
+  backdrop-filter: blur(22px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(190%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+.xmusic-glass-pill {
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+}
+
+.xmusic-spring-tap {
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease;
+}
+
+.xmusic-spring-tap:active {
+  transform: scale(0.95);
+}
+
+/* WCAG 2.3.3 Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

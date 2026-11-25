@@ -1,0 +1,38 @@
+# Copyright 2026 Azka Putra
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[package]
+name = "xmusic"
+version = "6.42.0"
+description = "nys Xmusic — Offline & Streaming Music Player (Tauri v2.12 + SvelteKit 3 + Konsta UI iOS)"
+authors = ["Azka Putra"]
+license = "AGPL-3.0-or-later"
+edition = "2024"
+rust-version = "1.90"
+
+[lib]
+name = "xmusic_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+[profile.dev]
+incremental = true
+
+# Deterministic, smallest-size production release profile
+# Reference: https://v2.tauri.app/concept/size/
+[profile.release]
+codegen-units = 1       # Single codegen unit for deterministic & maximum LLVM optimization
+lto = "fat"             # Full Link-Time Optimization across all dependency crates
+opt-level = "z"         # Aggressive binary size optimization
+panic = "abort"         # Eliminate stack unwinding tables
+strip = true            # Strip debug info and symbol tables
+overflow-checks = false # Disable runtime integer overflow checks in release
+incremental = false     # Enforce deterministic, non-incremental release builds
